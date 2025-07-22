@@ -1,2 +1,4 @@
 __pycache__/
 idyom_results/
+venv/
+pytest.ini

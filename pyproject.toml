@@ -1,0 +1,19 @@
+[project]
+name = melodic_feature_set_Dav8Circle"
+version = "0.0.1"
+authors = [
+  { name="David Whyatt", email="dmw56@cam.ac.uk" },
+]
+description = "A Python package for computing tonnes of melodic features found in computational musicology literature."
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: MacOS/Linux",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+Homepage = "https://github.com/Dav8Circle/feature_set"
+Issues = "https://github.com/Dav8Circle/feature_set/issues"
