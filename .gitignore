@@ -2,3 +2,5 @@ __pycache__/
 idyom_results/
 venv/
 pytest.ini
+dist/
+src/melodic_feature_set_Dav8Circle.egg-info

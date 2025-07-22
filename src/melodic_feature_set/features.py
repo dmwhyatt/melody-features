@@ -11,7 +11,7 @@ import warnings
 from random import choices
 from typing import Dict
 from multiprocessing import Pool, cpu_count
-from Feature_Set.algorithms import (
+from melodic_feature_set.algorithms import (
     rank_values, nine_percent_significant_values, circle_of_fifths,
     compute_tonality_vector, arpeggiation_proportion,
     chromatic_motion_proportion, stepwise_motion_proportion,
@@ -19,19 +19,19 @@ from Feature_Set.algorithms import (
     longest_monotonic_conjunct_scalar_passage, longest_conjunct_scalar_passage,
     proportion_conjunct_scalar, proportion_scalar
 )
-from Feature_Set.complexity import (
+from melodic_feature_set.complexity import (
     consecutive_fifths, repetition_rate
 )
-from Feature_Set.distributional import distribution_proportions, histogram_bins, kurtosis, skew
-from Feature_Set.import_mid import import_midi
-from Feature_Set.interpolation_contour import InterpolationContour
-from Feature_Set.melody_tokenizer import FantasticTokenizer
-from Feature_Set.ngram_counter import NGramCounter
-from Feature_Set.narmour import (
+from melodic_feature_set.distributional import distribution_proportions, histogram_bins, kurtosis, skew
+from melodic_feature_set.import_mid import import_midi
+from melodic_feature_set.interpolation_contour import InterpolationContour
+from melodic_feature_set.melody_tokenizer import FantasticTokenizer
+from melodic_feature_set.ngram_counter import NGramCounter
+from melodic_feature_set.narmour import (
     proximity, closure, registral_direction, registral_return, intervallic_difference)
-from Feature_Set.representations import Melody
-from Feature_Set.stats import range_func, standard_deviation, shannon_entropy, mode
-from Feature_Set.step_contour import StepContour
+from melodic_feature_set.representations import Melody
+from melodic_feature_set.stats import range_func, standard_deviation, shannon_entropy, mode
+from melodic_feature_set.step_contour import StepContour
 import numpy as np
 import scipy
 import pandas as pd

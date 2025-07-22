@@ -1,0 +1,9 @@
+matplotlib
+mido
+natsort
+numpy
+pandas
+pretty_midi
+py2lispIDyOM
+scipy
+tqdm

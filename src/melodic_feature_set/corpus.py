@@ -9,9 +9,9 @@ from typing import List, Dict, Tuple
 import multiprocessing as mp
 from pathlib import Path
 from tqdm import tqdm
-from Feature_Set.melody_tokenizer import FantasticTokenizer
-from Feature_Set.representations import Melody, read_midijson
-from Feature_Set.import_mid import import_midi
+from melodic_feature_set.melody_tokenizer import FantasticTokenizer
+from melodic_feature_set.representations import Melody, read_midijson
+from melodic_feature_set.import_mid import import_midi
 
 
 def _convert_strings_to_tuples(key: str) -> Tuple:

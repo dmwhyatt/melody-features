@@ -1,6 +1,6 @@
 import pretty_midi
 import os
-from Feature_Set.representations import Melody
+from melodic_feature_set.representations import Melody
 from mido.midifiles.meta import KeySignatureError
 
 def import_midi(midi_file: str) -> dict:
