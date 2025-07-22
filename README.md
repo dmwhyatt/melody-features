@@ -26,7 +26,7 @@ output_name = NAME_OF_OUTPUT_FILE
 
 # using name is main guard to prevent circular imports
 if __name__ == "__main__":
-    get_all_features(midi_directory)
+    get_all_features(midi_directory, output_name)
 ```
 
 The package also supports a wide range of corpus features from FANTASTIC. These can be computed using a single additional step:
@@ -35,10 +35,18 @@ The package also supports a wide range of corpus features from FANTASTIC. These 
 from Feature_Set.corpus import make_corpus_stats
 from Feature_Set.features import get_all_features
 
+midi_directory = PATH_TO_MIDI_DIR
+output_name = NAME_OF_OUTPUT_FILE
+
+# additional name for corpus dictionary
+corpus_name = NAME_OF_CORPUS_DICT
+
 # using the same name is main guard
 if __name__ == "__main__":
-    make_corpus_stats("path_to_midi_file_directory", "name_of_output_dict")
+    make_corpus_stats(midi_directory, corpus_name)
 
-    # We can then use the produced `name_of_output_dict.json` file as the third argument in our `get_all_features` function
-    get_all_features("path_to_midi_file_directory", "name_of_output_file", "name_of_output_dict.json")
+    # We can then use the produced `.json` file as the third argument in our `get_all_features` function
+    get_all_features(midi_directory, output_name, corpus_name)
 ```
+
+## Melsim
