@@ -18,7 +18,7 @@ Below is an example script demonstrating how it may be applied.
 
 ```py
 # import the top level function
-from feature_set.features import get_all_features
+from melodic_feature_set.features import get_all_features
 
 # set paths to directory of files to analyse, and name the output file
 midi_directory = PATH_TO_MIDI_DIR
@@ -32,8 +32,8 @@ if __name__ == "__main__":
 The package also supports a wide range of corpus features from FANTASTIC. These can be computed using a single additional step:
 
 ```py
-from Feature_Set.corpus import make_corpus_stats
-from Feature_Set.features import get_all_features
+from melodic_feature_set.corpus import make_corpus_stats
+from melodic_feature_set.features import get_all_features
 
 midi_directory = PATH_TO_MIDI_DIR
 output_name = NAME_OF_OUTPUT_FILE
