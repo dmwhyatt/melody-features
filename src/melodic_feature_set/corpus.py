@@ -14,29 +14,6 @@ from melodic_feature_set.representations import Melody, read_midijson
 from melodic_feature_set.import_mid import import_midi
 
 
-def _convert_strings_to_tuples(key: str) -> Tuple:
-    """Convert a string-encoded tuple key back to a tuple.
-    
-    Parameters
-    ----------
-    key : str
-        String-encoded tuple key
-        
-    Returns
-    -------
-    Tuple
-        Tuple converted from string
-    """
-    try:
-        # Remove parentheses and split on comma
-        key_str = key.strip('()').split(',')
-        # Convert "None" strings back to None and strip quotes/spaces
-        tuple_key = tuple(None if x.strip().strip("'\"") == "None" else x.strip().strip("'\"") for x in key_str)
-        return tuple_key
-    except (AttributeError, ValueError):
-        # If not a tuple string, return the original key
-        return key
-
 def process_melody_ngrams(args) -> set:
     """Process n-grams for a single melody.
     
@@ -157,11 +134,6 @@ def load_corpus_stats(filename: str) -> Dict:
         
     with open(filename, encoding='utf-8') as f:
         stats = json.load(f)
-
-    # Convert string keys back to tuples where needed
-    stats['document_frequencies'] = {
-        _convert_strings_to_tuples(k): v for k, v in stats['document_frequencies'].items()
-    }
 
     return stats
 
@@ -286,8 +258,7 @@ def make_corpus_stats(midi_dir: str, output_file: str) -> None:
     # Filter out None values
     melodies = [m for m in melodies if m is not None]
     if not melodies:
-        print("Error: No valid melodies found")
-        exit(1)
+        raise ValueError("No valid melodies could be processed from the directory. Check if the files are valid MIDI files.")
     print(f"Processing {len(melodies)} valid melodies")
 
     # Compute corpus statistics
@@ -338,8 +309,7 @@ def make_corpus_stats_from_json(json_file: str, output_file: str, n_range: Tuple
     # Filter out None values
     melodies = [m for m in melodies if m is not None]
     if not melodies:
-        print("Error: No valid melodies found")
-        exit(1)
+        raise ValueError("No valid melodies could be processed from the JSON file.")
     print(f"Processing {len(melodies)} valid melodies")
 
     # Compute corpus statistics

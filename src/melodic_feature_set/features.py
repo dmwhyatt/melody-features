@@ -9,7 +9,7 @@ import math
 import csv
 import warnings
 from random import choices
-from typing import Dict
+from typing import Dict, List
 from multiprocessing import Pool, cpu_count
 from melodic_feature_set.algorithms import (
     rank_values, nine_percent_significant_values, circle_of_fifths,
@@ -23,6 +23,7 @@ from melodic_feature_set.complexity import (
     consecutive_fifths, repetition_rate
 )
 from melodic_feature_set.distributional import distribution_proportions, histogram_bins, kurtosis, skew
+from melodic_feature_set.idyom_interface import run_idyom
 from melodic_feature_set.import_mid import import_midi
 from melodic_feature_set.interpolation_contour import InterpolationContour
 from melodic_feature_set.melody_tokenizer import FantasticTokenizer
@@ -32,9 +33,17 @@ from melodic_feature_set.narmour import (
 from melodic_feature_set.representations import Melody
 from melodic_feature_set.stats import range_func, standard_deviation, shannon_entropy, mode
 from melodic_feature_set.step_contour import StepContour
+from melodic_feature_set.corpus import make_corpus_stats, load_corpus_stats
 import numpy as np
 import scipy
 import pandas as pd
+import tempfile
+from pathlib import Path
+import os
+import glob
+from natsort import natsorted
+import time
+import threading
 
 # Pitch Features
 def pitch_range(pitches: list[int]) -> int:
@@ -1440,6 +1449,38 @@ def stepwise_motion(pitches: list[int]) -> float:
     """
     return stepwise_motion_proportion(pitches)
 
+def check_is_monophonic(melody: Melody) -> bool:
+    """Check if the melody is monophonic.
+
+    This function determines if a melody is monophonic by ensuring that no
+    notes overlap in time. It assumes the notes within the Melody object are
+    sorted by their start times. A melody is considered polyphonic if any
+    note starts before the previous note has ended.
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze as a Melody object.
+
+    Returns
+    -------
+    bool
+        True if the melody is monophonic, False otherwise.
+    """
+    starts = melody.starts
+    ends = melody.ends
+
+    # A melody with 0 or 1 notes can only be monophonic.
+    if len(starts) < 2:
+        return True
+
+    # otherwise, if start time of current note is less than end time of previous note,
+    # the melody cannot be monophonic.
+    for i in range(1, len(starts)):
+        if starts[i] < ends[i-1]:
+            return False
+
+    return True
+
 def get_mtype_features(melody: Melody) -> dict:
     """Calculate various n-gram statistics for the melody.
 
@@ -1600,7 +1641,7 @@ def get_corpus_features(melody: Melody, corpus_stats: dict) -> Dict:
             'tf_values': [],
             'ngrams': []
         }
-
+ 
         # Batch lookup document frequencies
         for ngram, tf in ngram_counts.items():
             ngram_str = str(ngram)
@@ -1946,7 +1987,7 @@ def process_melody(args):
     Parameters
     ----------
     args : tuple
-        Tuple containing (melody_data, corpus_stats)
+        Tuple containing (melody_data, corpus_stats, idyom_features)
     
     Returns
     -------
@@ -1956,7 +1997,7 @@ def process_melody(args):
     import time
     start_total = time.time()
 
-    melody_data, corpus_stats = args
+    melody_data, corpus_stats, idyom_features = args
     mel = Melody(melody_data, tempo=100)
 
     # Time each feature category
@@ -2011,26 +2052,104 @@ def process_melody(args):
         melody_features['corpus_features'] = get_corpus_features(mel, corpus_stats)
         timings['corpus'] = time.time() - start
 
+    # Add pre-computed IDyOM features if available for this melody's ID
+    melody_id_str = str(melody_data['ID'])
+    if idyom_features and melody_id_str in idyom_features:
+        melody_features['idyom_features'] = idyom_features[melody_id_str]
+
     timings['total'] = time.time() - start_total
 
     return melody_data['ID'], melody_features, timings
 
-def get_all_features(input_path, output_path, corpus_path=None) -> None:
-    """Generate CSV file with features for all melodies using multiprocessing.
-    
+def get_idyom_results(input_path, corpus_path=None) -> dict:
+    """Run IDyOM on the input MIDI directory and return mean information content for each melody.
+
     Parameters
     ----------
     input_path : str
-        Path to input JSON file or directory of MIDI files
-    output_path : str
-        Path to output CSV file
-    corpus_path : str, optional
-        Path to corpus statistics JSON file. If None, corpus features will not be computed.
-        
+        Path to input MIDI directory
+    
     Returns
     -------
-    None
-        Writes features to CSV file with each melody as a row
+    dict
+        A dictionary mapping melody IDs to their mean information content.
+    """
+    dat_file_path = run_idyom(input_path,
+            pretraining_path=corpus_path,
+            output_dir='.',
+            description="IDyOM_Feature_Set_Results",
+            target_viewpoints=['cpitch'],
+            source_viewpoints=[('cpint', 'cpintfref')],
+            models=':both',
+            detail=2)
+
+    if not dat_file_path:
+        print("Warning: run_idyom did not produce an output file. Skipping IDyOM features.")
+        return {}
+
+    # Get a naturally sorted list of MIDI files to match IDyOM's processing order.
+    midi_files = natsorted(glob.glob(os.path.join(input_path, '*.mid')))
+    
+    idyom_results = {}
+    try:
+        with open(dat_file_path, 'r') as f:
+            next(f)  # Skip header
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) < 3:
+                    continue # Skip malformed lines
+
+                try:
+                    # IDyOM's melody ID is a 1-based index.
+                    melody_idx = int(parts[0]) - 1
+                    mean_ic = float(parts[2])
+                    
+                    if 0 <= melody_idx < len(midi_files):
+                        # Map the index to the actual filename.
+                        melody_id = os.path.basename(midi_files[melody_idx])
+                        idyom_results[melody_id] = {'mean_information_content': mean_ic}
+                    else:
+                        print(f"Warning: IDyOM returned an out-of-bounds index: {parts[0]}")
+                except (ValueError, IndexError) as e:
+                    print(f"Warning: Could not parse line in IDyOM output: '{line.strip()}'. Error: {e}")
+
+        os.remove(dat_file_path)
+
+    except FileNotFoundError:
+        print(f"Warning: IDyOM output file not found at {dat_file_path}. Skipping IDyOM features.")
+        return {}
+    except Exception as e:
+        print(f"Error parsing IDyOM output file: {e}. Skipping IDyOM features.")
+        if os.path.exists(dat_file_path):
+            os.remove(dat_file_path)
+        return {}
+            
+    return idyom_results
+
+def get_all_features(input_path, output_path, corpus_path=None) -> None:
+    """Calculate a multitude of features from across the computational melody analysis field.
+    This function generates a CSV file with a row for every melody in the supplied input 
+    directory of MIDI files. 
+    If a path to a corpus of MIDI files is provided, corpus statistics will be computed following
+    FANTASTIC's n-gram document frequency model (Müllensiefen, 2009). If not, this will be skipped.
+    This function will also run IDyOM (Pearce, 2009) on the input directory of MIDI files. If a corpus
+    of MIDI files is provided, IDyOM will be run with pretraining on the corpus. If not, it will be
+    run without pretraining.
+
+    Parameters
+    ----------
+    input_path : str
+        Path to input MIDI directory
+    output_path : str
+        Name for output CSV file. If no extension is provided, .csv will be added.
+    corpus_path : str, optional
+        Path to corpus of MIDI files. If not provided, corpus statistics will not be computed
+        and IDyOM will not be run with pretraining.
+
+    Returns
+    -------
+    A CSV file with a row for every melody in the input directory.
+    
     """
     # Ensure output_path has .csv extension
     if not output_path.endswith('.csv'):
@@ -2061,15 +2180,33 @@ def get_all_features(input_path, output_path, corpus_path=None) -> None:
 
     print("Starting job...\n")
 
-    # Load corpus statistics if path is provided
+    # --- Corpus Statistics Generation ---
     corpus_stats = None
     if corpus_path:
-        with open(corpus_path, encoding='utf-8') as f:
-            corpus_stats = json.load(f)
-    else:
-        print("No corpus path provided, corpus features will not be computed")
+        if not Path(corpus_path).is_dir():
+            raise FileNotFoundError(f"Corpus path is not a valid directory: {corpus_path}")
 
-    # Load melody data from JSON or import MIDI files
+        print(f"--- Generating corpus statistics from: {corpus_path} ---")
+
+        # Define a persistent path for the corpus stats file.
+        corpus_name = Path(corpus_path).name
+        corpus_stats_path = Path(output_path).parent / f"{corpus_name}_corpus_stats.json"
+        print(f"Corpus statistics file will be at: {corpus_stats_path}")
+
+        # Generate and load corpus stats.
+        if not corpus_stats_path.exists():
+            print("Corpus statistics file not found. Generating a new one...")
+            make_corpus_stats(corpus_path, str(corpus_stats_path))
+            print("Corpus statistics generated.")
+        else:
+            print("Existing corpus statistics file found.")
+            
+        corpus_stats = load_corpus_stats(str(corpus_stats_path))
+        print("Corpus statistics loaded successfully.")
+    else:
+        print("No corpus path provided, corpus-dependent features will not be computed.")
+
+    # --- Load Melody Data ---
     melody_data_list = []
     import os
 
@@ -2079,32 +2216,76 @@ def get_all_features(input_path, output_path, corpus_path=None) -> None:
         midi_files = glob.glob(os.path.join(input_path, '*.mid'))
         midi_files.extend(glob.glob(os.path.join(input_path, '*.midi')))
 
+        if not midi_files:
+            raise FileNotFoundError(f"No MIDI files found in the specified directory: {input_path}")
+
+        # Sort MIDI files in natural order
+        from natsort import natsorted
+        midi_files = natsorted(midi_files)
+
         # Process MIDI files in parallel
         with Pool(cpu_count()) as pool:
             for midi_file in midi_files:
                 try:
                     midi_data = import_midi(midi_file)
-                    melody_data_list.append(midi_data)
+                    if midi_data:
+                        # Perform monophonic check before adding to the list.
+                        temp_mel = Melody(midi_data)
+                        if check_is_monophonic(temp_mel):
+                            melody_data_list.append(midi_data)
+                        else:
+                            print(f"Warning: Skipping polyphonic file: {midi_file}")
                 except Exception as e:
                     print(f"Error importing {midi_file}: {str(e)}")
                     continue
     elif input_path.endswith('.json'):
         # Handle JSON file
         with open(input_path, encoding='utf-8') as f:
-            melody_data_list = json.load(f)
+            all_data = json.load(f)
+        
+        # Filter for monophonic melodies from the JSON data.
+        for melody_data in all_data:
+            if melody_data:
+                temp_mel = Melody(melody_data)
+                if check_is_monophonic(temp_mel):
+                    melody_data_list.append(melody_data)
+                else:
+                    print(f"Warning: Skipping polyphonic melody from JSON: {melody_data.get('ID', 'Unknown ID')}")
+
     else:
         raise ValueError(f"Input path must be either a directory containing MIDI files or a JSON file. Got: {input_path}")
     
     melody_data_list = [m for m in melody_data_list if m is not None]
     print(f"Processing {len(melody_data_list)} melodies")
 
+    if not melody_data_list:
+        print("No valid monophonic melodies found to process.")
+        return
+
+    # Assign unique melody_num to each melody (in sorted order)
+    for idx, melody_data in enumerate(melody_data_list, 1):
+        melody_data['melody_num'] = idx
+
+    # --- Run IDyOM Analysis (must happen BEFORE parallel processing setup) ---
+    idyom_results = {} # Initialize as an empty dict
+    try:
+        if corpus_path:
+            print("\nRunning IDyOM analysis with pretraining on corpus")
+            idyom_results = get_idyom_results(input_path, corpus_path)
+        else:
+            print("\nRunning IDyOM analysis without pretraining")
+            idyom_results = get_idyom_results(input_path)
+
+    
+    except Exception as e:
+        print(f"\n--- IDyOM analysis failed ---")
+        print(f"Error during IDyOM processing: {e}")
+        print("Skipping IDyOM features.")
+
     start_time = time.time()
 
+    # --- Setup for Parallel Processing ---
     # Process first melody to get header structure
-    if not melody_data_list:
-        print("No valid melodies found to process")
-        return
-        
     mel = Melody(melody_data_list[0], tempo=100)
     first_features = {
         'pitch_features': get_pitch_features(mel),
@@ -2120,9 +2301,15 @@ def get_all_features(input_path, output_path, corpus_path=None) -> None:
     # Add corpus features only if corpus stats are available
     if corpus_stats:
         first_features['corpus_features'] = get_corpus_features(mel, corpus_stats)
+    
+    # Add IDyOM features to the header if they were generated
+    if idyom_results:
+        # Get a sample of the features to build the header
+        sample_id = next(iter(idyom_results))
+        first_features['idyom_features'] = idyom_results[sample_id]
 
     # Create header by flattening feature names
-    headers = ['melody_id']
+    headers = ['melody_num', 'melody_id']
     for category, features in first_features.items():
         headers.extend(f"{category}.{feature}" for feature in features.keys())
 
@@ -2132,7 +2319,7 @@ def get_all_features(input_path, output_path, corpus_path=None) -> None:
     print(f"Using {n_cores} CPU cores")
 
     # Prepare arguments for parallel processing
-    melody_args = [(melody_data, corpus_stats) for melody_data in melody_data_list]
+    melody_args = [(melody_data, corpus_stats, idyom_results) for melody_data in melody_data_list]
 
     # Process melodies in parallel with chunking for better performance
     chunk_size = max(1, len(melody_args) // (n_cores * 4))  # Adjust chunk size based on number of cores
@@ -2162,10 +2349,18 @@ def get_all_features(input_path, output_path, corpus_path=None) -> None:
             for i, result in enumerate(pool.imap(process_melody, melody_args, chunksize=chunk_size)):
                 try:
                     melody_id, melody_features, timings = result
-                    # Flatten feature values into a single row
-                    row = [melody_id]
-                    for category, features in melody_features.items():
-                        row.extend(features.values())
+                    # Find the melody_num for this melody_id
+                    melody_num = None
+                    for m in melody_data_list:
+                        if str(m['ID']) == str(melody_id):
+                            melody_num = m.get('melody_num', None)
+                            break
+                    row = [melody_num, melody_id]
+                    # Loop through the headers to ensure correct order and handle missing data
+                    for header in headers[2:]: # Skip melody_num and melody_id headers
+                        category, feature_name = header.split('.', 1)
+                        value = melody_features.get(category, {}).get(feature_name, 0.0)
+                        row.append(value)
                     all_features.append(row)
 
                     # Update timing statistics
@@ -2203,3 +2398,4 @@ def get_all_features(input_path, output_path, corpus_path=None) -> None:
         if times:  # Only print if we have timing data
             avg_time = sum(times) / len(times) * 1000  # Convert to milliseconds
             print(f"{category:15s}: {avg_time:8.2f}ms")
+

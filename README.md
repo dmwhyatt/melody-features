@@ -56,9 +56,3 @@ Melsim is an R package for computing the similarity between two or more melodies
 It is included with this feature set through a wrapper approach - take a look at example.py and the supplied MIDI files.
 
 Since calculating similarities is highly modular in Melsim, we leave the user to decide how they wish to construct comparisons. Melsim is not run as part of the `get_all_features` function.
-
-## IDyOM
-
-Some of the viewpoints in IDyOM are relevant to melodic analysis in their own right, for example the implementation of the bottom-up Narmour principles (Krumhansl, 1995; Narmour, 1990). These principles are implemented in `get_all_features`.
-
-However, the popular IDyOM measures `entropy` and `ic` must be computed and averaged separately. We include a script to facilitate this analysis, though similar to Melsim, it is a wrapper that runs SBCL in the background; it is not pure Python. Hence, we felt it best to keep distinct from the rest of the implementation, for the time being.

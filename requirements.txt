@@ -6,4 +6,5 @@ pandas
 pretty_midi
 py2lispIDyOM
 scipy
+setuptools
 tqdm
