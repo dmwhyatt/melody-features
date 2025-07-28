@@ -13,7 +13,7 @@ Included in the package are contributions from:
 - IDyOM (Pearce, 2005)
 - MIDI Toolbox (Eerola & Toiviainen, 2004)
 
-The feature set is most readily accessed using the top level function `get_all_features`. 
+The feature set can be easily accessed using the top level function `get_all_features`. 
 Below is an example script demonstrating how it may be applied.
 
 ```py
@@ -47,6 +47,11 @@ if __name__ == "__main__":
 
     # We can then use the produced `.json` file as the third argument in our `get_all_features` function
     get_all_features(midi_directory, output_name, corpus_name)
+```
+
+It is also possible to run `features.py` as a command-line tool:
+```sh
+python3 features.py input_path output_name corpus_path
 ```
 
 ## Melsim

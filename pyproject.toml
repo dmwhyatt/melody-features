@@ -1,6 +1,6 @@
 [project]
 name = "melodic_feature_set_Dav8Circle"
-version = "0.0.6"
+version = "0.0.8"
 authors = [
   { name="David Whyatt", email="dmw56@cam.ac.uk" },
 ]
@@ -16,5 +16,5 @@ license = "MIT"
 license-files = ["LICEN[CS]E*"]
 
 [project.urls]
-Homepage = "https://github.com/Dav8Circle/feature_set"
-Issues = "https://github.com/Dav8Circle/feature_set/issues"
+Homepage = "https://github.com/Dav8Circle/melodic_feature_set"
+Issues = "https://github.com/Dav8Circle/melodic_feature_set/issues"

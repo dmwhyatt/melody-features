@@ -8,6 +8,18 @@ import json
 import math
 import csv
 import warnings
+import argparse
+import sys
+import os
+from pathlib import Path
+
+# Add src directory to path when running as script
+if __name__ == "__main__":
+    script_dir = Path(__file__).parent
+    src_dir = script_dir.parent
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+
 from random import choices
 from typing import Dict, List
 from multiprocessing import Pool, cpu_count
@@ -38,8 +50,6 @@ import numpy as np
 import scipy
 import pandas as pd
 import tempfile
-from pathlib import Path
-import os
 import glob
 from natsort import natsorted
 import time
@@ -2061,7 +2071,7 @@ def process_melody(args):
 
     return melody_data['ID'], melody_features, timings
 
-def get_idyom_results(input_path, corpus_path=None) -> dict:
+def get_idyom_results(input_path, corpus_path=None, idyom_target_viewpoints=None, idyom_source_viewpoints=None) -> dict:
     """Run IDyOM on the input MIDI directory and return mean information content for each melody.
 
     Parameters
@@ -2074,12 +2084,20 @@ def get_idyom_results(input_path, corpus_path=None) -> dict:
     dict
         A dictionary mapping melody IDs to their mean information content.
     """
+
+    # Set default IDyOM viewpoints if not provided.
+    if idyom_target_viewpoints is None:
+        idyom_target_viewpoints = ['cpitch']
+
+    if idyom_source_viewpoints is None:
+        idyom_source_viewpoints = [('cpint', 'cpintfref')]
+
     dat_file_path = run_idyom(input_path,
             pretraining_path=corpus_path,
             output_dir='.',
             description="IDyOM_Feature_Set_Results",
-            target_viewpoints=['cpitch'],
-            source_viewpoints=[('cpint', 'cpintfref')],
+            target_viewpoints=idyom_target_viewpoints,
+            source_viewpoints=idyom_source_viewpoints,
             models=':both',
             detail=2)
 
@@ -2126,13 +2144,13 @@ def get_idyom_results(input_path, corpus_path=None) -> dict:
             
     return idyom_results
 
-def get_all_features(input_path, output_path, corpus_path=None) -> None:
+def get_all_features(input_path, output_path, corpus_path=None, idyom_target_viewpoints=None, idyom_source_viewpoints=None) -> None:
     """Calculate a multitude of features from across the computational melody analysis field.
     This function generates a CSV file with a row for every melody in the supplied input 
     directory of MIDI files. 
     If a path to a corpus of MIDI files is provided, corpus statistics will be computed following
     FANTASTIC's n-gram document frequency model (Müllensiefen, 2009). If not, this will be skipped.
-    This function will also run IDyOM (Pearce, 2009) on the input directory of MIDI files. If a corpus
+    This function will also run IDyOM (Pearce, 2005) on the input directory of MIDI files. If a corpus
     of MIDI files is provided, IDyOM will be run with pretraining on the corpus. If not, it will be
     run without pretraining.
 
@@ -2145,6 +2163,20 @@ def get_all_features(input_path, output_path, corpus_path=None) -> None:
     corpus_path : str, optional
         Path to corpus of MIDI files. If not provided, corpus statistics will not be computed
         and IDyOM will not be run with pretraining.
+    idyom_target_viewpoints : list, optional
+        List of IDyOM target viewpoints to use. If not provided, the default viewpoint will be used.
+        The default viewpoint is: ['cpitch'].
+        The viewpoints are:
+        - cpitch: pitch class
+        - onset: onset time
+    idyom_source_viewpoints : list, optional
+        List of IDyOM source viewpoints to use. If not provided, the default viewpoint will be used.
+        The default viewpoint is a linked viewpoint comprising: 'cpint' and 'cpintfref'.
+        Individual viewpoints can be supplied as ["viewpoint1", "viewpoint2", ...].
+        Viewpoints can also be linked using a tuple of strings inside the list:
+          e.g. [("viewpoint1", "viewpoint2")].
+        Linked viewpoints and individual viewpoints can be mixed in the same list, 
+          e.g. ["viewpoint1", ("viewpoint2", "viewpoint3"), "viewpoint4"].
 
     Returns
     -------
@@ -2154,7 +2186,7 @@ def get_all_features(input_path, output_path, corpus_path=None) -> None:
     # Ensure output_path has .csv extension
     if not output_path.endswith('.csv'):
         output_path = output_path + '.csv'
-        
+
     import threading
     import time
 
@@ -2200,7 +2232,7 @@ def get_all_features(input_path, output_path, corpus_path=None) -> None:
             print("Corpus statistics generated.")
         else:
             print("Existing corpus statistics file found.")
-            
+
         corpus_stats = load_corpus_stats(str(corpus_stats_path))
         print("Corpus statistics loaded successfully.")
     else:
@@ -2271,10 +2303,10 @@ def get_all_features(input_path, output_path, corpus_path=None) -> None:
     try:
         if corpus_path:
             print("\nRunning IDyOM analysis with pretraining on corpus")
-            idyom_results = get_idyom_results(input_path, corpus_path)
+            idyom_results = get_idyom_results(input_path, corpus_path, idyom_target_viewpoints, idyom_source_viewpoints)
         else:
             print("\nRunning IDyOM analysis without pretraining")
-            idyom_results = get_idyom_results(input_path)
+            idyom_results = get_idyom_results(input_path, idyom_target_viewpoints, idyom_source_viewpoints)
 
     
     except Exception as e:
@@ -2399,3 +2431,133 @@ def get_all_features(input_path, output_path, corpus_path=None) -> None:
             avg_time = sum(times) / len(times) * 1000  # Convert to milliseconds
             print(f"{category:15s}: {avg_time:8.2f}ms")
 
+def parse_viewpoints(viewpoints_str):
+    """Parse viewpoints string from command line into proper Python structure.
+    
+    Parameters
+    ----------
+    viewpoints_str : str
+        String representation of viewpoints, e.g.:
+        "onset,cpitch" -> ["onset", "cpitch"]
+        "(cpint,cpintfref)" -> [("cpint", "cpintfref")]
+        "onset,(cpint,cpintfref),cpitch" -> ["onset", ("cpint", "cpintfref"), "cpitch"]
+    
+    Returns
+    -------
+    list
+        Parsed viewpoints as a list containing strings and/or tuples
+    """
+    if not viewpoints_str:
+        return None
+    
+    # Remove outer brackets if present
+    viewpoints_str = viewpoints_str.strip('[]')
+    
+    # Split by commas, but be careful about nested parentheses
+    viewpoints = []
+    current = ""
+    paren_count = 0
+    
+    for char in viewpoints_str:
+        if char == '(':
+            paren_count += 1
+            current += char
+        elif char == ')':
+            paren_count -= 1
+            current += char
+        elif char == ',' and paren_count == 0:
+            # End of current viewpoint
+            current = current.strip()
+            if current.startswith('(') and current.endswith(')'):
+                # This is a linked viewpoint - convert to tuple
+                inner = current[1:-1]  # Remove parentheses
+                viewpoints.append(tuple(v.strip() for v in inner.split(',')))
+            else:
+                # This is a single viewpoint
+                viewpoints.append(current)
+            current = ""
+        else:
+            current += char
+    
+    # Handle the last viewpoint
+    if current:
+        current = current.strip()
+        if current.startswith('(') and current.endswith(')'):
+            inner = current[1:-1]
+            viewpoints.append(tuple(v.strip() for v in inner.split(',')))
+        else:
+            viewpoints.append(current)
+    
+    return viewpoints
+
+
+def main():
+    """Main function for command-line interface."""
+    parser = argparse.ArgumentParser(
+        description="Extract melodic features from MIDI files",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python3 features.py /path/to/midi/files output.csv
+  python3 features.py /path/to/midi/files output.csv /path/to/corpus
+  python3 features.py melodies.json output.csv /path/to/corpus
+  python3 features.py /path/to/midi/files output.csv /path/to/corpus --target-viewpoints "onset,cpitch"
+  python3 features.py /path/to/midi/files output.csv /path/to/corpus --source-viewpoints "(cpint,cpintfref),onset"
+        """
+    )
+    
+    parser.add_argument(
+        'input_path',
+        help='Path to input MIDI directory or JSON file containing melody data'
+    )
+    
+    parser.add_argument(
+        'output_path', 
+        help='Path for output CSV file (extension will be added if missing)'
+    )
+    
+    parser.add_argument(
+        'corpus_path',
+        nargs='?',
+        default=None,
+        help='Optional path to corpus directory for corpus-based features and IDyOM pretraining'
+    )
+    
+    parser.add_argument(
+        '--target-viewpoints',
+        type=str,
+        default=None,
+        help='IDyOM target viewpoints as comma-separated list. Use parentheses for linked viewpoints. '
+             'Example: "onset,cpitch" or "(cpint,cpintfref)" or "onset,(cpint,cpintfref),cpitch"'
+    )
+    
+    parser.add_argument(
+        '--source-viewpoints', 
+        type=str,
+        default=None,
+        help='IDyOM source viewpoints as comma-separated list. Use parentheses for linked viewpoints. '
+             'Example: "onset,cpitch" or "(cpint,cpintfref)" or "onset,(cpint,cpintfref),cpitch"'
+    )
+    
+    args = parser.parse_args()
+    
+    # Parse viewpoints
+    target_viewpoints = parse_viewpoints(args.target_viewpoints)
+    source_viewpoints = parse_viewpoints(args.source_viewpoints)
+    
+    try:
+        get_all_features(
+            args.input_path, 
+            args.output_path, 
+            args.corpus_path,
+            target_viewpoints,
+            source_viewpoints
+        )
+        print("Feature extraction completed successfully!")
+    except Exception as e:
+        print(f"Error during feature extraction: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

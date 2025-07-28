@@ -295,7 +295,7 @@ if __name__ == "__main__":
             # Note however that we need to make sure that key signature is encoded in the MIDI file.
             # source_viewpoints=['cpitch'],
             # source_viewpoints=['cpintfref'],
-            source_viewpoints=[('cpint', 'cpintfref')],
+            source_viewpoints=[('cpint', 'cpintfref'), "cpcint"],
             models=':both',
             detail=2
         )
