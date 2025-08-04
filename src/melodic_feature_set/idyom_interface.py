@@ -23,7 +23,7 @@ import subprocess
 from pathlib import Path
 from natsort import natsorted
 from glob import glob
-from typing import Optional, Set
+from typing import Optional
 import shutil
 
 # A set of known valid viewpoints for IDyOM. This prevents typos and unsupported values.
@@ -123,7 +123,8 @@ def run_idyom(
     source_viewpoints=['cpitch', 'onset'],
     models=':both',
     k=1,
-    detail=3
+    detail=3,
+    ppm_order=None
 ):
     """
     Run IDyOM on a directory of MIDI files.
@@ -229,7 +230,9 @@ def run_idyom(
             source_viewpoints=source_viewpoints,
             models=models,
             k=k,
-            detail=detail
+            detail=detail,
+            ltmo_order_bound=ppm_order,
+            stmo_order_bound=ppm_order
         )
         
         print("Running IDyOM analysis...")
@@ -297,7 +300,8 @@ if __name__ == "__main__":
             # source_viewpoints=['cpintfref'],
             source_viewpoints=[('cpint', 'cpintfref'), "cpcint"],
             models=':both',
-            detail=2
+            detail=2,
+            ppm_order=1  # Set the order of the PPM models
         )
     else:
         print(f"--- Example MIDI directory '{example_midi_dir}' not found. ---")

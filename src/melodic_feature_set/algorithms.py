@@ -7,6 +7,7 @@ since they do not group well with the others.
 __author__ = "David Whyatt"
 
 import numpy as np
+from typing import Optional
 
 def ratio(x: list[float], y: list[float]) -> list[float]:
     """Calculates the ratio between corresponding elements in two lists.
@@ -775,7 +776,7 @@ def melodic_embellishment_proportion(pitch_values: list[float],
         return float(embellished) / len(note_durations)
     return 0.0
 
-def longest_monotonic_conjunct_scalar_passage(pitches: list[int]) -> int:
+def longest_monotonic_conjunct_scalar_passage(pitches: list[int], key_correlations: Optional[list] = None) -> int:
     """Find the longest sequence of consecutive notes that follow a scale pattern,
     moving in the same direction.
 
@@ -783,6 +784,9 @@ def longest_monotonic_conjunct_scalar_passage(pitches: list[int]) -> int:
     ----------
     pitches : list[int]
         List of MIDI pitch values
+    key_correlations : Optional[list]
+        Pre-computed key correlations from compute_tonality_vector.
+        If None, will compute them.
 
     Returns
     -------
@@ -810,34 +814,33 @@ def longest_monotonic_conjunct_scalar_passage(pitches: list[int]) -> int:
     >>> longest_monotonic_conjunct_scalar_passage(pitches)
     5
     """
-
-
-    if len(pitches) < 3:
-        return 0
-
     # Remove repeated notes
     deduped = []
     for pitch in pitches:
         if not deduped or pitch != deduped[-1]:
             deduped.append(pitch)
+    
+    if key_correlations is None:
+        # Get key using KS algorithm
+        pitch_classes = [p % 12 for p in deduped]
+        key_correlations = compute_tonality_vector(pitch_classes)
+    
+    key = key_correlations[0][0].split()[0]
 
-    if len(deduped) < 3:
-        return 0
-
-    # Get key using KS algorithm
-    pitch_classes = [p % 12 for p in deduped]
-    key_correlations = compute_tonality_vector(pitch_classes)
-    key = key_correlations[0][0]
-
-    # Determine scale degrees for identified key
     root = {'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
             'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11,
             'c': 0, 'c#': 1, 'd': 2, 'd#': 3, 'e': 4, 'f': 5,
-            'f#': 6, 'g': 7, 'g#': 8, 'a': 9, 'a#': 10, 'b': 11}[key.split()[0]]
+            'f#': 6, 'g': 7, 'g#': 8, 'a': 9, 'a#': 10, 'b': 11}[key]
     if 'minor' in key.lower():
         scale = [(root + i) % 12 for i in [0, 2, 3, 5, 7, 8, 10]]
     else:
         scale = [(root + i) % 12 for i in [0, 2, 4, 5, 7, 9, 11]]
+
+    if len(pitches) < 3:
+        return 0
+
+    if len(deduped) < 3:
+        return 0
 
     # Find longest monotonic scalar sequence
     longest_sequence = 0
@@ -882,7 +885,7 @@ def longest_monotonic_conjunct_scalar_passage(pitches: list[int]) -> int:
 
     return longest_sequence
 
-def longest_conjunct_scalar_passage(pitches: list[int]) -> int:
+def longest_conjunct_scalar_passage(pitches: list[int], key_correlations: Optional[list] = None) -> int:
     """Find the longest sequence of consecutive notes that follow a scale pattern,
     allowing for changes in direction.
 
@@ -890,6 +893,9 @@ def longest_conjunct_scalar_passage(pitches: list[int]) -> int:
     ----------
     pitches : list[int]
         List of MIDI pitch values
+    key_correlations : Optional[list]
+        Pre-computed key correlations from compute_tonality_vector.
+        If None, will compute them.
 
     Returns
     -------
@@ -918,7 +924,8 @@ def longest_conjunct_scalar_passage(pitches: list[int]) -> int:
 
     # Get key using KS algorithm
     pitch_classes = [p % 12 for p in deduped]
-    key_correlations = compute_tonality_vector(pitch_classes)
+    if key_correlations is None:
+        key_correlations = compute_tonality_vector(pitch_classes)
     key = key_correlations[0][0]
     root = {'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
             'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11,
@@ -955,13 +962,16 @@ def longest_conjunct_scalar_passage(pitches: list[int]) -> int:
 
     return longest_sequence
 
-def proportion_conjunct_scalar(pitches: list[int]) -> float:
+def proportion_conjunct_scalar(pitches: list[int], key_correlations: Optional[list] = None) -> float:
     """Calculate the proportion of notes that form conjunct scalar sequences.
 
     Parameters
     ----------
     pitches : list[int]
         List of MIDI pitch values
+    key_correlations : Optional[list]
+        Pre-computed key correlations from compute_tonality_vector.
+        If None, will compute them.
 
     Returns
     -------
@@ -979,16 +989,19 @@ def proportion_conjunct_scalar(pitches: list[int]) -> float:
     if len(pitches) < 3:
         return 0.0
 
-    scalar_length = longest_conjunct_scalar_passage(pitches)
+    scalar_length = longest_conjunct_scalar_passage(pitches, key_correlations)
     return scalar_length / len(pitches)
 
-def proportion_scalar(pitches: list[int]) -> float:
+def proportion_scalar(pitches: list[int], key_correlations: Optional[list] = None) -> float:
     """Calculate the proportion of notes that form scalar sequences.
 
     Parameters
     ----------
     pitches : list[int]
         List of MIDI pitch values
+    key_correlations : Optional[list]
+        Pre-computed key correlations from compute_tonality_vector.
+        If None, will compute them.
     
     Returns
     -------
@@ -1009,5 +1022,5 @@ def proportion_scalar(pitches: list[int]) -> float:
     if len(pitches) < 3:
         return 0.0
 
-    scalar_length = longest_monotonic_conjunct_scalar_passage(pitches)
+    scalar_length = longest_monotonic_conjunct_scalar_passage(pitches, key_correlations)
     return scalar_length / len(pitches)

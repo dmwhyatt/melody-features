@@ -4,13 +4,15 @@ Features are the product of an input list and at least one algorithm.
 """
 __author__ = "David Whyatt"
 
+from dataclasses import dataclass
 import json
 import math
 import csv
 import warnings
-import argparse
 import sys
 import os
+import tempfile
+import shutil
 from pathlib import Path
 
 # Add src directory to path when running as script
@@ -21,8 +23,7 @@ if __name__ == "__main__":
         sys.path.insert(0, str(src_dir))
 
 from random import choices
-from typing import Dict, List
-from multiprocessing import Pool, cpu_count
+from typing import Dict, Optional, List, Tuple
 from melodic_feature_set.algorithms import (
     rank_values, nine_percent_significant_values, circle_of_fifths,
     compute_tonality_vector, arpeggiation_proportion,
@@ -48,12 +49,70 @@ from melodic_feature_set.step_contour import StepContour
 from melodic_feature_set.corpus import make_corpus_stats, load_corpus_stats
 import numpy as np
 import scipy
-import pandas as pd
-import tempfile
 import glob
 from natsort import natsorted
 import time
 import threading
+import mido
+
+# Setup config classes for the different feature sets
+@dataclass
+class IDyOMConfig:
+    """Configuration class for IDyOM analysis.
+    Parameters
+    ----------
+    target_viewpoints : list[str]
+        List of target viewpoints to use for IDyOM analysis.
+    source_viewpoints : list[str]
+        List of source viewpoints to use for IDyOM analysis.
+    ppm_order : int
+        Order of the PPM model.
+    models : str
+        Models to use for IDyOM analysis. Can be ":stm", ":ltm" or ":both".
+    corpus : Optional[os.PathLike]
+        Path to the corpus to use for IDyOM analysis. If not provided, the corpus will be the one specified in the Config class.
+        This will override the corpus specified in the Config class if both are provided.
+    """
+    target_viewpoints: list[str]
+    source_viewpoints: list[str]
+    ppm_order: int
+    models: str
+    corpus: Optional[os.PathLike] = None 
+
+
+@dataclass
+class FantasticConfig:
+    """Configuration class for FANTASTIC analysis.
+    Parameters
+    ----------
+    max_ngram_order : int
+        Maximum order of n-grams to use for FANTASTIC analysis.
+    phrase_gap : float
+        Phrase gap to use for FANTASTIC analysis.
+    corpus : Optional[os.PathLike]
+        Path to the corpus to use for FANTASTIC analysis. If not provided, the corpus will be the one specified in the Config class.
+        This will override the corpus specified in the Config class if both are provided.
+    """
+    max_ngram_order: int
+    phrase_gap: float
+    corpus: Optional[os.PathLike] = None
+
+@dataclass
+class Config:
+    """Configuration class for the feature set.
+    Parameters
+    ----------
+    corpus : os.PathLike
+        Path to the corpus to use for the feature set. This can be overridden by the corpus parameter in the IDyOMConfig and FantasticConfig classes.
+    idyom : dict[str, IDyOMConfig]
+        Dictionary of IDyOM configurations, with the key being the name of the IDyOM configuration.
+    fantastic : FantasticConfig
+        Configuration object for FANTASTIC analysis.
+    """
+    corpus: os.PathLike
+    idyom: dict[str, IDyOMConfig]
+    fantastic: FantasticConfig
+    
 
 # Pitch Features
 def pitch_range(pitches: list[int]) -> int:
@@ -1491,7 +1550,7 @@ def check_is_monophonic(melody: Melody) -> bool:
 
     return True
 
-def get_mtype_features(melody: Melody) -> dict:
+def get_mtype_features(melody: Melody, phrase_gap: float, max_ngram_order: int) -> dict:
     """Calculate various n-gram statistics for the melody.
 
     Parameters
@@ -1508,7 +1567,7 @@ def get_mtype_features(melody: Melody) -> dict:
     tokenizer = FantasticTokenizer()
 
     # Segment the melody first, using quarters as the time unit
-    segments = tokenizer.segment_melody(melody, phrase_gap=1.5, units="quarters")
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
 
     # Get tokens for each segment
     all_tokens = []
@@ -1524,7 +1583,7 @@ def get_mtype_features(melody: Melody) -> dict:
     ngram_counter = NGramCounter()
     ngram_counter.ngram_counts = {}  # Explicitly reset the counter
 
-    ngram_counter.count_ngrams(all_tokens)
+    ngram_counter.count_ngrams(all_tokens, max_order=max_ngram_order)
 
     # Calculate complexity measures for each n-gram length
     mtype_features = {}
@@ -1595,7 +1654,7 @@ def get_ngram_document_frequency(ngram: tuple, corpus_stats: dict) -> int:
     # Look up the count directly
     return doc_freqs.get(ngram_str, {}).get('count', 0)
 
-def get_corpus_features(melody: Melody, corpus_stats: dict) -> Dict:
+def get_corpus_features(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> Dict:
     """Compute all corpus-based features for a melody.
     
     Parameters
@@ -1614,7 +1673,7 @@ def get_corpus_features(melody: Melody, corpus_stats: dict) -> Dict:
     tokenizer = FantasticTokenizer()
 
     # Segment the melody first
-    segments = tokenizer.segment_melody(melody, phrase_gap=1.5, units="quarters")
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
 
     # Get tokens for each segment
     all_tokens = []
@@ -1633,7 +1692,7 @@ def get_corpus_features(melody: Melody, corpus_stats: dict) -> Dict:
     # Pre-compute n-gram counts and document frequencies for all n-gram lengths
     ngram_data = []
 
-    for n in range(1, 6):
+    for n in range(1, max_ngram_order):
         # Count n-grams in the combined tokens
         ngram_counts = {}
         for i in range(len(all_tokens) - n + 1):
@@ -1957,10 +2016,10 @@ def get_tonality_features(melody: Melody) -> Dict:
         tonality_features['temperley_likelihood'] = 0.0
 
     # Scalar passage features
-    tonality_features['longest_monotonic_conjunct_scalar_passage'] = longest_monotonic_conjunct_scalar_passage(pitches)
-    tonality_features['longest_conjunct_scalar_passage'] = longest_conjunct_scalar_passage(pitches)
-    tonality_features['proportion_conjunct_scalar'] = proportion_conjunct_scalar(pitches)
-    tonality_features['proportion_scalar'] = proportion_scalar(pitches)
+    tonality_features['longest_monotonic_conjunct_scalar_passage'] = longest_monotonic_conjunct_scalar_passage(pitches, correlations)
+    tonality_features['longest_conjunct_scalar_passage'] = longest_conjunct_scalar_passage(pitches, correlations)
+    tonality_features['proportion_conjunct_scalar'] = proportion_conjunct_scalar(pitches, correlations)
+    tonality_features['proportion_scalar'] = proportion_scalar(pitches, correlations)
 
     # Histogram using cached correlations
     tonality_features['tonalness_histogram'] = histogram_bins(correlations[0][1], 24)
@@ -1997,17 +2056,16 @@ def process_melody(args):
     Parameters
     ----------
     args : tuple
-        Tuple containing (melody_data, corpus_stats, idyom_features)
+        Tuple containing (melody_data, corpus_stats, idyom_features, phrase_gap, max_ngram_order)
     
     Returns
     -------
     tuple
         Tuple containing (melody_id, feature_dict, timings)
     """
-    import time
     start_total = time.time()
 
-    melody_data, corpus_stats, idyom_features = args
+    melody_data, corpus_stats, idyom_features, phrase_gap, max_ngram_order = args
     mel = Melody(melody_data, tempo=100)
 
     # Time each feature category
@@ -2042,7 +2100,7 @@ def process_melody(args):
     timings['melodic_movement'] = time.time() - start
 
     start = time.time()
-    mtype_features = get_mtype_features(mel)
+    mtype_features = get_mtype_features(mel, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order)
     timings['mtype'] = time.time() - start
 
     melody_features = {
@@ -2059,7 +2117,7 @@ def process_melody(args):
     # Add corpus features only if corpus stats are available
     if corpus_stats:
         start = time.time()
-        melody_features['corpus_features'] = get_corpus_features(mel, corpus_stats)
+        melody_features['corpus_features'] = get_corpus_features(mel, corpus_stats, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order)
         timings['corpus'] = time.time() - start
 
     # Add pre-computed IDyOM features if available for this melody's ID
@@ -2071,14 +2129,10 @@ def process_melody(args):
 
     return melody_data['ID'], melody_features, timings
 
-def get_idyom_results(input_path, corpus_path=None, idyom_target_viewpoints=None, idyom_source_viewpoints=None) -> dict:
+def get_idyom_results(input_directory, idyom_target_viewpoints, idyom_source_viewpoints, models, ppm_order, corpus_path) -> dict:
     """Run IDyOM on the input MIDI directory and return mean information content for each melody.
+    Uses the parameters supplied from Config dataclass to control IDyOM behaviour.
 
-    Parameters
-    ----------
-    input_path : str
-        Path to input MIDI directory
-    
     Returns
     -------
     dict
@@ -2092,167 +2146,320 @@ def get_idyom_results(input_path, corpus_path=None, idyom_target_viewpoints=None
     if idyom_source_viewpoints is None:
         idyom_source_viewpoints = [('cpint', 'cpintfref')]
 
-    dat_file_path = run_idyom(input_path,
-            pretraining_path=corpus_path,
-            output_dir='.',
-            description="IDyOM_Feature_Set_Results",
-            target_viewpoints=idyom_target_viewpoints,
-            source_viewpoints=idyom_source_viewpoints,
-            models=':both',
-            detail=2)
+    print("Creating temporary MIDI files with detected key signatures for IDyOM processing...")
+    temp_dir = tempfile.mkdtemp(prefix="idyom_key_")
+    original_input_dir = input_directory
+    input_directory = create_temp_midi_with_key_signature(input_directory, temp_dir)
 
-    if not dat_file_path:
-        print("Warning: run_idyom did not produce an output file. Skipping IDyOM features.")
-        return {}
-
-    # Get a naturally sorted list of MIDI files to match IDyOM's processing order.
-    midi_files = natsorted(glob.glob(os.path.join(input_path, '*.mid')))
-    
-    idyom_results = {}
     try:
-        with open(dat_file_path, 'r') as f:
-            next(f)  # Skip header
-            for line in f:
-                parts = line.strip().split()
-                if len(parts) < 3:
-                    continue # Skip malformed lines
+        dat_file_path = run_idyom(input_directory,
+                pretraining_path=corpus_path,
+                output_dir='.',
+                description="IDyOM_Feature_Set_Results",
+                target_viewpoints=idyom_target_viewpoints,
+                source_viewpoints=idyom_source_viewpoints,
+                models=models,
+                detail=2,
+                ppm_order=ppm_order)
 
-                try:
-                    # IDyOM's melody ID is a 1-based index.
-                    melody_idx = int(parts[0]) - 1
-                    mean_ic = float(parts[2])
-                    
-                    if 0 <= melody_idx < len(midi_files):
-                        # Map the index to the actual filename.
-                        melody_id = os.path.basename(midi_files[melody_idx])
-                        idyom_results[melody_id] = {'mean_information_content': mean_ic}
-                    else:
-                        print(f"Warning: IDyOM returned an out-of-bounds index: {parts[0]}")
-                except (ValueError, IndexError) as e:
-                    print(f"Warning: Could not parse line in IDyOM output: '{line.strip()}'. Error: {e}")
+        if not dat_file_path:
+            print("Warning: run_idyom did not produce an output file. Skipping IDyOM features.")
+            return {}
 
-        os.remove(dat_file_path)
+        # Get a naturally sorted list of MIDI files to match IDyOM's processing order.
+        # Use original input directory for file mapping if we created temp files
+        mapping_dir = original_input_dir if temp_dir else input_directory
+        midi_files = natsorted(glob.glob(os.path.join(mapping_dir, '*.mid')))
+        
+        idyom_results = {}
+        try:
+            with open(dat_file_path, 'r', encoding='utf-8') as f:
+                next(f)  # Skip header
+                for line in f:
+                    parts = line.strip().split()
+                    if len(parts) < 3:
+                        continue # Skip malformed lines
 
-    except FileNotFoundError:
-        print(f"Warning: IDyOM output file not found at {dat_file_path}. Skipping IDyOM features.")
-        return {}
-    except Exception as e:
-        print(f"Error parsing IDyOM output file: {e}. Skipping IDyOM features.")
-        if os.path.exists(dat_file_path):
+                    try:
+                        # IDyOM's melody ID is a 1-based index.
+                        melody_idx = int(parts[0]) - 1
+                        mean_ic = float(parts[2])
+                        
+                        if 0 <= melody_idx < len(midi_files):
+                            # Map the index to the actual filename.
+                            melody_id = os.path.basename(midi_files[melody_idx])
+                            idyom_results[melody_id] = {'mean_information_content': mean_ic}
+                        else:
+                            print(f"Warning: IDyOM returned an out-of-bounds index: {parts[0]}")
+                    except (ValueError, IndexError) as e:
+                        print(f"Warning: Could not parse line in IDyOM output: '{line.strip()}'. Error: {e}")
+
             os.remove(dat_file_path)
-        return {}
-            
-    return idyom_results
 
-def get_all_features(input_path, output_path, corpus_path=None, idyom_target_viewpoints=None, idyom_source_viewpoints=None) -> None:
-    """Calculate a multitude of features from across the computational melody analysis field.
-    This function generates a CSV file with a row for every melody in the supplied input 
-    directory of MIDI files. 
-    If a path to a corpus of MIDI files is provided, corpus statistics will be computed following
-    FANTASTIC's n-gram document frequency model (Müllensiefen, 2009). If not, this will be skipped.
-    This function will also run IDyOM (Pearce, 2005) on the input directory of MIDI files. If a corpus
-    of MIDI files is provided, IDyOM will be run with pretraining on the corpus. If not, it will be
-    run without pretraining.
+        except FileNotFoundError:
+            print(f"Warning: IDyOM output file not found at {dat_file_path}. Skipping IDyOM features.")
+            return {}
+        except Exception as e:
+            print(f"Error parsing IDyOM output file: {e}. Skipping IDyOM features.")
+            if os.path.exists(dat_file_path):
+                os.remove(dat_file_path)
+            return {}
+                
+        return idyom_results
+        
+    finally:
+        # Clean up temporary directory if it was created
+        if temp_dir and os.path.exists(temp_dir):
+            print(f"Cleaning up temporary directory: {temp_dir}")
+            shutil.rmtree(temp_dir)
 
+
+def to_mido_key_string(key_name):
+    """Convert key name to mido key string format."""
+    key_name = key_name.strip().lower()
+    if 'minor' in key_name:
+        root = key_name.replace(' minor', '').replace('min', '').strip().capitalize()
+        return f"{root}m"
+    else:
+        root = key_name.replace(' major', '').strip().capitalize()
+        return root
+
+def create_temp_midi_with_key_signature(input_directory: str, temp_dir: str) -> str:
+    """
+    Create temporary MIDI files with key signatures for IDyOM processing.
+    
     Parameters
     ----------
-    input_path : str
-        Path to input MIDI directory
-    output_path : str
-        Name for output CSV file. If no extension is provided, .csv will be added.
-    corpus_path : str, optional
-        Path to corpus of MIDI files. If not provided, corpus statistics will not be computed
-        and IDyOM will not be run with pretraining.
-    idyom_target_viewpoints : list, optional
-        List of IDyOM target viewpoints to use. If not provided, the default viewpoint will be used.
-        The default viewpoint is: ['cpitch'].
-        The viewpoints are:
-        - cpitch: pitch class
-        - onset: onset time
-    idyom_source_viewpoints : list, optional
-        List of IDyOM source viewpoints to use. If not provided, the default viewpoint will be used.
-        The default viewpoint is a linked viewpoint comprising: 'cpint' and 'cpintfref'.
-        Individual viewpoints can be supplied as ["viewpoint1", "viewpoint2", ...].
-        Viewpoints can also be linked using a tuple of strings inside the list:
-          e.g. [("viewpoint1", "viewpoint2")].
-        Linked viewpoints and individual viewpoints can be mixed in the same list, 
-          e.g. ["viewpoint1", ("viewpoint2", "viewpoint3"), "viewpoint4"].
-
+    input_directory : str
+        Path to the input directory containing MIDI files
+    temp_dir : str
+        Path to the temporary directory to create the modified MIDI files
+        
     Returns
     -------
-    A CSV file with a row for every melody in the input directory.
-    
+    str
+        Path to the temporary directory containing MIDI files with key signatures
     """
-    # Ensure output_path has .csv extension
-    if not output_path.endswith('.csv'):
-        output_path = output_path + '.csv'
+    from mido import MidiFile, MetaMessage
 
-    import threading
-    import time
+    # Create temporary directory
+    os.makedirs(temp_dir, exist_ok=True)
 
-    # Spinner animation thread
-    class SpinnerThread(threading.Thread):
-        def __init__(self):
-            super().__init__()
-            self.stop_event = threading.Event()
-            self.spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-            self.idx = 0
+    # Get all MIDI files from input directory
+    midi_files = glob.glob(os.path.join(input_directory, '*.mid'))
+    midi_files.extend(glob.glob(os.path.join(input_directory, '*.midi')))
 
-        def run(self):
-            while not self.stop_event.is_set():
-                print(f"\r{self.spinner[self.idx]} Processing melodies...", end='', flush=True)
-                self.idx = (self.idx + 1) % len(self.spinner)
-                time.sleep(0.1)  # Control animation speed
+    print(f"Processing {len(midi_files)} MIDI files for key signature detection...")
+    
+    for midi_file in midi_files:
+        try:
+            midi_dict = import_midi(midi_file)
+            if midi_dict is None:
+                print(f"Warning: Could not import {midi_file}")
+                continue
+                
+            melody = Melody(midi_dict)
+            pitch_classes = [pitch % 12 for pitch in melody.pitches]
+            
+            key_correlations = compute_tonality_vector(pitch_classes)
+            detected_key = key_correlations[0][0]  # Get the most likely key
+            
+            mido_key = to_mido_key_string(detected_key)
+            
+            mid = MidiFile(midi_file)
+ 
+            # Remove existing key signatures and add new one
+            # We have to be consistent in how we handle key across the whole set of features
+            # so we will always overwrite whatever key is in the original file
+            for track in mid.tracks:
+                track[:] = [msg for msg in track if not (msg.type == 'key_signature')]
 
-        def stop(self):
-            self.stop_event.set()
-            self.join()
-            print("\r", end='', flush=True)  # Clear the spinner line
-            print("\n")
+            # Add new key signature at the beginning
+            key_msg = MetaMessage('key_signature', key=mido_key, time=0)
+            mid.tracks[0].insert(0, key_msg)
 
-    print("Starting job...\n")
+            # Save the modified MIDI file
+            output_filename = os.path.basename(midi_file)
+            output_path = os.path.join(temp_dir, output_filename)
+            mid.save(output_path)
 
-    # --- Corpus Statistics Generation ---
-    corpus_stats = None
-    if corpus_path:
-        if not Path(corpus_path).is_dir():
-            raise FileNotFoundError(f"Corpus path is not a valid directory: {corpus_path}")
+        except Exception as e:
+            print(f"Warning: Could not process {midi_file}: {str(e)}")
+            # Copy the original file as fallback
+            output_filename = os.path.basename(midi_file)
+            output_path = os.path.join(temp_dir, output_filename)
+            shutil.copy2(midi_file, output_path)
+    
+    return temp_dir
 
-        print(f"--- Generating corpus statistics from: {corpus_path} ---")
 
-        # Define a persistent path for the corpus stats file.
-        corpus_name = Path(corpus_path).name
-        corpus_stats_path = Path(output_path).parent / f"{corpus_name}_corpus_stats.json"
-        print(f"Corpus statistics file will be at: {corpus_stats_path}")
+# e.g.
+# idyom_configs = {
+#     "pitch": IDyOMConfig(models="both", corpus_path="path/to/corpus1", target_viewpoints=["cpitch"], source_viewpoints=["cpint", "cpintfref"], ppm_order=1),
+#     "pitch_stm": IDyOMConfig(models="stm", corpus_path="path/to/corpus1", target_viewpoints=["cpitch"], source_viewpoints=["cpint", "cpintfref"], ppm_order=1),
+#     "rhythm : IDyOMConfig(corpus_path="path/to/corpus1", target_viewpoints=["onset"], source_viewpoints=["ioi"], ppm_order=2),
+#     "rhythm_stm : IDyOMConfig(models="stm", corpus_path="path/to/corpus1", target_viewpoints=["onset"], source_viewpoints=["ioi"], ppm_order=2),
+# }
+# config = Config(corpus_path="path/to/corpus", idyom_configs=idyom_configs, fantastic_max_ngram_order=3)
 
-        # Generate and load corpus stats.
-        if not corpus_stats_path.exists():
-            print("Corpus statistics file not found. Generating a new one...")
-            make_corpus_stats(corpus_path, str(corpus_stats_path))
-            print("Corpus statistics generated.")
-        else:
-            print("Existing corpus statistics file found.")
 
-        corpus_stats = load_corpus_stats(str(corpus_stats_path))
-        print("Corpus statistics loaded successfully.")
-    else:
+class SpinnerThread(threading.Thread):
+    """Thread for displaying processing progress with a spinner animation."""
+    
+    def __init__(self):
+        super().__init__()
+        self.stop_event = threading.Event()
+        self.spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        self.idx = 0
+
+    def run(self):
+        while not self.stop_event.is_set():
+            print(f"\r{self.spinner[self.idx]} Processing melodies...", end='', flush=True)
+            self.idx = (self.idx + 1) % len(self.spinner)
+            time.sleep(0.1)  # Control animation speed
+
+    def stop(self):
+        self.stop_event.set()
+        self.join()
+        print("\r", end='', flush=True)  # Clear the spinner line
+        print("\n")
+
+
+def _setup_default_config(config: Optional[Config]) -> Config:
+    """Set up default configuration if none provided.
+    
+    Parameters
+    ----------
+    config : Optional[Config]
+        Configuration object or None
+        
+    Returns
+    -------
+    Config
+        Valid configuration object
+    """
+    if config is None:
+        config = Config(
+            corpus="src/melodic_feature_set/Essen_Corpus",
+            idyom={
+                'default_pitch': IDyOMConfig(
+                    target_viewpoints=['cpitch'],
+                    source_viewpoints=['cpint', 'cpintfref'],
+                    ppm_order=1,
+                    models=':both',
+                    corpus=None)
+            },
+            fantastic=FantasticConfig(
+                max_ngram_order=6,
+                phrase_gap=1.5,
+                corpus=None)
+        )
+    return config
+
+
+def _validate_config(config: Config) -> None:
+    """Validate the configuration object.
+    
+    Parameters
+    ----------
+    config : Config
+        Configuration object to validate
+        
+    Raises
+    ------
+    ValueError
+        If configuration is invalid
+    """
+    if not hasattr(config, 'idyom') or not config.idyom:
+        raise ValueError("Config must have at least one IDyOM configuration")
+    
+    if not hasattr(config, 'fantastic'):
+        raise ValueError("Config must have FANTASTIC configuration")
+
+
+def _setup_corpus_statistics(config: Config, output_file: str) -> Optional[dict]:
+    """Set up corpus statistics for FANTASTIC features.
+    
+    Parameters
+    ----------
+    config : Config
+        Configuration object containing corpus information
+    output_file : str
+        Path to output file for determining corpus stats location
+        
+    Returns
+    -------
+    Optional[dict]
+        Corpus statistics dictionary or None if no corpus provided
+        
+    Raises
+    ------
+    FileNotFoundError
+        If corpus path is not a valid directory
+    """
+    # Determine which corpus to use for FANTASTIC
+    fantastic_corpus = config.fantastic.corpus if config.fantastic.corpus is not None else config.corpus
+    
+    if not fantastic_corpus:
         print("No corpus path provided, corpus-dependent features will not be computed.")
+        return None
+    
+    if not Path(fantastic_corpus).is_dir():
+        raise FileNotFoundError(f"Corpus path is not a valid directory: {fantastic_corpus}")
 
-    # --- Load Melody Data ---
+    print(f"--- Generating corpus statistics from: {fantastic_corpus} ---")
+
+    # Define a persistent path for the corpus stats file.
+    corpus_name = Path(fantastic_corpus).name
+    corpus_stats_path = Path(output_file).parent / f"{corpus_name}_corpus_stats.json"
+    print(f"Corpus statistics file will be at: {corpus_stats_path}")
+
+    # Generate and load corpus stats.
+    if not corpus_stats_path.exists():
+        print("Corpus statistics file not found. Generating a new one...")
+        make_corpus_stats(fantastic_corpus, str(corpus_stats_path))
+        print("Corpus statistics generated.")
+    else:
+        print("Existing corpus statistics file found.")
+
+    corpus_stats = load_corpus_stats(str(corpus_stats_path))
+    print("Corpus statistics loaded successfully.")
+    
+    return corpus_stats
+
+
+def _load_melody_data(input_directory: os.PathLike) -> List[dict]:
+    """Load and validate melody data from MIDI files or JSON.
+    
+    Parameters
+    ----------
+    input_directory : os.PathLike
+        Path to input directory or JSON file
+        
+    Returns
+    -------
+    List[dict]
+        List of valid monophonic melody data dictionaries
+        
+    Raises
+    ------
+    FileNotFoundError
+        If no MIDI files found in directory
+    ValueError
+        If input is neither a directory nor a JSON file
+    """
+    from multiprocessing import Pool, cpu_count
+    
     melody_data_list = []
-    import os
 
-    if os.path.isdir(input_path):
-        # Handle directory of MIDI files
-        import glob
-        midi_files = glob.glob(os.path.join(input_path, '*.mid'))
-        midi_files.extend(glob.glob(os.path.join(input_path, '*.midi')))
+    if os.path.isdir(input_directory):
+        midi_files = glob.glob(os.path.join(input_directory, '*.mid'))
+        midi_files.extend(glob.glob(os.path.join(input_directory, '*.midi')))
 
         if not midi_files:
-            raise FileNotFoundError(f"No MIDI files found in the specified directory: {input_path}")
+            raise FileNotFoundError(f"No MIDI files found in the specified directory: {input_directory}")
 
         # Sort MIDI files in natural order
-        from natsort import natsorted
         midi_files = natsorted(midi_files)
 
         # Process MIDI files in parallel
@@ -2270,9 +2477,9 @@ def get_all_features(input_path, output_path, corpus_path=None, idyom_target_vie
                 except Exception as e:
                     print(f"Error importing {midi_file}: {str(e)}")
                     continue
-    elif input_path.endswith('.json'):
+    elif input_directory.endswith('.json'):
         # Handle JSON file
-        with open(input_path, encoding='utf-8') as f:
+        with open(input_directory, encoding='utf-8') as f:
             all_data = json.load(f)
         
         # Filter for monophonic melodies from the JSON data.
@@ -2285,38 +2492,76 @@ def get_all_features(input_path, output_path, corpus_path=None, idyom_target_vie
                     print(f"Warning: Skipping polyphonic melody from JSON: {melody_data.get('ID', 'Unknown ID')}")
 
     else:
-        raise ValueError(f"Input path must be either a directory containing MIDI files or a JSON file. Got: {input_path}")
+        raise ValueError(f"Input must be either a directory containing MIDI files or a JSON file. Got: {input_directory}")
     
     melody_data_list = [m for m in melody_data_list if m is not None]
     print(f"Processing {len(melody_data_list)} melodies")
 
     if not melody_data_list:
-        print("No valid monophonic melodies found to process.")
-        return
+        return []
 
     # Assign unique melody_num to each melody (in sorted order)
     for idx, melody_data in enumerate(melody_data_list, 1):
         melody_data['melody_num'] = idx
+        
+    return melody_data_list
 
-    # --- Run IDyOM Analysis (must happen BEFORE parallel processing setup) ---
-    idyom_results = {} # Initialize as an empty dict
-    try:
-        if corpus_path:
-            print("\nRunning IDyOM analysis with pretraining on corpus")
-            idyom_results = get_idyom_results(input_path, corpus_path, idyom_target_viewpoints, idyom_source_viewpoints)
-        else:
-            print("\nRunning IDyOM analysis without pretraining")
-            idyom_results = get_idyom_results(input_path, idyom_target_viewpoints, idyom_source_viewpoints)
 
+def _run_idyom_analysis(input_directory: os.PathLike, config: Config) -> Dict[str, dict]:
+    """Run IDyOM analysis for all configurations.
     
-    except Exception as e:
-        print(f"\n--- IDyOM analysis failed ---")
-        print(f"Error during IDyOM processing: {e}")
-        print("Skipping IDyOM features.")
+    Parameters
+    ----------
+    input_directory : os.PathLike
+        Path to input directory
+    config : Config
+        Configuration object containing IDyOM settings
+        
+    Returns
+    -------
+    Dict[str, dict]
+        Dictionary mapping IDyOM configuration names to their results
+    """
+    idyom_results_dict = {}
+    for idyom_name, idyom_config in config.idyom.items():
+        idyom_corpus = idyom_config.corpus if idyom_config.corpus is not None else config.corpus
+        print(f"\nRunning IDyOM analysis for '{idyom_name}' with corpus: {idyom_corpus}")
+        
+        idyom_results = get_idyom_results(
+            input_directory,
+            idyom_config.target_viewpoints,
+            idyom_config.source_viewpoints,
+            idyom_config.models,
+            idyom_config.ppm_order,
+            idyom_corpus
+        )
+        idyom_results_dict[idyom_name] = idyom_results
+    
+    return idyom_results_dict
 
-    start_time = time.time()
 
-    # --- Setup for Parallel Processing ---
+def _setup_parallel_processing(melody_data_list: List[dict], corpus_stats: Optional[dict], 
+                             idyom_results_dict: Dict[str, dict], config: Config) -> Tuple[List[str], List, Dict[str, List[float]]]:
+    """Set up parallel processing arguments and headers.
+    
+    Parameters
+    ----------
+    melody_data_list : List[dict]
+        List of melody data dictionaries
+    corpus_stats : Optional[dict]
+        Corpus statistics dictionary
+    idyom_results_dict : Dict[str, dict]
+        Dictionary of IDyOM results
+    config : Config
+        Configuration object
+        
+    Returns
+    -------
+    Tuple[List[str], List, Dict[str, List[float]]]
+        Headers, melody arguments, and timing statistics dictionary
+    """
+    from multiprocessing import cpu_count
+    
     # Process first melody to get header structure
     mel = Melody(melody_data_list[0], tempo=100)
     first_features = {
@@ -2327,23 +2572,27 @@ def get_all_features(input_path, output_path, corpus_path=None, idyom_target_vie
         'tonality_features': get_tonality_features(mel),
         'narmour_features': get_narmour_features(mel),
         'melodic_movement_features': get_melodic_movement_features(mel),
-        'mtype_features': get_mtype_features(mel)
+        'mtype_features': get_mtype_features(mel, phrase_gap=config.fantastic.phrase_gap, max_ngram_order=config.fantastic.max_ngram_order)
     }
 
-    # Add corpus features only if corpus stats are available
     if corpus_stats:
-        first_features['corpus_features'] = get_corpus_features(mel, corpus_stats)
+        first_features['corpus_features'] = get_corpus_features(mel, corpus_stats, phrase_gap=config.fantastic.phrase_gap, max_ngram_order=config.fantastic.max_ngram_order)
     
-    # Add IDyOM features to the header if they were generated
-    if idyom_results:
-        # Get a sample of the features to build the header
-        sample_id = next(iter(idyom_results))
-        first_features['idyom_features'] = idyom_results[sample_id]
+    # Add IDyOM features for each config to the header if they were generated
+    for idyom_name, idyom_results in idyom_results_dict.items():
+        if idyom_results:
+            sample_id = next(iter(idyom_results))
+            for feature in idyom_results[sample_id].keys():
+                first_features[f'idyom_{idyom_name}_features.{feature}'] = None
 
     # Create header by flattening feature names
     headers = ['melody_num', 'melody_id']
     for category, features in first_features.items():
-        headers.extend(f"{category}.{feature}" for feature in features.keys())
+        if isinstance(features, dict):
+            headers.extend(f"{category}.{feature}" for feature in features.keys())
+        elif features is None:
+            # Already prefixed for IDyOM
+            headers.append(category)
 
     print("Starting parallel processing...\n")
     # Create pool of workers
@@ -2351,11 +2600,10 @@ def get_all_features(input_path, output_path, corpus_path=None, idyom_target_vie
     print(f"Using {n_cores} CPU cores")
 
     # Prepare arguments for parallel processing
-    melody_args = [(melody_data, corpus_stats, idyom_results) for melody_data in melody_data_list]
-
-    # Process melodies in parallel with chunking for better performance
-    chunk_size = max(1, len(melody_args) // (n_cores * 4))  # Adjust chunk size based on number of cores
-    all_features = []
+    melody_args = [
+        (melody_data, corpus_stats, idyom_results, config.fantastic.phrase_gap, config.fantastic.max_ngram_order)
+        for melody_data in melody_data_list
+    ]
 
     # Track timing statistics
     timing_stats = {
@@ -2370,59 +2618,143 @@ def get_all_features(input_path, output_path, corpus_path=None, idyom_target_vie
         'corpus': [],
         'total': []
     }
+    
+    return headers, melody_args, timing_stats
 
-    # Start spinner thread
-    spinner = SpinnerThread()
-    spinner.start()
 
+def _process_melodies_parallel(melody_args: List, headers: List[str], melody_data_list: List[dict], 
+                              idyom_results_dict: Dict[str, dict], timing_stats: Dict[str, List[float]], 
+                              spinner: SpinnerThread) -> List[List]:
+    """Process melodies in parallel and collect results.
+    
+    Parameters
+    ----------
+    melody_args : List
+        Arguments for parallel processing
+    headers : List[str]
+        CSV headers
+    melody_data_list : List[dict]
+        List of melody data dictionaries
+    idyom_results_dict : Dict[str, dict]
+        Dictionary of IDyOM results
+    timing_stats : Dict[str, List[float]]
+        Timing statistics dictionary
+    spinner : SpinnerThread
+        Spinner thread for progress display
+        
+    Returns
+    -------
+    List[List]
+        List of feature rows
+    """
+    all_features = []
+    
     try:
-        with Pool(n_cores) as pool:
-            # Use imap for better memory efficiency and progress tracking
-            for i, result in enumerate(pool.imap(process_melody, melody_args, chunksize=chunk_size)):
+        # Use multiprocessing if possible as main module
+        if __name__ == "__main__":
+            from multiprocessing import Pool, cpu_count
+            n_cores = cpu_count()
+            chunk_size = max(1, len(melody_args) // (n_cores * 4))
+            
+            with Pool(n_cores) as pool:
+                for i, result in enumerate(pool.imap(process_melody, melody_args, chunksize=chunk_size)):
+                    try:
+                        melody_id, melody_features, timings = result
+                        melody_num = None
+                        for m in melody_data_list:
+                            if str(m['ID']) == str(melody_id):
+                                melody_num = m.get('melody_num', None)
+                                break
+                        row = [melody_num, melody_id]
+                        for header in headers[2:]: # Skip melody_num and melody_id headers
+                            if header.startswith('idyom_'):
+                                prefix, feature_name = header.split('.', 1)
+                                idyom_name = prefix[len('idyom_'):-len('_features')]
+                                value = idyom_results_dict.get(idyom_name, {}).get(melody_id, {}).get(feature_name, 0.0)
+                                row.append(value)
+                            else:
+                                category, feature_name = header.split('.', 1)
+                                value = melody_features.get(category, {}).get(feature_name, 0.0)
+                                row.append(value)
+                        all_features.append(row)
+
+                        for category, duration in timings.items():
+                            timing_stats[category].append(duration)
+                    except Exception as e:
+                        print(f"\nError processing melody {i}: {str(e)}")
+                        continue
+        else:
+            # Process melodies sequentially when imported if 
+            # multiprocessing is not available.
+            for i, args in enumerate(melody_args):
                 try:
+                    result = process_melody(args)
                     melody_id, melody_features, timings = result
-                    # Find the melody_num for this melody_id
+                    
                     melody_num = None
                     for m in melody_data_list:
                         if str(m['ID']) == str(melody_id):
                             melody_num = m.get('melody_num', None)
                             break
                     row = [melody_num, melody_id]
-                    # Loop through the headers to ensure correct order and handle missing data
+                    
                     for header in headers[2:]: # Skip melody_num and melody_id headers
-                        category, feature_name = header.split('.', 1)
-                        value = melody_features.get(category, {}).get(feature_name, 0.0)
-                        row.append(value)
+                        if header.startswith('idyom_'):
+                            prefix, feature_name = header.split('.', 1)
+                            idyom_name = prefix[len('idyom_'):-len('_features')]
+                            value = idyom_results_dict.get(idyom_name, {}).get(melody_id, {}).get(feature_name, 0.0)
+                            row.append(value)
+                        else:
+                            category, feature_name = header.split('.', 1)
+                            value = melody_features.get(category, {}).get(feature_name, 0.0)
+                            row.append(value)
                     all_features.append(row)
 
                     # Update timing statistics
                     for category, duration in timings.items():
                         timing_stats[category].append(duration)
+                        
                 except Exception as e:
                     print(f"\nError processing melody {i}: {str(e)}")
                     continue
     finally:
         # Stop spinner thread
         spinner.stop()
+    
+    return all_features
 
-    if not all_features:
-        print("No features were successfully extracted from any melodies")
-        return
 
+def _process_results_and_output(all_features: List[List], headers: List[str], output_file: str, 
+                              start_time: float, timing_stats: Dict[str, List[float]]) -> None:
+    """Process results and write to CSV file.
+    
+    Parameters
+    ----------
+    all_features : List[List]
+        List of feature rows
+    headers : List[str]
+        CSV headers
+    output_file : str
+        Output file path
+    start_time : float
+        Start time for timing calculation
+    timing_stats : Dict[str, List[float]]
+        Timing statistics dictionary
+    """
     print("Processing complete")
 
     # Sort results by melody_id
     all_features.sort(key=lambda x: x[0])
 
     # Write results to CSV
-    with open(output_path, 'w', newline='') as f:
+    with open(output_file, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(headers)
         writer.writerows(all_features)
 
     end_time = time.time()
     print(f"\nTotal processing time: {end_time - start_time:.2f} seconds")
-    print(f"Results written to {output_path}")
+    print(f"Results written to {output_file}")
 
     # Print timing statistics
     print("\nTiming Statistics (average milliseconds per melody):")
@@ -2431,133 +2763,71 @@ def get_all_features(input_path, output_path, corpus_path=None, idyom_target_vie
             avg_time = sum(times) / len(times) * 1000  # Convert to milliseconds
             print(f"{category:15s}: {avg_time:8.2f}ms")
 
-def parse_viewpoints(viewpoints_str):
-    """Parse viewpoints string from command line into proper Python structure.
-    
+
+def get_all_features(input_directory: os.PathLike, output_file: str, config: Optional[Config] = None) -> None:
+    """Calculate a multitude of features from across the computational melody analysis field.
+    This function generates a CSV file with a row for every melody in the supplied input 
+    directory of MIDI files. 
+    If a path to a corpus of MIDI files is provided in the Config,
+    corpus statistics will be computed following FANTASTIC's n-gram document frequency 
+    model (Müllensiefen, 2009). If not, this will be skipped.
+    This function will also run IDyOM (Pearce, 2005) on the input directory of MIDI files.
+    If a corpus of MIDI files is provided in the Config, IDyOM will be run with 
+    pretraining on the corpus. If not, it will be run without pretraining.
+
     Parameters
     ----------
-    viewpoints_str : str
-        String representation of viewpoints, e.g.:
-        "onset,cpitch" -> ["onset", "cpitch"]
-        "(cpint,cpintfref)" -> [("cpint", "cpintfref")]
-        "onset,(cpint,cpintfref),cpitch" -> ["onset", ("cpint", "cpintfref"), "cpitch"]
-    
+    input_directory : os.PathLike
+        Path to input MIDI directory
+    output_file : str
+        Name for output CSV file. If no extension is provided, .csv will be added.
+    config : Config
+        Configuration object containing corpus path, IDyOM configurations (as a dict), and FANTASTIC configuration.
+        If idyom.corpus or fantastic.corpus is set, those take precedence over config.corpus for their respective methods.
+        If multiple IDyOM configs are provided, IDyOM will run for each config and features for each 
+        will be included with an identifier in the output.
+
     Returns
     -------
-    list
-        Parsed viewpoints as a list containing strings and/or tuples
+    A CSV file with a row for every melody in the input directory.
+    
     """
-    if not viewpoints_str:
-        return None
-    
-    # Remove outer brackets if present
-    viewpoints_str = viewpoints_str.strip('[]')
-    
-    # Split by commas, but be careful about nested parentheses
-    viewpoints = []
-    current = ""
-    paren_count = 0
-    
-    for char in viewpoints_str:
-        if char == '(':
-            paren_count += 1
-            current += char
-        elif char == ')':
-            paren_count -= 1
-            current += char
-        elif char == ',' and paren_count == 0:
-            # End of current viewpoint
-            current = current.strip()
-            if current.startswith('(') and current.endswith(')'):
-                # This is a linked viewpoint - convert to tuple
-                inner = current[1:-1]  # Remove parentheses
-                viewpoints.append(tuple(v.strip() for v in inner.split(',')))
-            else:
-                # This is a single viewpoint
-                viewpoints.append(current)
-            current = ""
-        else:
-            current += char
-    
-    # Handle the last viewpoint
-    if current:
-        current = current.strip()
-        if current.startswith('(') and current.endswith(')'):
-            inner = current[1:-1]
-            viewpoints.append(tuple(v.strip() for v in inner.split(',')))
-        else:
-            viewpoints.append(current)
-    
-    return viewpoints
+    # Ensure output file has .csv extension
+    if not output_file.endswith('.csv'):
+        output_file = output_file + '.csv'
 
+    config = _setup_default_config(config)
+    _validate_config(config)
 
-def main():
-    """Main function for command-line interface."""
-    parser = argparse.ArgumentParser(
-        description="Extract melodic features from MIDI files",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python3 features.py /path/to/midi/files output.csv
-  python3 features.py /path/to/midi/files output.csv /path/to/corpus
-  python3 features.py melodies.json output.csv /path/to/corpus
-  python3 features.py /path/to/midi/files output.csv /path/to/corpus --target-viewpoints "onset,cpitch"
-  python3 features.py /path/to/midi/files output.csv /path/to/corpus --source-viewpoints "(cpint,cpintfref),onset"
-        """
-    )
-    
-    parser.add_argument(
-        'input_path',
-        help='Path to input MIDI directory or JSON file containing melody data'
-    )
-    
-    parser.add_argument(
-        'output_path', 
-        help='Path for output CSV file (extension will be added if missing)'
-    )
-    
-    parser.add_argument(
-        'corpus_path',
-        nargs='?',
-        default=None,
-        help='Optional path to corpus directory for corpus-based features and IDyOM pretraining'
-    )
-    
-    parser.add_argument(
-        '--target-viewpoints',
-        type=str,
-        default=None,
-        help='IDyOM target viewpoints as comma-separated list. Use parentheses for linked viewpoints. '
-             'Example: "onset,cpitch" or "(cpint,cpintfref)" or "onset,(cpint,cpintfref),cpitch"'
-    )
-    
-    parser.add_argument(
-        '--source-viewpoints', 
-        type=str,
-        default=None,
-        help='IDyOM source viewpoints as comma-separated list. Use parentheses for linked viewpoints. '
-             'Example: "onset,cpitch" or "(cpint,cpintfref)" or "onset,(cpint,cpintfref),cpitch"'
-    )
-    
-    args = parser.parse_args()
-    
-    # Parse viewpoints
-    target_viewpoints = parse_viewpoints(args.target_viewpoints)
-    source_viewpoints = parse_viewpoints(args.source_viewpoints)
-    
-    try:
-        get_all_features(
-            args.input_path, 
-            args.output_path, 
-            args.corpus_path,
-            target_viewpoints,
-            source_viewpoints
-        )
-        print("Feature extraction completed successfully!")
-    except Exception as e:
-        print(f"Error during feature extraction: {e}", file=sys.stderr)
-        sys.exit(1)
+    print("Starting job...\n")
 
+    corpus_stats = _setup_corpus_statistics(config, output_file)
 
-if __name__ == "__main__":
-    main()
+    melody_data_list = _load_melody_data(input_directory)
+    
+    if not melody_data_list:
+        print("No valid monophonic melodies found to process.")
+        return
+
+    idyom_results_dict = _run_idyom_analysis(input_directory, config)
+
+    start_time = time.time()
+
+    headers, melody_args, timing_stats = _setup_parallel_processing(
+        melody_data_list, corpus_stats, idyom_results_dict, config
+    )
+
+    spinner = SpinnerThread()
+    spinner.start()
+
+    all_features = _process_melodies_parallel(
+        melody_args, headers, melody_data_list, idyom_results_dict, timing_stats, spinner
+    )
+
+    if not all_features:
+        print("No features were successfully extracted from any melodies")
+        return
+
+    _process_results_and_output(
+        all_features, headers, output_file, start_time, timing_stats
+    )

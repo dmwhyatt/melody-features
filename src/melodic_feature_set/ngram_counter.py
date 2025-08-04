@@ -1,6 +1,5 @@
 from collections import Counter
-from typing import Dict, Optional, Union
-import numpy as np
+from typing import Dict, Optional
 import math
 
 class NGramCounter:
@@ -13,13 +12,15 @@ class NGramCounter:
         self._freq_spec = None
         self._count_values = None
 
-    def count_ngrams(self, tokens: list) -> None:
-        """Count n-grams in the token sequence.
+    def count_ngrams(self, tokens: list, max_order: int = 5) -> None:
+        """Count n-grams in the token sequence up to max_order length.
         
         Parameters
         ----------
         tokens : list
             List of tokens to count n-grams from
+        max_order : int, optional
+            Maximum n-gram length to count (default: 5)
         """
         # Clear previous counts and caches
         self.ngram_counts = {}
@@ -27,8 +28,8 @@ class NGramCounter:
         self._freq_spec = None
         self._count_values = None
         
-        # Count n-grams for each possible length up to 5
-        max_length = min(5, len(tokens))
+        # Count n-grams for each possible length up to max_order
+        max_length = min(max_order, len(tokens))
         for length in range(1, max_length + 1):
             for i in range(len(tokens) - length + 1):
                 ngram = tuple(tokens[i:i + length])
