@@ -93,6 +93,7 @@ from types import SimpleNamespace
 from pathlib import Path
 from typing import Union, Tuple, List, Dict
 import os
+import logging
 from multiprocessing import Pool, cpu_count
 from itertools import combinations
 from tqdm import tqdm
@@ -176,15 +177,16 @@ def check_r_packages_installed(install_missing: bool = False, n_retries: int = 3
 
 def install_r_package(package: str):
     """Install an R package."""
+    logger = logging.getLogger('melodic_feature_set')
     if package in r_cran_packages:
-        print(f"Installing CRAN package '{package}'...")
+        logger.info(f"Installing CRAN package '{package}'...")
         install_script = f"""
         utils::chooseCRANmirror(ind=1)
         utils::install.packages("{package}", dependencies=TRUE)
         """
         subprocess.run(["Rscript", "-e", install_script], check=True)
     elif package in r_github_packages:
-        print(f"Installing GitHub package '{package}'...")
+        logger.info(f"Installing GitHub package '{package}'...")
         repo = github_repos[package]
         install_script = f"""
         if (!requireNamespace("remotes", quietly = TRUE)) {{
@@ -198,6 +200,7 @@ def install_r_package(package: str):
 
 def install_dependencies():
     """Install all required R packages."""
+    logger = logging.getLogger('melodic_feature_set')
     # Check which packages need to be installed
     check_script = """
     packages <- c({packages})
@@ -219,14 +222,14 @@ def install_dependencies():
         missing_cran = json.loads(result.stdout.strip())
         
         if missing_cran:
-            print("Installing missing CRAN packages...")
+            logger.info("Installing missing CRAN packages...")
             cran_script = f"""
             utils::chooseCRANmirror(ind=1)
             utils::install.packages(c({", ".join([f'"{p}"' for p in missing_cran])}), dependencies=TRUE)
             """
             subprocess.run(["Rscript", "-e", cran_script], check=True)
         else:
-            print("Skipping install: All CRAN packages are already installed.")
+            logger.info("Skipping install: All CRAN packages are already installed.")
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error checking CRAN packages: {e.stderr}")
     
@@ -244,10 +247,10 @@ def install_dependencies():
         missing_github = json.loads(result.stdout.strip())
         
         if missing_github:
-            print("Installing missing GitHub packages...")
+            logger.info("Installing missing GitHub packages...")
             for package in missing_github:
                 repo = github_repos[package]
-                print(f"Installing {package} from {repo}...")
+                logger.info(f"Installing {package} from {repo}...")
                 install_script = f"""
                 if (!requireNamespace("remotes", quietly = TRUE)) {{
                     utils::install.packages("remotes")
@@ -256,11 +259,11 @@ def install_dependencies():
                 """
                 subprocess.run(["Rscript", "-e", install_script], check=True)
         else:
-            print("Skipping install: All GitHub packages are already installed.")
+            logger.info("Skipping install: All GitHub packages are already installed.")
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error checking GitHub packages: {e.stderr}")
     
-    print("All dependencies are installed and up to date.")
+    logger.info("All dependencies are installed and up to date.")
 
 def check_python_package_installed(package: str):
     """Check if a Python package is installed."""
@@ -557,10 +560,11 @@ def _batch_compute_similarities(args_list: List[Tuple]) -> List[float]:
 
 def _load_melody(file):
     """Helper function to load a melody file for parallel processing."""
+    logger = logging.getLogger('melodic_feature_set')
     try:
         return file.name, load_midi_file(file)
     except Exception as e:
-        print(f"Warning: Could not load {file.name}: {str(e)}")
+        logger.warning(f"Could not load {file.name}: {str(e)}")
         return None
 
 def get_similarity_from_midi(
@@ -620,7 +624,8 @@ def get_similarity_from_midi(
             raise ValueError(f"No MIDI files found in {midi_path1}")
         
         # Load all melodies in parallel with progress bar
-        print("Loading melodies...")
+        logger = logging.getLogger('melodic_feature_set')
+        logger.info("Loading melodies...")
         n_cores = n_cores or cpu_count()
         
         with Pool(n_cores) as pool:
@@ -636,7 +641,7 @@ def get_similarity_from_midi(
             raise ValueError("Need at least 2 valid MIDI files for comparison")
         
         # Prepare arguments for parallel processing
-        print("Computing similarities...")
+        logger.info("Computing similarities...")
         args = []
         file_pairs = []
         
@@ -659,7 +664,7 @@ def get_similarity_from_midi(
         
         # Save to file if output file specified
         if output_file:
-            print("Saving results...")
+            logger.info("Saving results...")
             import pandas as pd
             df = pd.DataFrame([
                 {
@@ -678,13 +683,13 @@ def get_similarity_from_midi(
                 output_file = output_file.with_suffix('.json')
             
             df.to_json(output_file, orient='records', indent=2)
-            print(f"Results saved to {output_file}")
+            logger.info(f"Results saved to {output_file}")
         
         return similarities
     
     # For single file comparison, only use first method and transformation
     if len(methods) > 1 or len(transformations) > 1:
-        print("Warning: Multiple methods/transformations provided for two-file pairwise comparison. Using first method and transformation.")
+        logger.warning("Multiple methods/transformations provided for two-file pairwise comparison. Using first method and transformation.")
     
     # Load MIDI files
     melody1_pitches, melody1_starts, melody1_ends = load_midi_file(midi_path1)

@@ -63,4 +63,5 @@ Since calculating similarities is highly modular in Melsim, we leave the user to
 
 ## Corpora
 
-We supply the Essen Corpus as an example corpus (Eck, 2024; Schaffrath, 1995).
+We supply the Essen Corpus as an example corpus (Eck, 2024; Schaffrath, 1995), as well as 
+"Traditional Flute Dataset for Score Alignment" (https://www.kaggle.com/datasets/jbraga/traditional-flute-dataset/data) for usage with `example.ipynb`.

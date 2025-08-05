@@ -4,11 +4,16 @@ Features are the product of an input list and at least one algorithm.
 """
 __author__ = "David Whyatt"
 
-from dataclasses import dataclass
+# Suppress warnings from external libraries before any other imports
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources is deprecated.*")
+
+from dataclasses import dataclass, field
 import json
 import math
 import csv
-import warnings
 import sys
 import os
 import tempfile
@@ -54,6 +59,85 @@ from natsort import natsorted
 import time
 import threading
 import mido
+import logging
+
+VALID_VIEWPOINTS = {
+    'onset', 'cpitch', 'dur', 'keysig', 'mode', 'tempo', 'pulses', 'barlength', 
+    'deltast', 'bioi', 'phrase', 'mpitch', 'accidental', 'dyn', 'voice', 'ornament', 
+    'comma', 'articulation', 'ioi', 'posinbar', 'dur-ratio', 'referent', 'cpint',
+    'contour', 'cpitch-class', 'cpcint', 'cpintfref', 'cpintfip', 'cpintfiph', 'cpintfib',
+    'inscale', 'ioi-ratio', 'ioi-contour', 'metaccent', 'bioi-ratio', 'bioi-contour',
+    'lphrase', 'cpint-size', 'newcontour', 'cpcint-size', 'cpcint-2', 'cpcint-3',
+    'cpcint-4', 'cpcint-5', 'cpcint-6', 'octave', 'tessitura', 'mpitch-class', 
+    'registral-direction', 'intervallic-difference', 'registral-return', 'proximity',
+    'closure', 'fib', 'crotchet', 'tactus', 'fiph', 'liph', 'thr-cpint-fib',
+    'thr-cpint-fiph', 'thr-cpint-liph', 'thr-cpint-crotchet', 'thr-cpint-tactus', 
+    'thr-cpintfref-liph', 'thr-cpintfref-fib','thr-cpint-cpintfref-liph' ,'thr-cpint-cpintfref-fib'}
+
+def _setup_logger(level: int = logging.INFO) -> logging.Logger:
+    """Set up and configure the logger for the melodic feature set.
+    
+    Parameters
+    ----------
+    level : int
+        Logging level (default: logging.INFO)
+        
+    Returns
+    -------
+    logging.Logger
+        Configured logger instance
+    """
+    logger = logging.getLogger('melodic_feature_set')
+    logger.setLevel(level)
+    
+    if not logger.handlers:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(level)
+        
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%H:%M:%S'
+        )
+        console_handler.setFormatter(formatter)
+        
+        logger.addHandler(console_handler)
+    
+    return logger
+
+
+def _validate_viewpoints(viewpoints: list[str], name: str) -> None:
+    """Validate that all viewpoints are valid.
+    
+    Parameters
+    ----------
+    viewpoints : list[str]
+        List of viewpoints to validate
+    name : str
+        Name of the parameter for error messages
+        
+    Raises
+    ------
+    ValueError
+        If any viewpoint is invalid
+    """
+    if not isinstance(viewpoints, list):
+        raise ValueError(f"{name} must be a list, got {type(viewpoints)}")
+    
+    all_viewpoints = set()
+    for viewpoint in viewpoints:
+        if isinstance(viewpoint, (list, tuple)):
+            if len(viewpoint) != 2:
+                raise ValueError(f"Linked viewpoints must be pairs, got {len(viewpoint)} elements: {viewpoint}")
+            all_viewpoints.update(viewpoint)
+        else:
+            all_viewpoints.add(viewpoint)
+    
+    invalid_viewpoints = all_viewpoints - VALID_VIEWPOINTS
+    if invalid_viewpoints:
+        raise ValueError(
+            f"Invalid viewpoint(s) in {name}: {', '.join(invalid_viewpoints)}.\n"
+            f"Valid viewpoints are: {', '.join(sorted(list(VALID_VIEWPOINTS)))}"
+        )
 
 # Setup config classes for the different feature sets
 @dataclass
@@ -77,7 +161,33 @@ class IDyOMConfig:
     source_viewpoints: list[str]
     ppm_order: int
     models: str
-    corpus: Optional[os.PathLike] = None 
+    corpus: Optional[os.PathLike] = None
+    
+    def __post_init__(self):
+        """Validate the configuration after initialization."""
+        # Validate viewpoints
+        _validate_viewpoints(self.target_viewpoints, "target_viewpoints")
+        _validate_viewpoints(self.source_viewpoints, "source_viewpoints")
+        
+        # Validate ppm_order
+        if not isinstance(self.ppm_order, int):
+            raise ValueError(f"ppm_order must be an integer, got {type(self.ppm_order)}")
+        if self.ppm_order < 0:
+            raise ValueError(f"ppm_order must be non-negative, got {self.ppm_order}")
+        
+        # Validate models
+        valid_models = {':stm', ':ltm', ':both'}
+        if not isinstance(self.models, str):
+            raise ValueError(f"models must be a string, got {type(self.models)}")
+        if self.models not in valid_models:
+            raise ValueError(f"models must be one of {valid_models}, got {self.models}")
+        
+        # Validate corpus path if provided
+        if self.corpus is not None:
+            if not isinstance(self.corpus, (str, os.PathLike)):
+                raise ValueError(f"corpus must be a string or PathLike, got {type(self.corpus)}")
+            if not Path(self.corpus).exists():
+                raise ValueError(f"corpus path does not exist: {self.corpus}") 
 
 
 @dataclass
@@ -96,6 +206,27 @@ class FantasticConfig:
     max_ngram_order: int
     phrase_gap: float
     corpus: Optional[os.PathLike] = None
+    
+    def __post_init__(self):
+        """Validate the configuration after initialization."""
+        # Validate max_ngram_order
+        if not isinstance(self.max_ngram_order, int):
+            raise ValueError(f"max_ngram_order must be an integer, got {type(self.max_ngram_order)}")
+        if self.max_ngram_order < 1:
+            raise ValueError(f"max_ngram_order must be at least 1, got {self.max_ngram_order}")
+        
+        # Validate phrase_gap
+        if not isinstance(self.phrase_gap, (int, float)):
+            raise ValueError(f"phrase_gap must be a number, got {type(self.phrase_gap)}")
+        if self.phrase_gap <= 0:
+            raise ValueError(f"phrase_gap must be positive, got {self.phrase_gap}")
+        
+        # Validate corpus path if provided
+        if self.corpus is not None:
+            if not isinstance(self.corpus, (str, os.PathLike)):
+                raise ValueError(f"corpus must be a string or PathLike, got {type(self.corpus)}")
+            if not Path(self.corpus).exists():
+                raise ValueError(f"corpus path does not exist: {self.corpus}")
 
 @dataclass
 class Config:
@@ -112,6 +243,30 @@ class Config:
     corpus: os.PathLike
     idyom: dict[str, IDyOMConfig]
     fantastic: FantasticConfig
+    
+    def __post_init__(self):
+        """Validate the configuration after initialization."""
+        # Validate corpus path
+        if not isinstance(self.corpus, (str, os.PathLike)):
+            raise ValueError(f"corpus must be a string or PathLike, got {type(self.corpus)}")
+        if not Path(self.corpus).exists():
+            raise ValueError(f"corpus path does not exist: {self.corpus}")
+        
+        # Validate idyom dictionary
+        if not isinstance(self.idyom, dict):
+            raise ValueError(f"idyom must be a dictionary, got {type(self.idyom)}")
+        if not self.idyom:
+            raise ValueError("idyom dictionary cannot be empty")
+        
+        for name, config in self.idyom.items():
+            if not isinstance(name, str):
+                raise ValueError(f"idyom dictionary keys must be strings, got {type(name)}")
+            if not isinstance(config, IDyOMConfig):
+                raise ValueError(f"idyom dictionary values must be IDyOMConfig objects, got {type(config)}")
+        
+        # Validate fantastic config
+        if not isinstance(self.fantastic, FantasticConfig):
+            raise ValueError(f"fantastic must be a FantasticConfig object, got {type(self.fantastic)}")
     
 
 # Pitch Features
@@ -2063,6 +2218,12 @@ def process_melody(args):
     tuple
         Tuple containing (melody_id, feature_dict, timings)
     """
+    # Suppress warnings in worker processes
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
+    warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+    warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources is deprecated.*")
+    
     start_total = time.time()
 
     melody_data, corpus_stats, idyom_features, phrase_gap, max_ngram_order = args
@@ -2120,16 +2281,21 @@ def process_melody(args):
         melody_features['corpus_features'] = get_corpus_features(mel, corpus_stats, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order)
         timings['corpus'] = time.time() - start
 
-    # Add pre-computed IDyOM features if available for this melody's ID
-    melody_id_str = str(melody_data['ID'])
-    if idyom_features and melody_id_str in idyom_features:
-        melody_features['idyom_features'] = idyom_features[melody_id_str]
+            # Add pre-computed IDyOM features if available for this melody's ID
+        melody_id_str = str(melody_data['melody_num'])
+        
+        if idyom_features and melody_id_str in idyom_features:
+            melody_features['idyom_features'] = idyom_features[melody_id_str]
+        else:
+            # Add default IDyOM features if not found
+            melody_features['idyom_features'] = {'mean_information_content': -1}
 
     timings['total'] = time.time() - start_total
 
     return melody_data['ID'], melody_features, timings
 
-def get_idyom_results(input_directory, idyom_target_viewpoints, idyom_source_viewpoints, models, ppm_order, corpus_path) -> dict:
+def get_idyom_results(input_directory, idyom_target_viewpoints, idyom_source_viewpoints, models, ppm_order, corpus_path, experiment_name="IDyOM_Feature_Set_Results") -> dict:
+    logger = logging.getLogger('melodic_feature_set')
     """Run IDyOM on the input MIDI directory and return mean information content for each melody.
     Uses the parameters supplied from Config dataclass to control IDyOM behaviour.
 
@@ -2138,6 +2304,7 @@ def get_idyom_results(input_directory, idyom_target_viewpoints, idyom_source_vie
     dict
         A dictionary mapping melody IDs to their mean information content.
     """
+    logger = logging.getLogger('melodic_feature_set')
 
     # Set default IDyOM viewpoints if not provided.
     if idyom_target_viewpoints is None:
@@ -2146,16 +2313,20 @@ def get_idyom_results(input_directory, idyom_target_viewpoints, idyom_source_vie
     if idyom_source_viewpoints is None:
         idyom_source_viewpoints = [('cpint', 'cpintfref')]
 
-    print("Creating temporary MIDI files with detected key signatures for IDyOM processing...")
+    logger.info("Creating temporary MIDI files with detected key signatures for IDyOM processing...")
     temp_dir = tempfile.mkdtemp(prefix="idyom_key_")
     original_input_dir = input_directory
     input_directory = create_temp_midi_with_key_signature(input_directory, temp_dir)
+    
+    temp_files = glob.glob(os.path.join(input_directory, '*.mid'))
+    temp_files.extend(glob.glob(os.path.join(input_directory, '*.midi')))
 
     try:
+        # Try without pretraining first to see if that's the issue
         dat_file_path = run_idyom(input_directory,
-                pretraining_path=corpus_path,
+                pretraining_path=corpus_path,  # Use the actual corpus path
                 output_dir='.',
-                description="IDyOM_Feature_Set_Results",
+                experiment_name=experiment_name,
                 target_viewpoints=idyom_target_viewpoints,
                 source_viewpoints=idyom_source_viewpoints,
                 models=models,
@@ -2163,21 +2334,33 @@ def get_idyom_results(input_directory, idyom_target_viewpoints, idyom_source_vie
                 ppm_order=ppm_order)
 
         if not dat_file_path:
-            print("Warning: run_idyom did not produce an output file. Skipping IDyOM features.")
+            logger.warning("run_idyom did not produce an output file. Skipping IDyOM features.")
             return {}
 
+
+
         # Get a naturally sorted list of MIDI files to match IDyOM's processing order.
-        # Use original input directory for file mapping if we created temp files
-        mapping_dir = original_input_dir if temp_dir else input_directory
-        midi_files = natsorted(glob.glob(os.path.join(mapping_dir, '*.mid')))
+        # Since we created temp files, IDyOM processed the temp directory files
+        if temp_dir:
+            # Use the temp directory files since that's what IDyOM actually processed
+            midi_files = natsorted(glob.glob(os.path.join(input_directory, '*.mid')))
+        else:
+            # Use original input directory for file mapping if no temp files were created
+            midi_files = natsorted(glob.glob(os.path.join(original_input_dir, '*.mid')))
+            midi_files.extend(natsorted(glob.glob(os.path.join(original_input_dir, '*.midi'))))
         
         idyom_results = {}
         try:
             with open(dat_file_path, 'r', encoding='utf-8') as f:
                 next(f)  # Skip header
+                
+                line_count = 0
                 for line in f:
+                    line_count += 1
                     parts = line.strip().split()
+                    
                     if len(parts) < 3:
+                        logger.warning(f"Skipping malformed line: {line.strip()}")
                         continue # Skip malformed lines
 
                     try:
@@ -2186,21 +2369,21 @@ def get_idyom_results(input_directory, idyom_target_viewpoints, idyom_source_vie
                         mean_ic = float(parts[2])
                         
                         if 0 <= melody_idx < len(midi_files):
-                            # Map the index to the actual filename.
-                            melody_id = os.path.basename(midi_files[melody_idx])
+                            # Map the index to the melody number (1-based index)
+                            melody_id = str(melody_idx + 1)
                             idyom_results[melody_id] = {'mean_information_content': mean_ic}
                         else:
-                            print(f"Warning: IDyOM returned an out-of-bounds index: {parts[0]}")
+                            logger.warning(f"IDyOM returned an out-of-bounds index: {parts[0]} (max: {len(midi_files)-1})")
                     except (ValueError, IndexError) as e:
-                        print(f"Warning: Could not parse line in IDyOM output: '{line.strip()}'. Error: {e}")
+                        logger.warning(f"Could not parse line in IDyOM output: '{line.strip()}'. Error: {e}")
 
             os.remove(dat_file_path)
 
         except FileNotFoundError:
-            print(f"Warning: IDyOM output file not found at {dat_file_path}. Skipping IDyOM features.")
+            logger.warning(f"IDyOM output file not found at {dat_file_path}. Skipping IDyOM features.")
             return {}
         except Exception as e:
-            print(f"Error parsing IDyOM output file: {e}. Skipping IDyOM features.")
+            logger.error(f"Error parsing IDyOM output file: {e}. Skipping IDyOM features.")
             if os.path.exists(dat_file_path):
                 os.remove(dat_file_path)
             return {}
@@ -2210,7 +2393,7 @@ def get_idyom_results(input_directory, idyom_target_viewpoints, idyom_source_vie
     finally:
         # Clean up temporary directory if it was created
         if temp_dir and os.path.exists(temp_dir):
-            print(f"Cleaning up temporary directory: {temp_dir}")
+            logger.info(f"Cleaning up temporary directory: {temp_dir}")
             shutil.rmtree(temp_dir)
 
 
@@ -2240,6 +2423,7 @@ def create_temp_midi_with_key_signature(input_directory: str, temp_dir: str) -> 
     str
         Path to the temporary directory containing MIDI files with key signatures
     """
+    logger = logging.getLogger('melodic_feature_set')
     from mido import MidiFile, MetaMessage
 
     # Create temporary directory
@@ -2249,46 +2433,63 @@ def create_temp_midi_with_key_signature(input_directory: str, temp_dir: str) -> 
     midi_files = glob.glob(os.path.join(input_directory, '*.mid'))
     midi_files.extend(glob.glob(os.path.join(input_directory, '*.midi')))
 
-    print(f"Processing {len(midi_files)} MIDI files for key signature detection...")
+    logger.info(f"Processing {len(midi_files)} MIDI files for key signature detection...")
     
+    successful_copies = 0
     for midi_file in midi_files:
         try:
-            midi_dict = import_midi(midi_file)
-            if midi_dict is None:
-                print(f"Warning: Could not import {midi_file}")
-                continue
-                
-            melody = Melody(midi_dict)
-            pitch_classes = [pitch % 12 for pitch in melody.pitches]
-            
-            key_correlations = compute_tonality_vector(pitch_classes)
-            detected_key = key_correlations[0][0]  # Get the most likely key
-            
-            mido_key = to_mido_key_string(detected_key)
-            
-            mid = MidiFile(midi_file)
- 
-            # Remove existing key signatures and add new one
-            # We have to be consistent in how we handle key across the whole set of features
-            # so we will always overwrite whatever key is in the original file
-            for track in mid.tracks:
-                track[:] = [msg for msg in track if not (msg.type == 'key_signature')]
-
-            # Add new key signature at the beginning
-            key_msg = MetaMessage('key_signature', key=mido_key, time=0)
-            mid.tracks[0].insert(0, key_msg)
-
-            # Save the modified MIDI file
-            output_filename = os.path.basename(midi_file)
-            output_path = os.path.join(temp_dir, output_filename)
-            mid.save(output_path)
-
-        except Exception as e:
-            print(f"Warning: Could not process {midi_file}: {str(e)}")
-            # Copy the original file as fallback
-            output_filename = os.path.basename(midi_file)
+            # First, try to copy the original file as a fallback
+            # Always save with .mid extension for IDyOM compatibility
+            base_filename = os.path.splitext(os.path.basename(midi_file))[0]
+            output_filename = base_filename + '.mid'
             output_path = os.path.join(temp_dir, output_filename)
             shutil.copy2(midi_file, output_path)
+            successful_copies += 1
+            
+            # Now try to modify it with key signature detection
+            try:
+                midi_dict = import_midi(midi_file)
+                if midi_dict is None:
+                    logger.warning(f"Could not import {midi_file}, using original file")
+                    continue
+                    
+                melody = Melody(midi_dict)
+                if not melody.pitches:  # Skip if no pitches
+                    logger.warning(f"No pitches found in {midi_file}, using original file")
+                    continue
+                    
+                pitch_classes = [pitch % 12 for pitch in melody.pitches]
+                
+                key_correlations = compute_tonality_vector(pitch_classes)
+                detected_key = key_correlations[0][0]  # Get the most likely key
+                
+                mido_key = to_mido_key_string(detected_key)
+                
+                mid = MidiFile(midi_file)
+     
+                # Remove existing key signatures and add new one
+                for track in mid.tracks:
+                    track[:] = [msg for msg in track if not (msg.type == 'key_signature')]
+
+                # Add new key signature at the beginning
+                key_msg = MetaMessage('key_signature', key=mido_key, time=0)
+                mid.tracks[0].insert(0, key_msg)
+
+                # Save the modified MIDI file with .mid extension
+                mid.save(output_path)
+
+            except Exception as e:
+                logger.warning(f"Could not add key signature to {midi_file}: {str(e)}, using original file")
+                # The original file was already copied, so we're good
+
+        except Exception as e:
+            logger.error(f"Could not copy {midi_file}: {str(e)}")
+            continue
+    
+    # Verify files were created (all should be .mid files now)
+    created_files = glob.glob(os.path.join(temp_dir, '*.mid'))
+    
+    logger.info(f"Successfully created {len(created_files)} files in temporary directory")
     
     return temp_dir
 
@@ -2340,11 +2541,11 @@ def _setup_default_config(config: Optional[Config]) -> Config:
     """
     if config is None:
         config = Config(
-            corpus="src/melodic_feature_set/Essen_Corpus",
+            corpus=str(Path(__file__).parent / "Essen_Corpus"),
             idyom={
                 'default_pitch': IDyOMConfig(
                     target_viewpoints=['cpitch'],
-                    source_viewpoints=['cpint', 'cpintfref'],
+                    source_viewpoints=[('cpint', 'cpintfref')],
                     ppm_order=1,
                     models=':both',
                     corpus=None)
@@ -2397,33 +2598,38 @@ def _setup_corpus_statistics(config: Config, output_file: str) -> Optional[dict]
     FileNotFoundError
         If corpus path is not a valid directory
     """
+    logger = logging.getLogger('melodic_feature_set')
+    
     # Determine which corpus to use for FANTASTIC
     fantastic_corpus = config.fantastic.corpus if config.fantastic.corpus is not None else config.corpus
     
     if not fantastic_corpus:
-        print("No corpus path provided, corpus-dependent features will not be computed.")
+        logger.info("No corpus path provided, corpus-dependent features will not be computed.")
         return None
     
     if not Path(fantastic_corpus).is_dir():
         raise FileNotFoundError(f"Corpus path is not a valid directory: {fantastic_corpus}")
 
-    print(f"--- Generating corpus statistics from: {fantastic_corpus} ---")
+    logger.info(f"Generating corpus statistics from: {fantastic_corpus}")
 
     # Define a persistent path for the corpus stats file.
     corpus_name = Path(fantastic_corpus).name
     corpus_stats_path = Path(output_file).parent / f"{corpus_name}_corpus_stats.json"
-    print(f"Corpus statistics file will be at: {corpus_stats_path}")
+    logger.info(f"Corpus statistics file will be at: {corpus_stats_path}")
+
+    # Ensure the directory exists
+    corpus_stats_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Generate and load corpus stats.
     if not corpus_stats_path.exists():
-        print("Corpus statistics file not found. Generating a new one...")
+        logger.info("Corpus statistics file not found. Generating a new one...")
         make_corpus_stats(fantastic_corpus, str(corpus_stats_path))
-        print("Corpus statistics generated.")
+        logger.info("Corpus statistics generated.")
     else:
-        print("Existing corpus statistics file found.")
+        logger.info("Existing corpus statistics file found.")
 
     corpus_stats = load_corpus_stats(str(corpus_stats_path))
-    print("Corpus statistics loaded successfully.")
+    logger.info("Corpus statistics loaded successfully.")
     
     return corpus_stats
 
@@ -2448,6 +2654,7 @@ def _load_melody_data(input_directory: os.PathLike) -> List[dict]:
     ValueError
         If input is neither a directory nor a JSON file
     """
+    logger = logging.getLogger('melodic_feature_set')
     from multiprocessing import Pool, cpu_count
     
     melody_data_list = []
@@ -2473,9 +2680,9 @@ def _load_melody_data(input_directory: os.PathLike) -> List[dict]:
                         if check_is_monophonic(temp_mel):
                             melody_data_list.append(midi_data)
                         else:
-                            print(f"Warning: Skipping polyphonic file: {midi_file}")
+                            logger.warning(f"Skipping polyphonic file: {midi_file}")
                 except Exception as e:
-                    print(f"Error importing {midi_file}: {str(e)}")
+                    logger.error(f"Error importing {midi_file}: {str(e)}")
                     continue
     elif input_directory.endswith('.json'):
         # Handle JSON file
@@ -2489,13 +2696,13 @@ def _load_melody_data(input_directory: os.PathLike) -> List[dict]:
                 if check_is_monophonic(temp_mel):
                     melody_data_list.append(melody_data)
                 else:
-                    print(f"Warning: Skipping polyphonic melody from JSON: {melody_data.get('ID', 'Unknown ID')}")
+                    logger.warning(f"Skipping polyphonic melody from JSON: {melody_data.get('ID', 'Unknown ID')}")
 
     else:
         raise ValueError(f"Input must be either a directory containing MIDI files or a JSON file. Got: {input_directory}")
     
     melody_data_list = [m for m in melody_data_list if m is not None]
-    print(f"Processing {len(melody_data_list)} melodies")
+    logger.info(f"Processing {len(melody_data_list)} melodies")
 
     if not melody_data_list:
         return []
@@ -2522,10 +2729,11 @@ def _run_idyom_analysis(input_directory: os.PathLike, config: Config) -> Dict[st
     Dict[str, dict]
         Dictionary mapping IDyOM configuration names to their results
     """
+    logger = logging.getLogger('melodic_feature_set')
     idyom_results_dict = {}
     for idyom_name, idyom_config in config.idyom.items():
         idyom_corpus = idyom_config.corpus if idyom_config.corpus is not None else config.corpus
-        print(f"\nRunning IDyOM analysis for '{idyom_name}' with corpus: {idyom_corpus}")
+        logger.info(f"Running IDyOM analysis for '{idyom_name}' with corpus: {idyom_corpus}")
         
         idyom_results = get_idyom_results(
             input_directory,
@@ -2533,7 +2741,8 @@ def _run_idyom_analysis(input_directory: os.PathLike, config: Config) -> Dict[st
             idyom_config.source_viewpoints,
             idyom_config.models,
             idyom_config.ppm_order,
-            idyom_corpus
+            idyom_corpus,
+            f"IDyOM_{idyom_name}_Results"
         )
         idyom_results_dict[idyom_name] = idyom_results
     
@@ -2560,6 +2769,12 @@ def _setup_parallel_processing(melody_data_list: List[dict], corpus_stats: Optio
     Tuple[List[str], List, Dict[str, List[float]]]
         Headers, melody arguments, and timing statistics dictionary
     """
+    # Suppress warnings at the system level
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
+    warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+    warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources is deprecated.*")
+    
     from multiprocessing import cpu_count
     
     # Process first melody to get header structure
@@ -2594,10 +2809,11 @@ def _setup_parallel_processing(melody_data_list: List[dict], corpus_stats: Optio
             # Already prefixed for IDyOM
             headers.append(category)
 
-    print("Starting parallel processing...\n")
+    logger = logging.getLogger('melodic_feature_set')
+    logger.info("Starting parallel processing...")
     # Create pool of workers
     n_cores = cpu_count()
-    print(f"Using {n_cores} CPU cores")
+    logger.info(f"Using {n_cores} CPU cores")
 
     # Prepare arguments for parallel processing
     melody_args = [
@@ -2670,7 +2886,8 @@ def _process_melodies_parallel(melody_args: List, headers: List[str], melody_dat
                             if header.startswith('idyom_'):
                                 prefix, feature_name = header.split('.', 1)
                                 idyom_name = prefix[len('idyom_'):-len('_features')]
-                                value = idyom_results_dict.get(idyom_name, {}).get(melody_id, {}).get(feature_name, 0.0)
+                                # Use melody_num for IDyOM lookup since IDyOM results are indexed by melody number
+                                value = idyom_results_dict.get(idyom_name, {}).get(str(melody_num), {}).get(feature_name, 0.0)
                                 row.append(value)
                             else:
                                 category, feature_name = header.split('.', 1)
@@ -2681,7 +2898,8 @@ def _process_melodies_parallel(melody_args: List, headers: List[str], melody_dat
                         for category, duration in timings.items():
                             timing_stats[category].append(duration)
                     except Exception as e:
-                        print(f"\nError processing melody {i}: {str(e)}")
+                        logger = logging.getLogger('melodic_feature_set')
+                        logger.error(f"Error processing melody {i}: {str(e)}")
                         continue
         else:
             # Process melodies sequentially when imported if 
@@ -2702,7 +2920,8 @@ def _process_melodies_parallel(melody_args: List, headers: List[str], melody_dat
                         if header.startswith('idyom_'):
                             prefix, feature_name = header.split('.', 1)
                             idyom_name = prefix[len('idyom_'):-len('_features')]
-                            value = idyom_results_dict.get(idyom_name, {}).get(melody_id, {}).get(feature_name, 0.0)
+                            # Use melody_num for IDyOM lookup since IDyOM results are indexed by melody number
+                            value = idyom_results_dict.get(idyom_name, {}).get(str(melody_num), {}).get(feature_name, 0.0)
                             row.append(value)
                         else:
                             category, feature_name = header.split('.', 1)
@@ -2715,7 +2934,8 @@ def _process_melodies_parallel(melody_args: List, headers: List[str], melody_dat
                         timing_stats[category].append(duration)
                         
                 except Exception as e:
-                    print(f"\nError processing melody {i}: {str(e)}")
+                    logger = logging.getLogger('melodic_feature_set')
+                    logger.error(f"Error processing melody {i}: {str(e)}")
                     continue
     finally:
         # Stop spinner thread
@@ -2741,7 +2961,8 @@ def _process_results_and_output(all_features: List[List], headers: List[str], ou
     timing_stats : Dict[str, List[float]]
         Timing statistics dictionary
     """
-    print("Processing complete")
+    logger = logging.getLogger('melodic_feature_set')
+    logger.info("Processing complete")
 
     # Sort results by melody_id
     all_features.sort(key=lambda x: x[0])
@@ -2753,18 +2974,34 @@ def _process_results_and_output(all_features: List[List], headers: List[str], ou
         writer.writerows(all_features)
 
     end_time = time.time()
-    print(f"\nTotal processing time: {end_time - start_time:.2f} seconds")
-    print(f"Results written to {output_file}")
+    logger.info(f"Total processing time: {end_time - start_time:.2f} seconds")
+    logger.info(f"Results written to {output_file}")
 
     # Print timing statistics
-    print("\nTiming Statistics (average milliseconds per melody):")
+    logger.info("Timing Statistics (average milliseconds per melody):")
     for category, times in timing_stats.items():
         if times:  # Only print if we have timing data
             avg_time = sum(times) / len(times) * 1000  # Convert to milliseconds
-            print(f"{category:15s}: {avg_time:8.2f}ms")
+            logger.info(f"{category:15s}: {avg_time:8.2f}ms")
 
 
-def get_all_features(input_directory: os.PathLike, output_file: str, config: Optional[Config] = None) -> None:
+def _cleanup_idyom_temp_output():
+    """Clean up any existing IDyOM temporary output directory to prevent conflicts."""
+    import shutil
+    from pathlib import Path
+    
+    idyom_temp_dir = Path("idyom_temp_output")
+    if idyom_temp_dir.exists():
+        logger = logging.getLogger('melodic_feature_set')
+        logger.info(f"Cleaning up existing IDyOM temporary directory: {idyom_temp_dir}")
+        try:
+            shutil.rmtree(idyom_temp_dir)
+            logger.info("Successfully cleaned up IDyOM temporary directory")
+        except Exception as e:
+            logger.warning(f"Could not clean up IDyOM temporary directory: {e}")
+
+
+def get_all_features(input_directory: os.PathLike, output_file: str, config: Optional[Config] = None, log_level: int = logging.INFO) -> None:
     """Calculate a multitude of features from across the computational melody analysis field.
     This function generates a CSV file with a row for every melody in the supplied input 
     directory of MIDI files. 
@@ -2786,12 +3023,26 @@ def get_all_features(input_directory: os.PathLike, output_file: str, config: Opt
         If idyom.corpus or fantastic.corpus is set, those take precedence over config.corpus for their respective methods.
         If multiple IDyOM configs are provided, IDyOM will run for each config and features for each 
         will be included with an identifier in the output.
+    log_level : int
+        Logging level (default: logging.INFO)
 
     Returns
     -------
     A CSV file with a row for every melody in the input directory.
     
     """
+    # Suppress warnings at the system level
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
+    warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+    warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources is deprecated.*")
+    
+    # Set up logger
+    logger = _setup_logger(log_level)
+    
+    # Clean up any existing IDyOM temporary output directory
+    _cleanup_idyom_temp_output()
+    
     # Ensure output file has .csv extension
     if not output_file.endswith('.csv'):
         output_file = output_file + '.csv'
@@ -2799,14 +3050,14 @@ def get_all_features(input_directory: os.PathLike, output_file: str, config: Opt
     config = _setup_default_config(config)
     _validate_config(config)
 
-    print("Starting job...\n")
+    logger.info("Starting feature extraction job...")
 
     corpus_stats = _setup_corpus_statistics(config, output_file)
 
     melody_data_list = _load_melody_data(input_directory)
     
     if not melody_data_list:
-        print("No valid monophonic melodies found to process.")
+        logger.warning("No valid monophonic melodies found to process.")
         return
 
     idyom_results_dict = _run_idyom_analysis(input_directory, config)
@@ -2825,7 +3076,7 @@ def get_all_features(input_directory: os.PathLike, output_file: str, config: Opt
     )
 
     if not all_features:
-        print("No features were successfully extracted from any melodies")
+        logger.warning("No features were successfully extracted from any melodies")
         return
 
     _process_results_and_output(

@@ -1,7 +1,13 @@
+import warnings
 import pretty_midi
 import os
-from melodic_feature_set.representations import Melody
+import logging
 from mido.midifiles.meta import KeySignatureError
+
+# Suppress warnings from external libraries
+warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources is deprecated.*")
 
 def import_midi(midi_file: str) -> dict:
     """Import a MIDI file and return a dictionary with melody data.
@@ -22,6 +28,8 @@ def import_midi(midi_file: str) -> dict:
         - ends: List of note end times
         Returns None if the file cannot be imported
     """
+    logger = logging.getLogger('melodic_feature_set')
+    
     try:
         # Parse the MIDI file
         midi_data = pretty_midi.PrettyMIDI(midi_file)
@@ -34,7 +42,7 @@ def import_midi(midi_file: str) -> dict:
                 break
                 
         if melody_track is None:
-            print(f"Warning: No melody track found in {midi_file}")
+            logger.warning(f"No melody track found in {midi_file}")
             return None
             
         # Extract note data
@@ -57,8 +65,8 @@ def import_midi(midi_file: str) -> dict:
         }
         
     except (KeySignatureError, ValueError, IOError) as e:
-        print(f"Warning: Could not import {midi_file}: {str(e)}")
+        logger.warning(f"Could not import {midi_file}: {str(e)}")
         return None
     except Exception as e:
-        print(f"Warning: Unexpected error importing {midi_file}: {str(e)}")
+        logger.warning(f"Unexpected error importing {midi_file}: {str(e)}")
         return None

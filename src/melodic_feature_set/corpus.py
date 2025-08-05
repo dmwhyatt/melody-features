@@ -1,3 +1,9 @@
+# Suppress warnings from external libraries BEFORE any imports
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources is deprecated.*")
+
 """
 Module for computing corpus-based features from melodic n-grams, similar to FANTASTIC's
 implementation. This module handles the corpus analysis and saves statistics to JSON.
@@ -5,6 +11,7 @@ The actual feature calculations are handled in features.py.
 """
 from collections import Counter
 import json
+import logging
 from typing import List, Dict, Tuple
 import multiprocessing as mp
 from pathlib import Path
@@ -27,6 +34,12 @@ def process_melody_ngrams(args) -> set:
     set
         Set of unique n-grams found in the melody
     """
+    # Suppress warnings in worker processes
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
+    warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+    warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources is deprecated.*")
+    
     melody, n_range = args
     tokenizer = FantasticTokenizer()
 
@@ -67,6 +80,12 @@ def compute_corpus_ngrams(melodies: List[Melody], n_range: Tuple[int, int] = (1,
     Dict
         Dictionary containing corpus-wide n-gram statistics
     """
+    # Suppress warnings at the system level
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
+    warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+    warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources is deprecated.*")
+    
     # Prepare arguments for multiprocessing
     args = [(melody, n_range) for melody in melodies]
 
@@ -111,6 +130,9 @@ def save_corpus_stats(stats: Dict, filename: str) -> None:
     # Ensure filename has .json extension
     if not filename.endswith('.json'):
         filename = filename + '.json'
+    
+    # Ensure the directory exists
+    Path(filename).parent.mkdir(parents=True, exist_ok=True)
         
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(stats, f, indent=2)
@@ -170,13 +192,20 @@ def load_midi_melody(midi_path: str) -> Melody:
     Melody or None
         Loaded melody object, or None if the file could not be loaded
     """
+    # Suppress warnings in worker processes
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
+    warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+    warnings.filterwarnings("ignore", category=UserWarning, message=".*pkg_resources is deprecated.*")
+    
+    logger = logging.getLogger('melodic_feature_set')
     try:
         melody_data = import_midi(midi_path)
         if melody_data is None:
             return None
         return Melody(melody_data, tempo=100)
     except Exception as e:
-        print(f"Warning: Error creating Melody object from {midi_path}: {str(e)}")
+        logger.warning(f"Error creating Melody object from {midi_path}: {str(e)}")
         return None
 
 def load_melodies_from_directory(directory: str, file_type: str = "json") -> List[Melody]:
@@ -194,6 +223,7 @@ def load_melodies_from_directory(directory: str, file_type: str = "json") -> Lis
     List[Melody]
         List of loaded melody objects
     """
+    logger = logging.getLogger('melodic_feature_set')
     directory = Path(directory)
     if not directory.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
@@ -208,7 +238,7 @@ def load_melodies_from_directory(directory: str, file_type: str = "json") -> Lis
             
         melody_data = read_midijson(str(json_files[0]))
         num_melodies = len(melody_data)
-        print(f"Found {num_melodies} melodies in {json_files[0]}")
+        logger.info(f"Found {num_melodies} melodies in {json_files[0]}")
         
         # Create arguments for parallel loading
         num_cores = mp.cpu_count()
@@ -228,7 +258,7 @@ def load_melodies_from_directory(directory: str, file_type: str = "json") -> Lis
         if not midi_files:
             raise FileNotFoundError(f"No MIDI files found in {directory}")
             
-        print(f"Found {len(midi_files)} MIDI files")
+        logger.info(f"Found {len(midi_files)} MIDI files")
         
         # Load melodies in parallel
         num_cores = mp.cpu_count()
@@ -253,13 +283,14 @@ def make_corpus_stats(midi_dir: str, output_file: str) -> None:
     output_file : str
         Path where to save the corpus statistics JSON file
     """
+    logger = logging.getLogger('melodic_feature_set')
     # Load melodies from MIDI files
     melodies = load_melodies_from_directory(midi_dir, file_type="midi")
     # Filter out None values
     melodies = [m for m in melodies if m is not None]
     if not melodies:
         raise ValueError("No valid melodies could be processed from the directory. Check if the files are valid MIDI files.")
-    print(f"Processing {len(melodies)} valid melodies")
+    logger.info(f"Processing {len(melodies)} valid melodies")
 
     # Compute corpus statistics
     corpus_stats = compute_corpus_ngrams(melodies)
@@ -269,9 +300,9 @@ def make_corpus_stats(midi_dir: str, output_file: str) -> None:
 
     # Load and verify
     loaded_stats = load_corpus_stats(output_file)
-    print("Corpus statistics saved and loaded successfully.")
-    print(f"Corpus size: {loaded_stats['corpus_size']} melodies")
-    print(f"N-gram lengths: {loaded_stats['n_range']}")
+    logger.info("Corpus statistics saved and loaded successfully.")
+    logger.info(f"Corpus size: {loaded_stats['corpus_size']} melodies")
+    logger.info(f"N-gram lengths: {loaded_stats['n_range']}")
 
 
 def make_corpus_stats_from_json(json_file: str, output_file: str, n_range: Tuple[int, int] = (1, 6)) -> None:
@@ -286,15 +317,16 @@ def make_corpus_stats_from_json(json_file: str, output_file: str, n_range: Tuple
     n_range : Tuple[int, int], optional
         Range of n-gram lengths to consider (min, max), by default (1, 6)
     """
+    logger = logging.getLogger('melodic_feature_set')
     # Load melody data from JSON
-    print(f"Loading melodies from JSON file: {json_file}")
+    logger.info(f"Loading melodies from JSON file: {json_file}")
     melody_data = read_midijson(json_file)
     
     if not melody_data:
-        print("Error: No melody data found in JSON file")
+        logger.error("No melody data found in JSON file")
         exit(1)
     
-    print(f"Found {len(melody_data)} melodies in JSON file")
+    logger.info(f"Found {len(melody_data)} melodies in JSON file")
     
     # Convert to Melody objects
     melodies = []
@@ -303,14 +335,14 @@ def make_corpus_stats_from_json(json_file: str, output_file: str, n_range: Tuple
             melody = Melody(data, tempo=100)
             melodies.append(melody)
         except Exception as e:
-            print(f"Warning: Error creating Melody object from entry {i}: {str(e)}")
+            logger.warning(f"Error creating Melody object from entry {i}: {str(e)}")
             continue
     
     # Filter out None values
     melodies = [m for m in melodies if m is not None]
     if not melodies:
         raise ValueError("No valid melodies could be processed from the JSON file.")
-    print(f"Processing {len(melodies)} valid melodies")
+    logger.info(f"Processing {len(melodies)} valid melodies")
 
     # Compute corpus statistics
     corpus_stats = compute_corpus_ngrams(melodies, n_range)
@@ -320,6 +352,6 @@ def make_corpus_stats_from_json(json_file: str, output_file: str, n_range: Tuple
 
     # Load and verify
     loaded_stats = load_corpus_stats(output_file)
-    print("Corpus statistics saved and loaded successfully.")
-    print(f"Corpus size: {loaded_stats['corpus_size']} melodies")
-    print(f"N-gram lengths: {loaded_stats['n_range']}")
+    logger.info("Corpus statistics saved and loaded successfully.")
+    logger.info(f"Corpus size: {loaded_stats['corpus_size']} melodies")
+    logger.info(f"N-gram lengths: {loaded_stats['n_range']}")

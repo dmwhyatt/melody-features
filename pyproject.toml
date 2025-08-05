@@ -1,6 +1,6 @@
 [project]
 name = "melodic_feature_set_Dav8Circle"
-version = "0.0.9"
+version = "0.0.10"
 authors = [
   { name="David Whyatt", email="dmw56@cam.ac.uk" },
 ]

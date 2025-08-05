@@ -20,6 +20,7 @@ Then, run it:
 """
 import os
 import subprocess
+import logging
 from pathlib import Path
 from natsort import natsorted
 from glob import glob
@@ -88,6 +89,7 @@ def start_idyom():
     
     def fixed_get_files_from_paths(self, path):
         """Fixed version of _get_files_from_paths that properly filters MIDI and Kern files"""
+        logger = logging.getLogger('melodic_feature_set')
         # Ensure the path ends with a slash for proper directory traversal
         if not path.endswith('/'):
             path = path + '/'
@@ -104,7 +106,7 @@ def start_idyom():
                 if file_extension == ".mid" or file_extension == ".krn":
                     files.append(file)
             else:
-                print(f"Skipping directory: {file}")
+                logger.debug(f"Skipping directory: {file}")
         
         return natsorted(files)
     
@@ -126,6 +128,7 @@ def run_idyom(
     detail=3,
     ppm_order=None
 ):
+    logger = logging.getLogger('melodic_feature_set')
     """
     Run IDyOM on a directory of MIDI files.
 
@@ -159,72 +162,115 @@ def run_idyom(
             f"Valid viewpoints are: {', '.join(sorted(list(VALID_VIEWPOINTS)))}"
         )
         
-    # 1. Check if IDyOM is installed and prompt user if not
+    logger = logging.getLogger('melodic_feature_set')
     if not is_idyom_installed():
-        print("IDyOM installation not found.")
+        logger.warning("IDyOM installation not found.")
         try:
             response = input("Would you like to install it now? (y/n): ")
             if response.lower().strip() == 'y':
-                print("Running installation script...")
+                logger.info("Running installation script...")
                 install_idyom()
-                print("Installation complete.")
+                logger.info("Installation complete.")
             else:
-                print("Installation cancelled. Aborting.")
+                logger.info("Installation cancelled. Aborting.")
                 return None
         except (EOFError, KeyboardInterrupt):
-            print("\nNon-interactive mode detected. Please install IDyOM manually by running install_idyom.sh")
+            logger.warning("Non-interactive mode detected. Please install IDyOM manually by running install_idyom.sh")
             return None
 
-    # 2. Start IDyOM and get the patched library object
-    print("Starting IDyOM...")
+    logger.info("Starting IDyOM...")
     py2lisp = start_idyom()
     if not py2lisp:
-        print("Fatal: Failed to start IDyOM.")
+        logger.error("Failed to start IDyOM.")
         return None
 
-    # --- Path Validation ---
     if not input_path or not Path(input_path).exists():
-        print(f"Error: Input MIDI directory not found or not provided: {input_path}")
+        logger.error(f"Input MIDI directory not found or not provided: {input_path}")
         return None
-    # Only validate the pretraining path if it has been provided.
     if pretraining_path and not Path(pretraining_path).exists():
-        print(f"Error: Pre-training MIDI directory not found: {pretraining_path}")
+        logger.error(f"Pre-training MIDI directory not found: {pretraining_path}")
         return None
     
+    # Debug: Check what files are in the pretraining directory
+    if pretraining_path:
+        pretrain_files = list(Path(pretraining_path).glob("*.mid"))
+        pretrain_files.extend(list(Path(pretraining_path).glob("*.midi")))
+        logger.info(f"Found {len(pretrain_files)} MIDI files in pretraining directory: {pretraining_path}")
+        if len(pretrain_files) == 0:
+            logger.warning(f"No MIDI files found in pretraining directory: {pretraining_path}")
+    else:
+        logger.info("No pretraining path provided, will run without pretraining")
+    
+    # Look for both .mid and .midi files
     midi_files = list(Path(input_path).glob("*.mid"))
-    print(f"Found {len(midi_files)} MIDI files in input directory.")
+    midi_files.extend(list(Path(input_path).glob("*.midi")))
+    logger.info(f"Found {len(midi_files)} MIDI files in input directory.")
     
     if len(midi_files) == 0:
-        print(f"No MIDI files found in {input_path}!")
+        logger.error(f"No MIDI files found in {input_path}!")
         return None
     
     try:
-        # Create a safe experiment logger name to avoid path issues.
         if experiment_name:
             logger_name = experiment_name
         elif description:
-            # Sanitize the description to make it a valid folder name.
+            # Ensure it has a valid folder name
             logger_name = "".join(c for c in description if c.isalnum() or c in (' ', '_')).rstrip().replace(' ', '_')
         else:
             logger_name = os.path.basename(input_path)
-
-        # Use a temporary directory for the py2lispIDyOM library's output.
-        # we will delete it later
-        temp_history_folder = str(Path("idyom_temp_output").resolve())
+        
+        # Use a unique temporary directory for each experiment to avoid conflicts
+        import tempfile
+        temp_history_folder = str(Path(tempfile.mkdtemp(prefix="idyom_")).resolve())
 
         if not temp_history_folder.endswith('/'):
             temp_history_folder += '/'
 
         # Create IDyOM experiment directly
-        print("Creating IDyOM experiment...")
+        logger.info(f"Creating IDyOM experiment with logger_name: {logger_name}")
+        logger.info(f"Using temp_history_folder: {temp_history_folder}")
+        
+        # Initialize pretrain_dir variable
+        pretrain_dir = None
+        final_pretrain_path = pretraining_path
+        
+        # If pretraining path is provided, copy it to the experiment directory
+        if pretraining_path:
+            pretrain_dir = Path(temp_history_folder) / "pretrain_dataset"
+            pretrain_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Copy all MIDI files from pretraining directory to experiment pretrain directory
+            # Convert .midi files to .mid files for IDyOM compatibility
+            pretrain_files = list(Path(pretraining_path).glob("*.mid"))
+            midi_files = list(Path(pretraining_path).glob("*.midi"))
+            
+            # Copy .mid files as-is
+            for file in pretrain_files:
+                shutil.copy2(file, pretrain_dir)
+            
+            # Copy .midi files with .mid extension
+            for file in midi_files:
+                new_name = file.stem + ".mid"
+                shutil.copy2(file, pretrain_dir / new_name)
+            
+            logger.info(f"Copied {len(pretrain_files)} .mid files and {len(midi_files)} .midi files (as .mid) to {pretrain_dir}")
+            
+            # Use the copied pretraining directory if it exists and has files
+            if pretrain_dir.exists() and any(pretrain_dir.iterdir()):
+                final_pretrain_path = str(pretrain_dir)
+                logger.info(f"Using copied pretraining directory: {final_pretrain_path}")
+            else:
+                logger.warning(f"Pretraining directory is empty or doesn't exist: {pretrain_dir}")
+                final_pretrain_path = None
+        
         experiment = py2lisp.run.IDyOMExperiment(
             test_dataset_path=input_path,
-            pretrain_dataset_path=pretraining_path,
+            pretrain_dataset_path=final_pretrain_path,
             experiment_history_folder_path=temp_history_folder,
             experiment_logger_name=logger_name
         )
         
-        print("Setting experiment parameters...")
+        logger.info("Setting experiment parameters...")
         experiment.set_parameters(
             target_viewpoints=target_viewpoints,
             source_viewpoints=source_viewpoints,
@@ -235,43 +281,42 @@ def run_idyom(
             stmo_order_bound=ppm_order
         )
         
-        print("Running IDyOM analysis...")
+        logger.info("Running IDyOM analysis...")
         experiment.run()
-        print("Analysis complete!")
+        logger.info("Analysis complete!")
         
         results_path = Path(experiment.logger.this_exp_folder)
         
-        # --- Clean up and extract only the .dat file ---
-        # The .dat file is located in a specific subfolder.
+        # find the dat file in temp output
         data_folder_path = results_path / "experiment_output_data_folder"
         
         if not data_folder_path.exists():
-            print(f"Error: Expected data folder not found at {data_folder_path}.")
+            logger.error(f"Expected data folder not found at {data_folder_path}.")
             return None
 
         dat_files = list(data_folder_path.glob('*.dat'))
         
         if not dat_files:
-            print(f"Warning: No .dat file found in {data_folder_path}.")
+            logger.warning(f"No .dat file found in {data_folder_path}.")
             return None
             
         dat_file_path = dat_files[0]
         if len(dat_files) > 1:
-            print(f"Warning: Found multiple .dat files, using the first one: {dat_file_path}")
+            logger.warning(f"Found multiple .dat files, using the first one: {dat_file_path}")
 
-        # Move the .dat file and cleanup everything else.
+        # Move the .dat file and cleanup everything else
         destination_dir = Path(output_dir)
         destination_dir.mkdir(parents=True, exist_ok=True)
         destination_path = destination_dir / f"{logger_name}.dat"
         
         shutil.move(str(dat_file_path), str(destination_path))
         shutil.rmtree(temp_history_folder)
-        
-        print(f"✓ {description} completed successfully! Output: {destination_path}")
+
+        logger.info(f"IDyOM processing completed successfully! Output: {destination_path}")
         return str(destination_path)
 
     except Exception as e:
-        print(f"Error running IDyOM analysis on {description}: {e}")
+        logger.error(f"Error running IDyOM analysis on {description}: {e}")
         return None
 
 
@@ -279,10 +324,11 @@ if __name__ == "__main__":
     # This block provides a simple example of how to use the run_idyom function.
     # It will run IDyOM on the MIDI files in the supplied directory.
     
+    logger = logging.getLogger('melodic_feature_set')
     example_midi_dir = "/Users/davidwhyatt/Downloads/Essen_First_10"
     
     if Path(example_midi_dir).is_dir():
-        print(f"--- Running IDyOM on example directory: '{example_midi_dir}' ---")
+        logger.info(f"--- Running IDyOM on example directory: '{example_midi_dir}' ---")
         run_idyom(
             input_path=example_midi_dir,
             # The output .dat file will be placed in the current directory by default.
@@ -304,6 +350,6 @@ if __name__ == "__main__":
             ppm_order=1  # Set the order of the PPM models
         )
     else:
-        print(f"--- Example MIDI directory '{example_midi_dir}' not found. ---")
-        print("Please create it and add some MIDI files to it,")
-        print("or change the 'example_midi_dir' variable in the script.")
+        logger.warning(f"--- Example MIDI directory '{example_midi_dir}' not found. ---")
+        logger.info("Please create it and add some MIDI files to it,")
+        logger.info("or change the 'example_midi_dir' variable in the script.")
