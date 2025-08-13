@@ -88,21 +88,22 @@ Num:        Name:
 
 """
 
-from functools import cache, wraps
-from types import SimpleNamespace
-from pathlib import Path
-from typing import Union, Tuple, List, Dict
-import os
+import json
 import logging
-from multiprocessing import Pool, cpu_count
+import os
+import subprocess
+from functools import cache, wraps
 from itertools import combinations
+from multiprocessing import Pool, cpu_count
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Dict, List, Tuple, Union
+
+import numpy as np
+from tenacity import RetryError, Retrying, stop_after_attempt, wait_exponential
 from tqdm import tqdm
 
-from tenacity import RetryError, Retrying, stop_after_attempt, wait_exponential
-import numpy as np
 from melodic_feature_set.import_mid import import_midi
-import json
-import subprocess
 
 r_base_packages = ["base", "utils"]
 r_cran_packages = [
@@ -120,12 +121,13 @@ r_cran_packages = [
     "emdist",
     "dtw",
     "ggplot2",
-    "cba"
+    "cba",
 ]
 r_github_packages = ["melsim"]
 github_repos = {
     "melsim": "sebsilas/melsim",
 }
+
 
 def check_r_packages_installed(install_missing: bool = False, n_retries: int = 3):
     """Check if required R packages are installed."""
@@ -137,21 +139,18 @@ def check_r_packages_installed(install_missing: bool = False, n_retries: int = 3
         cat(jsonlite::toJSON(missing))
     }}
     """
-    
+
     # Format package list
     packages_str = ", ".join([f'"{p}"' for p in r_cran_packages + r_github_packages])
     check_script = check_script.format(packages=packages_str)
-    
+
     # Run R script
     try:
         result = subprocess.run(
-            ["Rscript", "-e", check_script],
-            capture_output=True,
-            text=True,
-            check=True
+            ["Rscript", "-e", check_script], capture_output=True, text=True, check=True
         )
         missing_packages = json.loads(result.stdout.strip())
-        
+
         if missing_packages:
             if install_missing:
                 for package in missing_packages:
@@ -175,9 +174,10 @@ def check_r_packages_installed(install_missing: bool = False, n_retries: int = 3
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error checking R packages: {e.stderr}")
 
+
 def install_r_package(package: str):
     """Install an R package."""
-    logger = logging.getLogger('melodic_feature_set')
+    logger = logging.getLogger("melodic_feature_set")
     if package in r_cran_packages:
         logger.info(f"Installing CRAN package '{package}'...")
         install_script = f"""
@@ -198,29 +198,30 @@ def install_r_package(package: str):
     else:
         raise ValueError(f"Unknown package type for '{package}'")
 
+
 def install_dependencies():
     """Install all required R packages."""
-    logger = logging.getLogger('melodic_feature_set')
+    logger = logging.getLogger("melodic_feature_set")
     # Check which packages need to be installed
     check_script = """
     packages <- c({packages})
     missing <- packages[!sapply(packages, requireNamespace, quietly = TRUE)]
     cat(jsonlite::toJSON(missing))  # Always return a JSON array, even if empty
     """
-    
+
     # Check CRAN packages
     packages_str = ", ".join([f'"{p}"' for p in r_cran_packages])
     check_script_cran = check_script.format(packages=packages_str)
-    
+
     try:
         result = subprocess.run(
             ["Rscript", "-e", check_script_cran],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         missing_cran = json.loads(result.stdout.strip())
-        
+
         if missing_cran:
             logger.info("Installing missing CRAN packages...")
             cran_script = f"""
@@ -232,20 +233,20 @@ def install_dependencies():
             logger.info("Skipping install: All CRAN packages are already installed.")
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error checking CRAN packages: {e.stderr}")
-    
+
     # Check GitHub packages
     packages_str = ", ".join([f'"{p}"' for p in r_github_packages])
     check_script_github = check_script.format(packages=packages_str)
-    
+
     try:
         result = subprocess.run(
             ["Rscript", "-e", check_script_github],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         missing_github = json.loads(result.stdout.strip())
-        
+
         if missing_github:
             logger.info("Installing missing GitHub packages...")
             for package in missing_github:
@@ -262,8 +263,9 @@ def install_dependencies():
             logger.info("Skipping install: All GitHub packages are already installed.")
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error checking GitHub packages: {e.stderr}")
-    
+
     logger.info("All dependencies are installed and up to date.")
+
 
 def check_python_package_installed(package: str):
     """Check if a Python package is installed."""
@@ -275,6 +277,7 @@ def check_python_package_installed(package: str):
             f"Please install it using pip: pip install {package}"
         )
 
+
 def get_similarity(
     melody1_pitches: np.ndarray,
     melody1_starts: np.ndarray,
@@ -283,7 +286,7 @@ def get_similarity(
     melody2_starts: np.ndarray,
     melody2_ends: np.ndarray,
     method: str,
-    transformation: str
+    transformation: str,
 ) -> float:
     """Calculate similarity between two melodies using the specified method."""
     # Convert arrays to comma-separated strings
@@ -293,7 +296,7 @@ def get_similarity(
     pitches2_str = ",".join(map(str, melody2_pitches))
     starts2_str = ",".join(map(str, melody2_starts))
     ends2_str = ",".join(map(str, melody2_ends))
-    
+
     # Create R script for similarity calculation
     r_script = f"""
     library(melsim)
@@ -324,18 +327,16 @@ def get_similarity(
     result <- melody1$similarity(melody2, sim_measure)
     cat(jsonlite::toJSON(result$sim))
     """
-    
+
     # Run R script
     try:
         result = subprocess.run(
-            ["Rscript", "-e", r_script],
-            capture_output=True,
-            text=True,
-            check=True
+            ["Rscript", "-e", r_script], capture_output=True, text=True, check=True
         )
         return float(json.loads(result.stdout.strip()))
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error calculating similarity: {e.stderr}")
+
 
 def _convert_strings_to_tuples(d: Dict) -> Dict:
     """Convert string keys back to tuples where needed."""
@@ -347,42 +348,46 @@ def _convert_strings_to_tuples(d: Dict) -> Dict:
             result[k] = v
     return result
 
-def load_midi_file(file_path: Union[str, Path]) -> Tuple[List[int], List[float], List[float]]:
+
+def load_midi_file(
+    file_path: Union[str, Path]
+) -> Tuple[List[int], List[float], List[float]]:
     """Load MIDI file and extract melody attributes.
-    
+
     Parameters
     ----------
     file_path : Union[str, Path]
         Path to MIDI file
-        
+
     Returns
     -------
     Tuple[List[int], List[float], List[float]]
         Tuple of (pitches, start_times, end_times)
     """
     midi_data = import_midi(str(file_path))
-    
+
     if midi_data is None:
         raise ValueError(f"Could not import MIDI file: {file_path}")
-    
-    return midi_data['pitches'], midi_data['starts'], midi_data['ends']
+
+    return midi_data["pitches"], midi_data["starts"], midi_data["ends"]
+
 
 def _compute_similarity(args: Tuple) -> float:
     """Compute similarity between two melodies using R script.
-    
+
     Parameters
     ----------
     args : Tuple
         Tuple containing (melody1_data, melody2_data, method, transformation)
         where melody_data is a tuple of (pitches, starts, ends)
-        
+
     Returns
     -------
     float
         Similarity value
     """
     melody1_data, melody2_data, method, transformation = args
-    
+
     # Convert lists to comma-separated strings
     pitches1_str = ",".join(map(str, melody1_data[0]))
     starts1_str = ",".join(map(str, melody1_data[1]))
@@ -390,7 +395,7 @@ def _compute_similarity(args: Tuple) -> float:
     pitches2_str = ",".join(map(str, melody2_data[0]))
     starts2_str = ",".join(map(str, melody2_data[1]))
     ends2_str = ",".join(map(str, melody2_data[2]))
-    
+
     # Create R script for similarity calculation
     r_script = f"""
     library(melsim)
@@ -421,14 +426,11 @@ def _compute_similarity(args: Tuple) -> float:
     result <- melody1$similarity(melody2, sim_measure)
     cat(jsonlite::toJSON(result$sim))
     """
-    
+
     # Run R script
     try:
         result = subprocess.run(
-            ["Rscript", "-e", r_script],
-            capture_output=True,
-            text=True,
-            check=True
+            ["Rscript", "-e", r_script], capture_output=True, text=True, check=True
         )
         output = json.loads(result.stdout.strip())
         # Handle both single values and lists
@@ -438,14 +440,15 @@ def _compute_similarity(args: Tuple) -> float:
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error calculating similarity: {e.stderr}")
 
+
 def _batch_compute_similarities(args_list: List[Tuple]) -> List[float]:
     """Compute similarities for a batch of melody pairs.
-    
+
     Parameters
     ----------
     args_list : List[Tuple]
         List of argument tuples for _compute_similarity
-        
+
     Returns
     -------
     List[float]
@@ -528,7 +531,7 @@ def _batch_compute_similarities(args_list: List[Tuple]) -> List[float]:
     
     cat(toJSON(results))
     """
-    
+
     # Prepare all arguments
     all_args = []
     for melody1_data, melody2_data, method, transformation in args_list:
@@ -539,33 +542,42 @@ def _batch_compute_similarities(args_list: List[Tuple]) -> List[float]:
         pitches2_str = ",".join(map(str, melody2_data[0]))
         starts2_str = ",".join(map(str, melody2_data[1]))
         ends2_str = ",".join(map(str, melody2_data[2]))
-        
-        all_args.extend([
-            pitches1_str, starts1_str, ends1_str,
-            pitches2_str, starts2_str, ends2_str,
-            method, transformation
-        ])
-    
+
+        all_args.extend(
+            [
+                pitches1_str,
+                starts1_str,
+                ends1_str,
+                pitches2_str,
+                starts2_str,
+                ends2_str,
+                method,
+                transformation,
+            ]
+        )
+
     # Run R script with all arguments
     try:
         result = subprocess.run(
             ["Rscript", "-e", r_script] + all_args,
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         return [float(x) for x in json.loads(result.stdout.strip())]
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error calculating similarities: {e.stderr}")
 
+
 def _load_melody(file):
     """Helper function to load a melody file for parallel processing."""
-    logger = logging.getLogger('melodic_feature_set')
+    logger = logging.getLogger("melodic_feature_set")
     try:
         return file.name, load_midi_file(file)
     except Exception as e:
         logger.warning(f"Could not load {file.name}: {str(e)}")
         return None
+
 
 def get_similarity_from_midi(
     midi_path1: Union[str, Path],
@@ -574,17 +586,17 @@ def get_similarity_from_midi(
     transformation: Union[str, List[str]] = "pitch",
     output_file: Union[str, Path] = None,
     n_cores: int = None,
-    batch_size: int = 1000  # Increased from 500 to 1000 for better performance
+    batch_size: int = 1000,  # Increased from 500 to 1000 for better performance
 ) -> Union[float, Dict[Tuple[str, str, str, str], float]]:
     """Calculate similarity between MIDI files.
-    
+
     If midi_path1 is a directory, performs pairwise comparisons between all MIDI files
     in the directory, ignoring midi_path2.
-    
+
     You can provide a single method and transformation, or a list of methods and transformations.
     If you provide a list of methods and transformations, the function will return a dictionary
     mapping tuples of (file1, file2, method, transformation) to their similarity values.
-    
+
     Parameters
     ----------
     midi_path1 : Union[str, Path]
@@ -602,7 +614,7 @@ def get_similarity_from_midi(
         Number of CPU cores to use for parallel processing. Defaults to all available cores.
     batch_size : int, default=1000
         Number of comparisons to process in each batch
-        
+
     Returns
     -------
     Union[float, Dict[Tuple[str, str, str, str], float]]
@@ -612,39 +624,43 @@ def get_similarity_from_midi(
     """
     # Convert single method/transformation to lists
     methods = [method] if isinstance(method, str) else method
-    transformations = [transformation] if isinstance(transformation, str) else transformation
-    
+    transformations = (
+        [transformation] if isinstance(transformation, str) else transformation
+    )
+
     midi_path1 = Path(midi_path1)
-    
+
     # If midi_path1 is a directory, do pairwise comparisons
     if midi_path1.is_dir():
         midi_files = list(midi_path1.glob("*.mid"))
-        
+
         if not midi_files:
             raise ValueError(f"No MIDI files found in {midi_path1}")
-        
+
         # Load all melodies in parallel with progress bar
-        logger = logging.getLogger('melodic_feature_set')
+        logger = logging.getLogger("melodic_feature_set")
         logger.info("Loading melodies...")
         n_cores = n_cores or cpu_count()
-        
+
         with Pool(n_cores) as pool:
-            results = list(tqdm(
-                pool.imap(_load_melody, midi_files),
-                total=len(midi_files),
-                desc="Loading MIDI files"
-            ))
-        
+            results = list(
+                tqdm(
+                    pool.imap(_load_melody, midi_files),
+                    total=len(midi_files),
+                    desc="Loading MIDI files",
+                )
+            )
+
         melody_data = {name: data for name, data in results if data is not None}
-        
+
         if len(melody_data) < 2:
             raise ValueError("Need at least 2 valid MIDI files for comparison")
-        
+
         # Prepare arguments for parallel processing
         logger.info("Computing similarities...")
         args = []
         file_pairs = []
-        
+
         # Pre-compute all combinations for better performance
         combinations_list = list(combinations(melody_data.items(), 2))
         for (name1, data1), (name2, data2) in combinations_list:
@@ -652,52 +668,60 @@ def get_similarity_from_midi(
                 for t in transformations:
                     args.append((data1, data2, m, t))
                     file_pairs.append((name1, name2, m, t))
-        
+
         # Process in larger batches for better performance
         similarities_list = []
         for i in tqdm(range(0, len(args), batch_size), desc="Processing batches"):
-            batch = args[i:i + batch_size]
+            batch = args[i : i + batch_size]
             similarities_list.extend(_batch_compute_similarities(batch))
-        
+
         # Create dictionary of results
         similarities = dict(zip(file_pairs, similarities_list))
-        
+
         # Save to file if output file specified
         if output_file:
             logger.info("Saving results...")
             import pandas as pd
-            df = pd.DataFrame([
-                {
-                    "file1": f1,
-                    "file2": f2,
-                    "method": m,
-                    "transformation": t,
-                    "similarity": sim
-                }
-                for (f1, f2, m, t), sim in similarities.items()
-            ])
-            
+
+            df = pd.DataFrame(
+                [
+                    {
+                        "file1": f1,
+                        "file2": f2,
+                        "method": m,
+                        "transformation": t,
+                        "similarity": sim,
+                    }
+                    for (f1, f2, m, t), sim in similarities.items()
+                ]
+            )
+
             # Ensure output file has .json extension
             output_file = Path(output_file)
             if not output_file.suffix:
-                output_file = output_file.with_suffix('.json')
-            
-            df.to_json(output_file, orient='records', indent=2)
+                output_file = output_file.with_suffix(".json")
+
+            df.to_json(output_file, orient="records", indent=2)
             logger.info(f"Results saved to {output_file}")
-        
+
         return similarities
-    
+
     # For single file comparison, only use first method and transformation
     if len(methods) > 1 or len(transformations) > 1:
-        logger.warning("Multiple methods/transformations provided for two-file pairwise comparison. Using first method and transformation.")
-    
+        logger.warning(
+            "Multiple methods/transformations provided for two-file pairwise comparison. Using first method and transformation."
+        )
+
     # Load MIDI files
     melody1_pitches, melody1_starts, melody1_ends = load_midi_file(midi_path1)
     melody2_pitches, melody2_starts, melody2_ends = load_midi_file(midi_path2)
-    
+
     # Calculate similarity
-    return _compute_similarity((
-        (melody1_pitches, melody1_starts, melody1_ends),
-        (melody2_pitches, melody2_starts, melody2_ends),
-        methods[0], transformations[0]
-    ))
+    return _compute_similarity(
+        (
+            (melody1_pitches, melody1_starts, melody1_ends),
+            (melody2_pitches, melody2_starts, melody2_ends),
+            methods[0],
+            transformations[0],
+        )
+    )

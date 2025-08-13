@@ -2,10 +2,12 @@
 This module contains a series of algorithms that may be used on the different input types
 to aid in the calculation of features related to distributional properties.
 """
+
 __author__ = "David Whyatt"
 
 import numpy as np
 from scipy import stats
+
 
 def histogram_bins(values, num_bins: int) -> dict[str, int]:
     """Places data into histogram bins and counts occurrences in each bin.
@@ -30,7 +32,7 @@ def histogram_bins(values, num_bins: int) -> dict[str, int]:
     """
     # Convert to numpy array if not already
     values = np.asarray(values)
-    
+
     # Check if array is empty
     if values.size == 0:
         return {}
@@ -48,6 +50,7 @@ def histogram_bins(values, num_bins: int) -> dict[str, int]:
         result[bin_label] = int(count)  # Convert count to integer
 
     return result
+
 
 def standardize_distribution(values: list[float]) -> list[float]:
     """Converts a list of numbers to a normal distribution with mean 0 and std dev 1.
@@ -95,6 +98,7 @@ def standardize_distribution(values: list[float]) -> list[float]:
 
     normalized = (values_array - mean_val) / std
     return [float(x) for x in normalized]
+
 
 def normalize_distribution(values: list[float]) -> tuple[list[float], float, float]:
     """Normalizes a list of numbers to a range between 0 and 1 using min-max normalization.
@@ -149,14 +153,15 @@ def normalize_distribution(values: list[float]) -> tuple[list[float], float, flo
 
     return [float(x) for x in normalized], float(mean_val), float(std_dev)
 
+
 def kurtosis(values) -> float:
     """Calculate kurtosis of values.
-    
+
     Parameters
     ----------
     values : list or numpy.ndarray
         List or array of values to analyze
-        
+
     Returns
     -------
     float
@@ -164,22 +169,23 @@ def kurtosis(values) -> float:
     """
     # Convert to numpy array if not already
     values = np.asarray(values)
-    
+
     # Check if array is empty
     if values.size == 0:
         return 0.0
-        
+
     # Calculate kurtosis using scipy
     return float(stats.kurtosis(values))
 
+
 def skew(values) -> float:
     """Calculate skewness of values.
-    
+
     Parameters
     ----------
     values : list or numpy.ndarray
         List or array of values to analyze
-        
+
     Returns
     -------
     float
@@ -187,17 +193,18 @@ def skew(values) -> float:
     """
     # Convert to numpy array if not already
     values = np.asarray(values)
-    
+
     # Check if array is empty
     if values.size == 0:
         return 0.0
-        
+
     # Check if there are at least 2 unique values
     if np.unique(values).size < 2:
         return 0.0
-        
+
     # Calculate skewness using scipy
     return float(stats.skew(values, bias=False))
+
 
 def distribution_proportions(values: list[float]) -> dict[float, float]:
     """Calculates the proportion of each unique value in a list of numbers.
@@ -238,5 +245,5 @@ def distribution_proportions(values: list[float]) -> dict[float, float]:
     unique, counts = np.unique(values_array, return_counts=True)
 
     # Calculate proportions
-    proportions = counts * (1.0/len(values_array))
+    proportions = counts * (1.0 / len(values_array))
     return {float(u): float(p) for u, p in zip(unique, proportions)}

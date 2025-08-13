@@ -1,6 +1,8 @@
-from typing import List, Tuple, Dict, Optional
+from typing import Dict, List, Optional, Tuple
+
 from .ngram_counter import NGramCounter
 from .representations import Melody
+
 
 class MType:
     """A class representing a melody token based on pitch interval and IOI ratio classifications."""
@@ -30,12 +32,15 @@ class MType:
         """Check if two M-Type tokens are equal."""
         if not isinstance(other, MType):
             return False
-        return (self.pitch_interval == other.pitch_interval and 
-                self.ioi_ratio == other.ioi_ratio)
+        return (
+            self.pitch_interval == other.pitch_interval
+            and self.ioi_ratio == other.ioi_ratio
+        )
 
     def __hash__(self) -> int:
         """Return hash value of the M-Type token."""
         return hash((self.pitch_interval, self.ioi_ratio))
+
 
 class MelodyTokenizer:
     """Base class for melody tokenization."""
@@ -58,7 +63,7 @@ class MelodyTokenizer:
         List[float]
             List of inter-onset intervals
         """
-        return [starts[i] - starts[i-1] for i in range(1, len(starts))]
+        return [starts[i] - starts[i - 1] for i in range(1, len(starts))]
 
     def _calculate_ioi_ratios(self, iois: List[float]) -> List[float]:
         """Calculate IOI ratios from inter-onset intervals.
@@ -74,7 +79,7 @@ class MelodyTokenizer:
             List of IOI ratios, with None for the first note
         """
         ratios = [None]  # First note has no ratio
-        ratios.extend([iois[i] / iois[i-1] for i in range(1, len(iois))])
+        ratios.extend([iois[i] / iois[i - 1] for i in range(1, len(iois))])
         return ratios
 
     def _classify_pitch_interval(self, interval: int) -> int:
@@ -140,8 +145,9 @@ class MelodyTokenizer:
         else:
             return 3  # Longer (l)
 
-    def tokenize_melody(self, pitches: List[int], starts: List[float], 
-                       ends: List[float]) -> List[MType]:
+    def tokenize_melody(
+        self, pitches: List[int], starts: List[float], ends: List[float]
+    ) -> List[MType]:
         """Tokenize a melody into M-Type tokens.
 
         Parameters
@@ -162,23 +168,23 @@ class MelodyTokenizer:
             return []
 
         # Calculate pitch intervals
-        pitch_intervals = [pitches[i] - pitches[i-1] for i in range(1, len(pitches))]
-        
+        pitch_intervals = [pitches[i] - pitches[i - 1] for i in range(1, len(pitches))]
+
         # Calculate IOIs and ratios
         iois = self._calculate_iois(starts)
         ioi_ratios = self._calculate_ioi_ratios(iois)
-        
+
         # Create M-Type tokens
         tokens = []
         for i in range(len(pitch_intervals)):
             pitch_class = self._classify_pitch_interval(pitch_intervals[i])
             ioi_class = self._classify_ioi_ratio(ioi_ratios[i])
             tokens.append(MType(pitch_class, ioi_class))
-        
+
         # Store tokens and update n-gram counts
         self.phrases = tokens
         self.ngram_counter.count_ngrams(tokens)
-        
+
         return tokens
 
     def ngram_counts(self, n: Optional[int] = None) -> Dict:
@@ -196,6 +202,7 @@ class MelodyTokenizer:
             Dictionary mapping each n-gram to its count
         """
         return self.ngram_counter.get_counts(n)
+
 
 class FantasticTokenizer(MelodyTokenizer):
     """A tokenizer that implements the FANTASTIC melody tokenization scheme."""
@@ -267,8 +274,9 @@ class FantasticTokenizer(MelodyTokenizer):
         else:
             return 3  # Longer (l)
 
-
-    def segment_melody(self, melody: Melody, phrase_gap: float = 1.5, units: str = "quarters") -> List[Melody]:
+    def segment_melody(
+        self, melody: Melody, phrase_gap: float = 1.5, units: str = "quarters"
+    ) -> List[Melody]:
         """Segment melody into phrases based on IOI gaps.
 
         Parameters
@@ -300,15 +308,15 @@ class FantasticTokenizer(MelodyTokenizer):
         # Calculate IOIs
         iois = []
         for i in range(1, len(melody.starts)):
-            iois.append(melody.starts[i] - melody.starts[i-1])
+            iois.append(melody.starts[i] - melody.starts[i - 1])
         iois.append(None)  # Add None for last note
 
-        for i, (pitch, start, end, ioi) in enumerate(zip(melody.pitches, melody.starts, melody.ends, iois)):
+        for i, (pitch, start, end, ioi) in enumerate(
+            zip(melody.pitches, melody.starts, melody.ends, iois)
+        ):
             # Check if we need to start a new phrase
             need_new_phrase = (
-                len(current_phrase_pitches) > 0 
-                and ioi is not None
-                and ioi > phrase_gap
+                len(current_phrase_pitches) > 0 and ioi is not None and ioi > phrase_gap
             )
 
             if need_new_phrase:
@@ -316,19 +324,21 @@ class FantasticTokenizer(MelodyTokenizer):
                 start_time = current_phrase_starts[0]
                 adjusted_starts = [s - start_time for s in current_phrase_starts]
                 adjusted_ends = [e - start_time for e in current_phrase_ends]
-                
+
                 # Create MIDI sequence string
                 midi_seq = ", ".join(
                     f"Note(start={s:.6f}, end={e:.6f}, pitch={p}, velocity=90)"
-                    for p, s, e in zip(current_phrase_pitches.copy(), adjusted_starts, adjusted_ends)
+                    for p, s, e in zip(
+                        current_phrase_pitches.copy(), adjusted_starts, adjusted_ends
+                    )
                 )
-                
+
                 # Create dictionary with MIDI sequence
                 midi_data = {"MIDI Sequence": midi_seq}
-                
+
                 # Create new Melody object
                 phrases.append(Melody(midi_data, tempo=melody.tempo))
-                
+
                 # Reset current phrase
                 current_phrase_pitches = []
                 current_phrase_starts = []
@@ -344,16 +354,18 @@ class FantasticTokenizer(MelodyTokenizer):
             start_time = current_phrase_starts[0]
             adjusted_starts = [s - start_time for s in current_phrase_starts]
             adjusted_ends = [e - start_time for e in current_phrase_ends]
-            
+
             # Create MIDI sequence string
             midi_seq = ", ".join(
                 f"Note(start={s:.6f}, end={e:.6f}, pitch={p}, velocity=90)"
-                for p, s, e in zip(current_phrase_pitches, adjusted_starts, adjusted_ends)
+                for p, s, e in zip(
+                    current_phrase_pitches, adjusted_starts, adjusted_ends
+                )
             )
-            
+
             # Create dictionary with MIDI sequence
             midi_data = {"MIDI Sequence": midi_seq}
-            
+
             # Create new Melody object
             phrases.append(Melody(midi_data, tempo=melody.tempo))
 

@@ -227,7 +227,7 @@ class InterpolationContour:
         reversals_time.append(times[-1])
 
         # Calculate gradients
-        with np.errstate(divide='ignore'):
+        with np.errstate(divide="ignore"):
             gradients = np.diff(reversals_pitches) / np.diff(reversals_time)
 
         # Calculate durations

@@ -2,10 +2,12 @@
 This module contains a series of algorithms that may be used on the different input types
 to aid in the calculation of features related to correlations.
 """
+
 __author__ = "David Whyatt"
 
 import numpy as np
-from scipy import stats, signal
+from scipy import signal, stats
+
 
 def correlation(x: list[float], y: list[float]) -> float:
     """Calculates the Pearson-Bravais correlation coefficient between two lists of values.
@@ -14,7 +16,7 @@ def correlation(x: list[float], y: list[float]) -> float:
     ----------
     x : list[float]
         First list of numeric values
-    y : list[float] 
+    y : list[float]
         Second list of numeric values. Must have same length as x.
 
     Returns
@@ -105,6 +107,7 @@ def spearman_correlation(x: list[float], y: list[float]) -> float:
 
     return float(corr)
 
+
 def kendall_tau(x: list[float], y: list[float]) -> float:
     """Calculate Kendall's tau correlation coefficient between two lists of numbers.
 
@@ -192,6 +195,6 @@ def cross_correlation(x: list[float], y: list[float]) -> list[float]:
         raise TypeError("All elements must be numbers") from exc
 
     # Calculate cross-correlation using scipy.signal.correlate
-    corr = signal.correlate(x_array, y_array, mode='full')
+    corr = signal.correlate(x_array, y_array, mode="full")
 
     return corr.tolist()

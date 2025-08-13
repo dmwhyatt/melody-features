@@ -2,15 +2,17 @@
 This module contains a series of algorithms that may be used on the different input types
 to aid in the calculation of features related to similarity.
 """
+
 __author__ = "David Whyatt"
 
 import numpy as np
 
+
 def diffexp(melody1: list[float], melody2: list[float]) -> float:
     """Calculates the differential expression score between two melodies
     based on their pitch intervals.
-    
-    Implements σ(μ₁,μ₂) = e^(-Δp/(N-1)) where Δp is the L1 norm (Manhattan distance) 
+
+    Implements σ(μ₁,μ₂) = e^(-Δp/(N-1)) where Δp is the L1 norm (Manhattan distance)
     between the pitch interval vectors of the two melodies.
 
     Parameters
@@ -72,9 +74,10 @@ def diffexp(melody1: list[float], melody2: list[float]) -> float:
 
     return float(score)
 
+
 def diff(melody1: list[float], melody2: list[float]) -> float:
     """Calculates the differential score between two melodies based on their pitch intervals.
-    
+
     Implements σ(μ₁,μ₂) = 1 - Δp/((N-1)Δp∞) where:
     - Δp is the L1 norm (Manhattan distance) between the pitch interval vectors
     - Δp∞ is the maximum absolute interval difference across both melodies
@@ -137,7 +140,9 @@ def diff(melody1: list[float], melody2: list[float]) -> float:
     delta_p_inf = max(np.max(np.abs(intervals1)), np.max(np.abs(intervals2)))
 
     if delta_p_inf == 0:
-        raise ValueError("Cannot calculate diff score - no pitch differences between melodies")
+        raise ValueError(
+            "Cannot calculate diff score - no pitch differences between melodies"
+        )
 
     # n is the length of the longer melody
     n = max(len(melody1), len(melody2))
@@ -148,8 +153,13 @@ def diff(melody1: list[float], melody2: list[float]) -> float:
     return float(score)
 
 
-def edit_distance(list1: list[float], list2: list[float], insertion_cost: float=1,
-                deletion_cost: float=1, substitution_cost: float=1) -> float:
+def edit_distance(
+    list1: list[float],
+    list2: list[float],
+    insertion_cost: float = 1,
+    deletion_cost: float = 1,
+    substitution_cost: float = 1,
+) -> float:
     """Calculates the edit distance (Levenshtein distance) between two lists of numbers.
 
     Parameters
@@ -196,8 +206,10 @@ def edit_distance(list1: list[float], list2: list[float], insertion_cost: float=
             if list1[i - 1] == list2[j - 1]:
                 dp[i][j] = dp[i - 1][j - 1]
             else:
-                dp[i][j] = min(dp[i - 1][j] + deletion_cost,     # Deletion
-                              dp[i][j - 1] + insertion_cost,      # Insertion
-                              dp[i - 1][j - 1] + substitution_cost) # Substitution
+                dp[i][j] = min(
+                    dp[i - 1][j] + deletion_cost,  # Deletion
+                    dp[i][j - 1] + insertion_cost,  # Insertion
+                    dp[i - 1][j - 1] + substitution_cost,
+                )  # Substitution
 
     return float(dp[len1][len2])

@@ -4,10 +4,13 @@ to calculate features. These algorithms are rather more specific than the others
 in the rest of the repository, and are placed here for clarity and organization,
 since they do not group well with the others.
 """
+
 __author__ = "David Whyatt"
 
-import numpy as np
 from typing import Optional
+
+import numpy as np
+
 
 def ratio(x: list[float], y: list[float]) -> list[float]:
     """Calculates the ratio between corresponding elements in two lists.
@@ -115,6 +118,7 @@ def rank_values(values: list[float], descending: bool = False) -> list[float]:
 
     return ranks
 
+
 def modulo_twelve(values: list[float]) -> list[float]:
     """Takes modulo 12 of each number in the input list.
 
@@ -152,6 +156,7 @@ def modulo_twelve(values: list[float]) -> list[float]:
 
     return [float(x) for x in values_array % 12]
 
+
 def absolute_values(values: list[float]) -> list[float]:
     """Returns a list with absolute values of all input numbers.
 
@@ -188,6 +193,7 @@ def absolute_values(values: list[float]) -> list[float]:
         raise TypeError("All elements must be numbers") from exc
 
     return [float(x) for x in np.abs(values_array)]
+
 
 def limit(values: list[float], x: float = None, y: float = None) -> list[float]:
     """Removes values larger than x or smaller than y from the input list.
@@ -238,7 +244,10 @@ def limit(values: list[float], x: float = None, y: float = None) -> list[float]:
 
     return [float(x) for x in values_array[mask]]
 
-def nine_percent_significant_values(values: list[float], threshold: float = 0.09) -> list[float]:
+
+def nine_percent_significant_values(
+    values: list[float], threshold: float = 0.09
+) -> list[float]:
     """Returns values that appear more than a given proportion of times in the input list.
 
     Parameters
@@ -284,10 +293,13 @@ def nine_percent_significant_values(values: list[float], threshold: float = 0.09
     proportions = counts / len(values_array)
 
     # Get values that exceed threshold
-    significant = [float(val) for val, prop in zip(unique, proportions) 
-                  if prop >= threshold]
+    significant = [
+        float(val) for val, prop in zip(unique, proportions) if prop >= threshold
+    ]
 
     return significant
+
+
 def circle_of_fifths(pitches: list[float], counts: list[float]) -> dict[int, float]:
     """Reorganizes two lists of pitches and counts according to the circle of fifths pattern.
 
@@ -295,7 +307,7 @@ def circle_of_fifths(pitches: list[float], counts: list[float]) -> dict[int, flo
     ----------
     pitches : list[float]
         List of pitch classes (0-12)
-    counts : list[float] 
+    counts : list[float]
         List of counts corresponding to each pitch class
 
     Returns
@@ -332,7 +344,7 @@ def circle_of_fifths(pitches: list[float], counts: list[float]) -> dict[int, flo
     pitch_counts = {int(p): float(c) for p, c in zip(pitches, counts)}
 
     # Define circle of fifths order
-    fifths_order = [0,7,2,9,4,11,6,1,8,3,10,5]
+    fifths_order = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5]
 
     # Create new dictionary with circle of fifths ordering
     result = {}
@@ -341,6 +353,7 @@ def circle_of_fifths(pitches: list[float], counts: list[float]) -> dict[int, flo
             result[pitch] = pitch_counts[pitch]
 
     return result
+
 
 def contour_extrema(values: list[float]) -> list[tuple[int, float]]:
     """Finds all contour extremum notes in a sequence.
@@ -388,11 +401,11 @@ def contour_extrema(values: list[float]) -> list[tuple[int, float]]:
     n = len(values_array)
 
     # Check each interior point
-    for i in range(1, n-1):
+    for i in range(1, n - 1):
         # Get values for comparison
-        prev = values_array[i-1]
+        prev = values_array[i - 1]
         curr = values_array[i]
-        next_val = values_array[i+1]
+        next_val = values_array[i + 1]
 
         # Simple case: clear maximum or minimum
         if (prev < curr and next_val < curr) or (prev > curr and next_val > curr):
@@ -402,23 +415,26 @@ def contour_extrema(values: list[float]) -> list[tuple[int, float]]:
         # Handle plateaus by looking at extended context
         if prev == curr or next_val == curr:
             # Look back up to 2 positions if available
-            back2 = values_array[i-2] if i >= 2 else None
+            back2 = values_array[i - 2] if i >= 2 else None
 
             # Look forward up to 2 positions if available
-            forward2 = values_array[i+2] if i < n-2 else None
+            forward2 = values_array[i + 2] if i < n - 2 else None
 
             # Check plateau cases
             if prev == curr and forward2 is not None:
-                if (back2 is not None and back2 < curr and next_val < curr) or \
-                   (back2 is not None and back2 > curr and next_val > curr):
+                if (back2 is not None and back2 < curr and next_val < curr) or (
+                    back2 is not None and back2 > curr and next_val > curr
+                ):
                     extrema.append((i, curr))
             elif next_val == curr and back2 is not None:
-                if (forward2 is not None and forward2 < curr and prev < curr) or \
-                   (forward2 is not None and forward2 > curr and prev > curr):
+                if (forward2 is not None and forward2 < curr and prev < curr) or (
+                    forward2 is not None and forward2 > curr and prev > curr
+                ):
                     extrema.append((i, curr))
 
-    extrema.append((n-1, values_array[n-1]))  # Last note is always included
+    extrema.append((n - 1, values_array[n - 1]))  # Last note is always included
     return [(i, float(v)) for i, v in extrema]  # Ensure values are float
+
 
 def contour_gradients(values: list[float]) -> list[float]:
     """Calculates gradients between consecutive contour extrema points.
@@ -459,9 +475,9 @@ def contour_gradients(values: list[float]) -> list[float]:
 
     # Calculate gradients between consecutive extrema
     gradients = []
-    for i in range(len(extrema)-1):
+    for i in range(len(extrema) - 1):
         t1, p1 = extrema[i]
-        t2, p2 = extrema[i+1]
+        t2, p2 = extrema[i + 1]
 
         # Skip if time difference is zero (shouldn't happen with current extrema logic)
         if t2 - t1 == 0:
@@ -473,14 +489,15 @@ def contour_gradients(values: list[float]) -> list[float]:
 
     return gradients
 
+
 def compute_tonality_vector(pitch_classes) -> list[tuple[str, float]]:
     """Compute tonality vector for a sequence of pitch classes.
-    
+
     Parameters
     ----------
     pitch_classes : list or numpy.ndarray
         List or array of pitch classes (0-11)
-        
+
     Returns
     -------
     list[tuple[str, float]]
@@ -488,48 +505,73 @@ def compute_tonality_vector(pitch_classes) -> list[tuple[str, float]]:
     """
     # Convert to numpy array if not already
     pitch_classes = np.asarray(pitch_classes)
-    
+
     # Check if array is empty
     if pitch_classes.size == 0:
-        return [('C major', 0.0), ('C# major', 0.0), ('D major', 0.0), ('D# major', 0.0),
-                ('E major', 0.0), ('F major', 0.0), ('F# major', 0.0), ('G major', 0.0),
-                ('G# major', 0.0), ('A major', 0.0), ('A# major', 0.0), ('B major', 0.0),
-                ('c minor', 0.0), ('c# minor', 0.0), ('d minor', 0.0), ('d# minor', 0.0),
-                ('e minor', 0.0), ('f minor', 0.0), ('f# minor', 0.0), ('g minor', 0.0),
-                ('g# minor', 0.0), ('a minor', 0.0), ('a# minor', 0.0), ('b minor', 0.0)]
-    
+        return [
+            ("C major", 0.0),
+            ("C# major", 0.0),
+            ("D major", 0.0),
+            ("D# major", 0.0),
+            ("E major", 0.0),
+            ("F major", 0.0),
+            ("F# major", 0.0),
+            ("G major", 0.0),
+            ("G# major", 0.0),
+            ("A major", 0.0),
+            ("A# major", 0.0),
+            ("B major", 0.0),
+            ("c minor", 0.0),
+            ("c# minor", 0.0),
+            ("d minor", 0.0),
+            ("d# minor", 0.0),
+            ("e minor", 0.0),
+            ("f minor", 0.0),
+            ("f# minor", 0.0),
+            ("g minor", 0.0),
+            ("g# minor", 0.0),
+            ("a minor", 0.0),
+            ("a# minor", 0.0),
+            ("b minor", 0.0),
+        ]
+
     # Create key name lists
-    major_keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-    minor_keys = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b']
-    
+    major_keys = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    minor_keys = ["c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"]
+
     # Define major and minor key profiles (pre-normalized)
-    major_profile = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
-    minor_profile = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
-    
+    major_profile = np.array(
+        [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
+    )
+    minor_profile = np.array(
+        [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+    )
+
     # Normalize profiles once
     major_profile = major_profile / np.sum(major_profile)
     minor_profile = minor_profile / np.sum(minor_profile)
-    
+
     # Count pitch class occurrences once
     pc_counts = np.bincount(pitch_classes, minlength=12)
     pc_dist = pc_counts / np.sum(pc_counts)
-    
+
     # Pre-compute all rotated profiles
     rotated_major = np.array([np.roll(major_profile, i) for i in range(12)])
     rotated_minor = np.array([np.roll(minor_profile, i) for i in range(12)])
-    
+
     # Compute correlations for all keys at once
     major_corrs = np.array([np.corrcoef(pc_dist, rm)[0, 1] for rm in rotated_major])
     minor_corrs = np.array([np.corrcoef(pc_dist, rm)[0, 1] for rm in rotated_minor])
-    
+
     # Create list of (key, correlation) tuples
     key_correlations = []
     for i in range(12):
-        key_correlations.append((major_keys[i] + ' major', float(major_corrs[i])))
-        key_correlations.append((minor_keys[i] + ' minor', float(minor_corrs[i])))
-    
+        key_correlations.append((major_keys[i] + " major", float(major_corrs[i])))
+        key_correlations.append((minor_keys[i] + " minor", float(minor_corrs[i])))
+
     # Sort by correlation value, descending
     return sorted(key_correlations, key=lambda x: x[1], reverse=True)
+
 
 def arpeggiation_proportion(pitch_values: list[float]) -> float:
     """Calculate the proportion of notes in the melody that constitute triadic movement.
@@ -564,8 +606,8 @@ def arpeggiation_proportion(pitch_values: list[float]) -> float:
 
     # Calculate differences between consecutive pitches
     intervals = []
-    for i in range(len(pitch_values)-1):
-        interval = abs(pitch_values[i+1] - pitch_values[i])
+    for i in range(len(pitch_values) - 1):
+        interval = abs(pitch_values[i + 1] - pitch_values[i])
         intervals.append(interval)
 
     if not intervals:
@@ -577,15 +619,18 @@ def arpeggiation_proportion(pitch_values: list[float]) -> float:
         3,  # minor thirds
         4,  # major thirds
         7,  # perfect fifths
-        10, # minor sevenths
-        11, # major sevenths
-        12, # octaves
-        15, # minor tenths
-        16  # major tenths
+        10,  # minor sevenths
+        11,  # major sevenths
+        12,  # octaves
+        15,  # minor tenths
+        16,  # major tenths
     ]
     # Count how many intervals match our target arpeggio intervals
-    matching_intervals = sum(1 for interval in intervals if interval in target_intervals)
+    matching_intervals = sum(
+        1 for interval in intervals if interval in target_intervals
+    )
     return float(matching_intervals) / len(intervals)
+
 
 def chromatic_motion_proportion(pitch_values: list[float]) -> float:
     """Calculate the proportion of notes in the melody that move by chromatic intervals.
@@ -619,8 +664,8 @@ def chromatic_motion_proportion(pitch_values: list[float]) -> float:
 
     # Calculate differences between consecutive pitches
     intervals = []
-    for i in range(len(pitch_values)-1):
-        interval = abs(pitch_values[i+1] - pitch_values[i])
+    for i in range(len(pitch_values) - 1):
+        interval = abs(pitch_values[i + 1] - pitch_values[i])
         intervals.append(interval)
 
     if not intervals:
@@ -629,6 +674,7 @@ def chromatic_motion_proportion(pitch_values: list[float]) -> float:
     # Count how many intervals match our target chromatic intervals
     chromatic = sum(1 for interval in intervals if interval == 1)
     return float(chromatic) / len(intervals)
+
 
 def stepwise_motion_proportion(pitch_values: list[float]) -> float:
     """Calculate the proportion of notes in the melody that move by stepwise intervals.
@@ -662,8 +708,8 @@ def stepwise_motion_proportion(pitch_values: list[float]) -> float:
 
     # Calculate differences between consecutive pitches
     intervals = []
-    for i in range(len(pitch_values)-1):
-        interval = abs(pitch_values[i+1] - pitch_values[i])
+    for i in range(len(pitch_values) - 1):
+        interval = abs(pitch_values[i + 1] - pitch_values[i])
         intervals.append(interval)
 
     if not intervals:
@@ -690,7 +736,7 @@ def repeated_notes_proportion(pitch_values: list[float]) -> float:
 
     Examples
     --------
-    >>> repeated_notes_proportion([60, 60, 62, 64])  # One note repeated 
+    >>> repeated_notes_proportion([60, 60, 62, 64])  # One note repeated
     0.333...
     >>> repeated_notes_proportion([60, 60, 60, 60])  # All notes repeated
     1.0
@@ -703,8 +749,10 @@ def repeated_notes_proportion(pitch_values: list[float]) -> float:
     """
     value = -1.0
     if pitch_values is not None:
-        intervals = [abs(pitch_values[i+1] - pitch_values[i]) 
-                    for i in range(len(pitch_values)-1)]
+        intervals = [
+            abs(pitch_values[i + 1] - pitch_values[i])
+            for i in range(len(pitch_values) - 1)
+        ]
         if intervals:
             repeated = sum(1 for interval in intervals if interval == 0)
             value = float(repeated) / len(intervals)
@@ -713,25 +761,25 @@ def repeated_notes_proportion(pitch_values: list[float]) -> float:
 
     return value
 
+
 def get_durations(starts: list[float], ends: list[float]) -> list[float]:
     """Calculate durations from start and end times.
-    
+
     Parameters
     ----------
     """
     if not starts or not ends or len(starts) != len(ends):
         return []
-        
+
     try:
         return [end - start for start, end in zip(starts, ends)]
     except (TypeError, ValueError):
         return []
 
 
-
-def melodic_embellishment_proportion(pitch_values: list[float], 
-                          note_starts: list[float], 
-                          note_ends: list[float]) -> float:
+def melodic_embellishment_proportion(
+    pitch_values: list[float], note_starts: list[float], note_ends: list[float]
+) -> float:
     """Calculate the proportion of notes in the melody that are embellished.
 
     Identifies embellished notes by checking if they are surrounded by notes that are
@@ -766,9 +814,11 @@ def melodic_embellishment_proportion(pitch_values: list[float],
     note_durations = get_durations(note_starts, note_ends)
     # Count embellished notes (notes surrounded by shorter notes)
     embellished = 0
-    for i in range(1, len(note_durations)-1):
-        if (note_durations[i-1] < note_durations[i]/3 and
-            note_durations[i+1] < note_durations[i]/3):
+    for i in range(1, len(note_durations) - 1):
+        if (
+            note_durations[i - 1] < note_durations[i] / 3
+            and note_durations[i + 1] < note_durations[i] / 3
+        ):
             embellished += 1
 
     # Calculate proportion of embellished notes
@@ -776,7 +826,10 @@ def melodic_embellishment_proportion(pitch_values: list[float],
         return float(embellished) / len(note_durations)
     return 0.0
 
-def longest_monotonic_conjunct_scalar_passage(pitches: list[int], key_correlations: Optional[list] = None) -> int:
+
+def longest_monotonic_conjunct_scalar_passage(
+    pitches: list[int], key_correlations: Optional[list] = None
+) -> int:
     """Find the longest sequence of consecutive notes that follow a scale pattern,
     moving in the same direction.
 
@@ -819,19 +872,41 @@ def longest_monotonic_conjunct_scalar_passage(pitches: list[int], key_correlatio
     for pitch in pitches:
         if not deduped or pitch != deduped[-1]:
             deduped.append(pitch)
-    
+
     if key_correlations is None:
         # Get key using KS algorithm
         pitch_classes = [p % 12 for p in deduped]
         key_correlations = compute_tonality_vector(pitch_classes)
-    
+
     key = key_correlations[0][0].split()[0]
 
-    root = {'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
-            'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11,
-            'c': 0, 'c#': 1, 'd': 2, 'd#': 3, 'e': 4, 'f': 5,
-            'f#': 6, 'g': 7, 'g#': 8, 'a': 9, 'a#': 10, 'b': 11}[key]
-    if 'minor' in key.lower():
+    root = {
+        "C": 0,
+        "C#": 1,
+        "D": 2,
+        "D#": 3,
+        "E": 4,
+        "F": 5,
+        "F#": 6,
+        "G": 7,
+        "G#": 8,
+        "A": 9,
+        "A#": 10,
+        "B": 11,
+        "c": 0,
+        "c#": 1,
+        "d": 2,
+        "d#": 3,
+        "e": 4,
+        "f": 5,
+        "f#": 6,
+        "g": 7,
+        "g#": 8,
+        "a": 9,
+        "a#": 10,
+        "b": 11,
+    }[key]
+    if "minor" in key.lower():
         scale = [(root + i) % 12 for i in [0, 2, 3, 5, 7, 8, 10]]
     else:
         scale = [(root + i) % 12 for i in [0, 2, 4, 5, 7, 9, 11]]
@@ -848,30 +923,30 @@ def longest_monotonic_conjunct_scalar_passage(pitches: list[int], key_correlatio
     direction = None
 
     for i in range(1, len(deduped)):
-        interval = deduped[i] - deduped[i-1]
-        
+        interval = deduped[i] - deduped[i - 1]
+
         # Check if notes are adjacent scale degrees
         curr_pc = deduped[i] % 12
-        prev_pc = deduped[i-1] % 12
-        
+        prev_pc = deduped[i - 1] % 12
+
         if curr_pc not in scale or prev_pc not in scale:
             current_sequence = 1
             direction = None
             continue
-            
+
         curr_scale_pos = scale.index(curr_pc)
         prev_scale_pos = scale.index(prev_pc)
-        
+
         # Check if they're adjacent in the scale
         scale_interval = (curr_scale_pos - prev_scale_pos) % len(scale)
         if scale_interval != 1 and scale_interval != len(scale) - 1:
             current_sequence = 1
             direction = None
             continue
-            
+
         # Check direction
         curr_direction = 1 if interval > 0 else -1
-        
+
         if direction is None:
             direction = curr_direction
             current_sequence = 2
@@ -880,12 +955,15 @@ def longest_monotonic_conjunct_scalar_passage(pitches: list[int], key_correlatio
         else:
             current_sequence = 2
             direction = curr_direction
-            
+
         longest_sequence = max(longest_sequence, current_sequence)
 
     return longest_sequence
 
-def longest_conjunct_scalar_passage(pitches: list[int], key_correlations: Optional[list] = None) -> int:
+
+def longest_conjunct_scalar_passage(
+    pitches: list[int], key_correlations: Optional[list] = None
+) -> int:
     """Find the longest sequence of consecutive notes that follow a scale pattern,
     allowing for changes in direction.
 
@@ -927,11 +1005,33 @@ def longest_conjunct_scalar_passage(pitches: list[int], key_correlations: Option
     if key_correlations is None:
         key_correlations = compute_tonality_vector(pitch_classes)
     key = key_correlations[0][0]
-    root = {'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
-            'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11,
-            'c': 0, 'c#': 1, 'd': 2, 'd#': 3, 'e': 4, 'f': 5,
-            'f#': 6, 'g': 7, 'g#': 8, 'a': 9, 'a#': 10, 'b': 11}[key.split()[0]]
-    if 'minor' in key.lower():
+    root = {
+        "C": 0,
+        "C#": 1,
+        "D": 2,
+        "D#": 3,
+        "E": 4,
+        "F": 5,
+        "F#": 6,
+        "G": 7,
+        "G#": 8,
+        "A": 9,
+        "A#": 10,
+        "B": 11,
+        "c": 0,
+        "c#": 1,
+        "d": 2,
+        "d#": 3,
+        "e": 4,
+        "f": 5,
+        "f#": 6,
+        "g": 7,
+        "g#": 8,
+        "a": 9,
+        "a#": 10,
+        "b": 11,
+    }[key.split()[0]]
+    if "minor" in key.lower():
         scale = [(root + i) % 12 for i in [0, 2, 3, 5, 7, 8, 10]]
     else:
         scale = [(root + i) % 12 for i in [0, 2, 4, 5, 7, 9, 11]]
@@ -942,27 +1042,30 @@ def longest_conjunct_scalar_passage(pitches: list[int], key_correlations: Option
 
     for i in range(1, len(deduped)):
         curr_pc = deduped[i] % 12
-        prev_pc = deduped[i-1] % 12
-        
+        prev_pc = deduped[i - 1] % 12
+
         if curr_pc not in scale or prev_pc not in scale:
             current_sequence = 1
             continue
-            
+
         curr_scale_pos = scale.index(curr_pc)
         prev_scale_pos = scale.index(prev_pc)
-        
+
         # Check if they're adjacent in the scale (in either direction)
         scale_interval = (curr_scale_pos - prev_scale_pos) % len(scale)
         if scale_interval == 1 or scale_interval == len(scale) - 1:
             current_sequence += 1
         else:
             current_sequence = 1
-            
+
         longest_sequence = max(longest_sequence, current_sequence)
 
     return longest_sequence
 
-def proportion_conjunct_scalar(pitches: list[int], key_correlations: Optional[list] = None) -> float:
+
+def proportion_conjunct_scalar(
+    pitches: list[int], key_correlations: Optional[list] = None
+) -> float:
     """Calculate the proportion of notes that form conjunct scalar sequences.
 
     Parameters
@@ -992,7 +1095,10 @@ def proportion_conjunct_scalar(pitches: list[int], key_correlations: Optional[li
     scalar_length = longest_conjunct_scalar_passage(pitches, key_correlations)
     return scalar_length / len(pitches)
 
-def proportion_scalar(pitches: list[int], key_correlations: Optional[list] = None) -> float:
+
+def proportion_scalar(
+    pitches: list[int], key_correlations: Optional[list] = None
+) -> float:
     """Calculate the proportion of notes that form scalar sequences.
 
     Parameters
@@ -1002,7 +1108,7 @@ def proportion_scalar(pitches: list[int], key_correlations: Optional[list] = Non
     key_correlations : Optional[list]
         Pre-computed key correlations from compute_tonality_vector.
         If None, will compute them.
-    
+
     Returns
     -------
     float

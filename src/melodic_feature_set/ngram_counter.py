@@ -1,6 +1,7 @@
+import math
 from collections import Counter
 from typing import Dict, Optional
-import math
+
 
 class NGramCounter:
     """A stateful n-gram counter that accumulates counts across multiple sequences."""
@@ -14,7 +15,7 @@ class NGramCounter:
 
     def count_ngrams(self, tokens: list, max_order: int = 5) -> None:
         """Count n-grams in the token sequence up to max_order length.
-        
+
         Parameters
         ----------
         tokens : list
@@ -27,12 +28,12 @@ class NGramCounter:
         self._total_tokens = None
         self._freq_spec = None
         self._count_values = None
-        
+
         # Count n-grams for each possible length up to max_order
         max_length = min(max_order, len(tokens))
         for length in range(1, max_length + 1):
             for i in range(len(tokens) - length + 1):
-                ngram = tuple(tokens[i:i + length])
+                ngram = tuple(tokens[i : i + length])
                 self.ngram_counts[ngram] = self.ngram_counts.get(ngram, 0) + 1
 
     def reset(self) -> None:
@@ -87,24 +88,26 @@ class NGramCounter:
         try:
             if len(self.count_values) <= 1:
                 import warnings
+
                 warnings.warn("Cannot calculate Yule's K for sequence of length <= 1")
-                return float('nan')
-                
+                return float("nan")
+
             n = self.total_tokens
             if n == 0:
-                return float('nan')
-                
+                return float("nan")
+
             s1 = sum(self.count_values)
             s2 = sum(x * x for x in self.count_values)
-            
+
             if s1 == 0:
-                return float('nan')
-                
+                return float("nan")
+
             return (10000 * (s2 - s1)) / (s1 * s1)
         except Exception as e:
             import warnings
+
             warnings.warn(f"Error calculating Yule's K: {str(e)}")
-            return float('nan')
+            return float("nan")
 
     @property
     def simpsons_d(self) -> float:
@@ -112,19 +115,23 @@ class NGramCounter:
         try:
             if len(self.count_values) <= 1:
                 import warnings
-                warnings.warn("Cannot calculate Simpson's D for sequence of length <= 1")
-                return float('nan')
-                
+
+                warnings.warn(
+                    "Cannot calculate Simpson's D for sequence of length <= 1"
+                )
+                return float("nan")
+
             n = self.total_tokens
             if n == 0:
-                return float('nan')
-                
+                return float("nan")
+
             s2 = sum(x * x for x in self.count_values)
             return s2 / (n * n)
         except Exception as e:
             import warnings
+
             warnings.warn(f"Error calculating Simpson's D: {str(e)}")
-            return float('nan')
+            return float("nan")
 
     @property
     def sichels_s(self) -> float:
@@ -132,19 +139,21 @@ class NGramCounter:
         try:
             if len(self.count_values) <= 1:
                 import warnings
+
                 warnings.warn("Cannot calculate Sichel's S for sequence of length <= 1")
-                return float('nan')
-                
+                return float("nan")
+
             v = len(self.ngram_counts)
             if v == 0:
-                return float('nan')
-                
+                return float("nan")
+
             v2 = self.freq_spec.get(2, 0)
-            return v2 / v if v > 0 else float('nan')
+            return v2 / v if v > 0 else float("nan")
         except Exception as e:
             import warnings
+
             warnings.warn(f"Error calculating Sichel's S: {str(e)}")
-            return float('nan')
+            return float("nan")
 
     @property
     def honores_h(self) -> float:
@@ -152,21 +161,23 @@ class NGramCounter:
         try:
             if len(self.count_values) <= 1:
                 import warnings
+
                 warnings.warn("Cannot calculate Honoré's H for sequence of length <= 1")
-                return float('nan')
-                
+                return float("nan")
+
             n = self.total_tokens
             v = len(self.ngram_counts)
             v1 = self.freq_spec.get(1, 0)
-            
+
             if n == 0 or v == 0:
-                return float('nan')
-                
-            return 100 * math.log(n) / (1 - v1/v) if v1 != v else float('nan')
+                return float("nan")
+
+            return 100 * math.log(n) / (1 - v1 / v) if v1 != v else float("nan")
         except Exception as e:
             import warnings
+
             warnings.warn(f"Error calculating Honoré's H: {str(e)}")
-            return float('nan')
+            return float("nan")
 
     @property
     def mean_entropy(self) -> float:
@@ -174,19 +185,23 @@ class NGramCounter:
         try:
             if len(self.count_values) <= 1:
                 import warnings
-                warnings.warn("Cannot calculate mean entropy for sequence of length <= 1")
-                return float('nan')
-                
+
+                warnings.warn(
+                    "Cannot calculate mean entropy for sequence of length <= 1"
+                )
+                return float("nan")
+
             n = self.total_tokens
             if n == 0:
-                return float('nan')
-                
-            probs = [count/n for count in self.count_values]
+                return float("nan")
+
+            probs = [count / n for count in self.count_values]
             return -sum(p * math.log(p) for p in probs)
         except Exception as e:
             import warnings
+
             warnings.warn(f"Error calculating mean entropy: {str(e)}")
-            return float('nan')
+            return float("nan")
 
     @property
     def mean_productivity(self) -> float:
@@ -194,17 +209,21 @@ class NGramCounter:
         try:
             if len(self.count_values) <= 1:
                 import warnings
-                warnings.warn("Cannot calculate mean productivity for sequence of length <= 1")
-                return float('nan')
-                
+
+                warnings.warn(
+                    "Cannot calculate mean productivity for sequence of length <= 1"
+                )
+                return float("nan")
+
             v = len(self.ngram_counts)
             v1 = self.freq_spec.get(1, 0)
-            
+
             if v == 0:
-                return float('nan')
-                
-            return v1 / v if v > 0 else float('nan')
+                return float("nan")
+
+            return v1 / v if v > 0 else float("nan")
         except Exception as e:
             import warnings
+
             warnings.warn(f"Error calculating mean productivity: {str(e)}")
-            return float('nan') 
+            return float("nan")

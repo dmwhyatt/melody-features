@@ -1,5 +1,5 @@
 # I am aware of some pathing issues in py2lispIDyOM - this interface script
-# seeks to provide a slightly 'hacky' fix. As such, this script ought to 
+# seeks to provide a slightly 'hacky' fix. As such, this script ought to
 # allow the user to provide a dir of midi files and run IDyOM on them.
 """
 This script provides a simplified interface to run IDyOM, using py2lispIDyOM.
@@ -18,28 +18,87 @@ chmod +x install_idyom.sh
 Then, run it:
 ./install_idyom.sh
 """
-import os
-import subprocess
 import logging
-from pathlib import Path
-from natsort import natsorted
-from glob import glob
-from typing import Optional
+import os
 import shutil
+import subprocess
+from glob import glob
+from pathlib import Path
+from typing import Optional
+
+from natsort import natsorted
 
 # A set of known valid viewpoints for IDyOM. This prevents typos and unsupported values.
 VALID_VIEWPOINTS = {
-    'onset', 'cpitch', 'dur', 'keysig', 'mode', 'tempo', 'pulses', 'barlength', 
-    'deltast', 'bioi', 'phrase', 'mpitch', 'accidental', 'dyn', 'voice', 'ornament', 
-    'comma', 'articulation', 'ioi', 'posinbar', 'dur-ratio', 'referent', 'cpint',
-    'contour', 'cpitch-class', 'cpcint', 'cpintfref', 'cpintfip', 'cpintfiph', 'cpintfib',
-    'inscale', 'ioi-ratio', 'ioi-contour', 'metaccent', 'bioi-ratio', 'bioi-contour',
-    'lphrase', 'cpint-size', 'newcontour', 'cpcint-size', 'cpcint-2', 'cpcint-3',
-    'cpcint-4', 'cpcint-5', 'cpcint-6', 'octave', 'tessitura', 'mpitch-class', 
-    'registral-direction', 'intervallic-difference', 'registral-return', 'proximity',
-    'closure', 'fib', 'crotchet', 'tactus', 'fiph', 'liph', 'thr-cpint-fib',
-    'thr-cpint-fiph', 'thr-cpint-liph', 'thr-cpint-crotchet', 'thr-cpint-tactus', 
-    'thr-cpintfref-liph', 'thr-cpintfref-fib','thr-cpint-cpintfref-liph' ,'thr-cpint-cpintfref-fib'}
+    "onset",
+    "cpitch",
+    "dur",
+    "keysig",
+    "mode",
+    "tempo",
+    "pulses",
+    "barlength",
+    "deltast",
+    "bioi",
+    "phrase",
+    "mpitch",
+    "accidental",
+    "dyn",
+    "voice",
+    "ornament",
+    "comma",
+    "articulation",
+    "ioi",
+    "posinbar",
+    "dur-ratio",
+    "referent",
+    "cpint",
+    "contour",
+    "cpitch-class",
+    "cpcint",
+    "cpintfref",
+    "cpintfip",
+    "cpintfiph",
+    "cpintfib",
+    "inscale",
+    "ioi-ratio",
+    "ioi-contour",
+    "metaccent",
+    "bioi-ratio",
+    "bioi-contour",
+    "lphrase",
+    "cpint-size",
+    "newcontour",
+    "cpcint-size",
+    "cpcint-2",
+    "cpcint-3",
+    "cpcint-4",
+    "cpcint-5",
+    "cpcint-6",
+    "octave",
+    "tessitura",
+    "mpitch-class",
+    "registral-direction",
+    "intervallic-difference",
+    "registral-return",
+    "proximity",
+    "closure",
+    "fib",
+    "crotchet",
+    "tactus",
+    "fiph",
+    "liph",
+    "thr-cpint-fib",
+    "thr-cpint-fiph",
+    "thr-cpint-liph",
+    "thr-cpint-crotchet",
+    "thr-cpint-tactus",
+    "thr-cpintfref-liph",
+    "thr-cpintfref-fib",
+    "thr-cpint-cpintfref-liph",
+    "thr-cpint-cpintfref-fib",
+}
+
 
 def is_idyom_installed():
     """Check if IDyOM is installed by verifying SBCL, the IDyOM database, and source directory."""
@@ -62,7 +121,7 @@ def is_idyom_installed():
         return False
     # Also, ensure our specific configuration is present.
     try:
-        with open(sbclrc_path, 'r') as f:
+        with open(sbclrc_path, "r") as f:
             # This marker must match the one in install_idyom.sh
             if ";; IDyOM Configuration (v3)" not in f.read():
                 return False
@@ -79,56 +138,58 @@ def install_idyom():
     if result.returncode != 0:
         raise RuntimeError("IDyOM installation failed. See output above.")
 
+
 def start_idyom():
     """Start IDyOM."""
     # Import the library
     import py2lispIDyOM
-    
+
     # Patch the broken _get_files_from_paths method
     from py2lispIDyOM.configuration import ExperimentLogger
-    
+
     def fixed_get_files_from_paths(self, path):
         """Fixed version of _get_files_from_paths that properly filters MIDI and Kern files"""
-        logger = logging.getLogger('melodic_feature_set')
+        logger = logging.getLogger("melodic_feature_set")
         # Ensure the path ends with a slash for proper directory traversal
-        if not path.endswith('/'):
-            path = path + '/'
-        
-        glob_pattern = path + '*'
+        if not path.endswith("/"):
+            path = path + "/"
+
+        glob_pattern = path + "*"
         files = []
         all_files = glob(glob_pattern)
-        
+
         for file in all_files:
             # Skip directories, only process files
             if os.path.isfile(file):
                 # Fix the broken condition in the original library
-                file_extension = file[file.rfind("."):]
+                file_extension = file[file.rfind(".") :]
                 if file_extension == ".mid" or file_extension == ".krn":
                     files.append(file)
             else:
                 logger.debug(f"Skipping directory: {file}")
-        
+
         return natsorted(files)
-    
+
     # Replace the broken method with the fixed one
     ExperimentLogger._get_files_from_paths = fixed_get_files_from_paths
-    
+
     return py2lispIDyOM
+
 
 def run_idyom(
     input_path=None,
     pretraining_path=None,
-    output_dir='.', 
-    experiment_name=None, 
+    output_dir=".",
+    experiment_name=None,
     description: Optional[str] = None,
-    target_viewpoints=['cpitch', 'onset'],
-    source_viewpoints=['cpitch', 'onset'],
-    models=':both',
+    target_viewpoints=["cpitch", "onset"],
+    source_viewpoints=["cpitch", "onset"],
+    models=":both",
     k=1,
     detail=3,
-    ppm_order=None
+    ppm_order=None,
 ):
-    logger = logging.getLogger('melodic_feature_set')
+    logger = logging.getLogger("melodic_feature_set")
     """
     Run IDyOM on a directory of MIDI files.
 
@@ -139,7 +200,7 @@ def run_idyom(
     """
     # --- Viewpoint Validation ---
     all_provided_viewpoints = set()
-    
+
     # Process both target and source viewpoints
     for viewpoints in [target_viewpoints, source_viewpoints]:
         for viewpoint in viewpoints:
@@ -152,7 +213,7 @@ def run_idyom(
                 all_provided_viewpoints.update(viewpoint)
             else:
                 all_provided_viewpoints.add(viewpoint)
-    
+
     invalid_viewpoints = all_provided_viewpoints - VALID_VIEWPOINTS
 
     # TODO: Support linked viewpoints.
@@ -161,13 +222,13 @@ def run_idyom(
             f"Invalid viewpoint(s) provided: {', '.join(invalid_viewpoints)}.\n"
             f"Valid viewpoints are: {', '.join(sorted(list(VALID_VIEWPOINTS)))}"
         )
-        
-    logger = logging.getLogger('melodic_feature_set')
+
+    logger = logging.getLogger("melodic_feature_set")
     if not is_idyom_installed():
         logger.warning("IDyOM installation not found.")
         try:
             response = input("Would you like to install it now? (y/n): ")
-            if response.lower().strip() == 'y':
+            if response.lower().strip() == "y":
                 logger.info("Running installation script...")
                 install_idyom()
                 logger.info("Installation complete.")
@@ -175,7 +236,9 @@ def run_idyom(
                 logger.info("Installation cancelled. Aborting.")
                 return None
         except (EOFError, KeyboardInterrupt):
-            logger.warning("Non-interactive mode detected. Please install IDyOM manually by running install_idyom.sh")
+            logger.warning(
+                "Non-interactive mode detected. Please install IDyOM manually by running install_idyom.sh"
+            )
             return None
 
     logger.info("Starting IDyOM...")
@@ -190,86 +253,101 @@ def run_idyom(
     if pretraining_path and not Path(pretraining_path).exists():
         logger.error(f"Pre-training MIDI directory not found: {pretraining_path}")
         return None
-    
+
     # Debug: Check what files are in the pretraining directory
     if pretraining_path:
         pretrain_files = list(Path(pretraining_path).glob("*.mid"))
         pretrain_files.extend(list(Path(pretraining_path).glob("*.midi")))
-        logger.info(f"Found {len(pretrain_files)} MIDI files in pretraining directory: {pretraining_path}")
+        logger.info(
+            f"Found {len(pretrain_files)} MIDI files in pretraining directory: {pretraining_path}"
+        )
         if len(pretrain_files) == 0:
-            logger.warning(f"No MIDI files found in pretraining directory: {pretraining_path}")
+            logger.warning(
+                f"No MIDI files found in pretraining directory: {pretraining_path}"
+            )
     else:
         logger.info("No pretraining path provided, will run without pretraining")
-    
+
     # Look for both .mid and .midi files
     midi_files = list(Path(input_path).glob("*.mid"))
     midi_files.extend(list(Path(input_path).glob("*.midi")))
     logger.info(f"Found {len(midi_files)} MIDI files in input directory.")
-    
+
     if len(midi_files) == 0:
         logger.error(f"No MIDI files found in {input_path}!")
         return None
-    
+
     try:
         if experiment_name:
             logger_name = experiment_name
         elif description:
             # Ensure it has a valid folder name
-            logger_name = "".join(c for c in description if c.isalnum() or c in (' ', '_')).rstrip().replace(' ', '_')
+            logger_name = (
+                "".join(c for c in description if c.isalnum() or c in (" ", "_"))
+                .rstrip()
+                .replace(" ", "_")
+            )
         else:
             logger_name = os.path.basename(input_path)
-        
+
         # Use a unique temporary directory for each experiment to avoid conflicts
         import tempfile
+
         temp_history_folder = str(Path(tempfile.mkdtemp(prefix="idyom_")).resolve())
 
-        if not temp_history_folder.endswith('/'):
-            temp_history_folder += '/'
+        if not temp_history_folder.endswith("/"):
+            temp_history_folder += "/"
 
         # Create IDyOM experiment directly
         logger.info(f"Creating IDyOM experiment with logger_name: {logger_name}")
         logger.info(f"Using temp_history_folder: {temp_history_folder}")
-        
+
         # Initialize pretrain_dir variable
         pretrain_dir = None
         final_pretrain_path = pretraining_path
-        
+
         # If pretraining path is provided, copy it to the experiment directory
         if pretraining_path:
             pretrain_dir = Path(temp_history_folder) / "pretrain_dataset"
             pretrain_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Copy all MIDI files from pretraining directory to experiment pretrain directory
             # Convert .midi files to .mid files for IDyOM compatibility
             pretrain_files = list(Path(pretraining_path).glob("*.mid"))
             midi_files = list(Path(pretraining_path).glob("*.midi"))
-            
+
             # Copy .mid files as-is
             for file in pretrain_files:
                 shutil.copy2(file, pretrain_dir)
-            
+
             # Copy .midi files with .mid extension
             for file in midi_files:
                 new_name = file.stem + ".mid"
                 shutil.copy2(file, pretrain_dir / new_name)
-            
-            logger.info(f"Copied {len(pretrain_files)} .mid files and {len(midi_files)} .midi files (as .mid) to {pretrain_dir}")
-            
+
+            logger.info(
+                f"Copied {len(pretrain_files)} .mid files and {len(midi_files)} .midi files (as .mid) to {pretrain_dir}"
+            )
+
             # Use the copied pretraining directory if it exists and has files
             if pretrain_dir.exists() and any(pretrain_dir.iterdir()):
                 final_pretrain_path = str(pretrain_dir)
-                logger.info(f"Using copied pretraining directory: {final_pretrain_path}")
+                logger.info(
+                    f"Using copied pretraining directory: {final_pretrain_path}"
+                )
             else:
-                logger.warning(f"Pretraining directory is empty or doesn't exist: {pretrain_dir}")
+                logger.warning(
+                    f"Pretraining directory is empty or doesn't exist: {pretrain_dir}"
+                )
                 final_pretrain_path = None
-        
+
         experiment = py2lisp.run.IDyOMExperiment(
             test_dataset_path=input_path,
             pretrain_dataset_path=final_pretrain_path,
             experiment_history_folder_path=temp_history_folder,
-            experiment_logger_name=logger_name
+            experiment_logger_name=logger_name,
         )
-        
+
         logger.info("Setting experiment parameters...")
         experiment.set_parameters(
             target_viewpoints=target_viewpoints,
@@ -278,41 +356,45 @@ def run_idyom(
             k=k,
             detail=detail,
             ltmo_order_bound=ppm_order,
-            stmo_order_bound=ppm_order
+            stmo_order_bound=ppm_order,
         )
-        
+
         logger.info("Running IDyOM analysis...")
         experiment.run()
         logger.info("Analysis complete!")
-        
+
         results_path = Path(experiment.logger.this_exp_folder)
-        
+
         # find the dat file in temp output
         data_folder_path = results_path / "experiment_output_data_folder"
-        
+
         if not data_folder_path.exists():
             logger.error(f"Expected data folder not found at {data_folder_path}.")
             return None
 
-        dat_files = list(data_folder_path.glob('*.dat'))
-        
+        dat_files = list(data_folder_path.glob("*.dat"))
+
         if not dat_files:
             logger.warning(f"No .dat file found in {data_folder_path}.")
             return None
-            
+
         dat_file_path = dat_files[0]
         if len(dat_files) > 1:
-            logger.warning(f"Found multiple .dat files, using the first one: {dat_file_path}")
+            logger.warning(
+                f"Found multiple .dat files, using the first one: {dat_file_path}"
+            )
 
         # Move the .dat file and cleanup everything else
         destination_dir = Path(output_dir)
         destination_dir.mkdir(parents=True, exist_ok=True)
         destination_path = destination_dir / f"{logger_name}.dat"
-        
+
         shutil.move(str(dat_file_path), str(destination_path))
         shutil.rmtree(temp_history_folder)
 
-        logger.info(f"IDyOM processing completed successfully! Output: {destination_path}")
+        logger.info(
+            f"IDyOM processing completed successfully! Output: {destination_path}"
+        )
         return str(destination_path)
 
     except Exception as e:
@@ -323,10 +405,10 @@ def run_idyom(
 if __name__ == "__main__":
     # This block provides a simple example of how to use the run_idyom function.
     # It will run IDyOM on the MIDI files in the supplied directory.
-    
-    logger = logging.getLogger('melodic_feature_set')
+
+    logger = logging.getLogger("melodic_feature_set")
     example_midi_dir = "/Users/davidwhyatt/Downloads/Essen_First_10"
-    
+
     if Path(example_midi_dir).is_dir():
         logger.info(f"--- Running IDyOM on example directory: '{example_midi_dir}' ---")
         run_idyom(
@@ -336,7 +418,7 @@ if __name__ == "__main__":
             # Target viewpoints can only be onset, cpitch, or ioi.
             # Typically people focus on analysing just cpitch, because that's
             # where IDyOM has been most validated.
-            target_viewpoints=['cpitch'],
+            target_viewpoints=["cpitch"],
             # Source viewpoints can be all kinds of things.
             # Marcus's favourite is a linked viewpoint comprising:
             # - cpint: the chromatic interval between the current and previous note
@@ -344,12 +426,14 @@ if __name__ == "__main__":
             # Note however that we need to make sure that key signature is encoded in the MIDI file.
             # source_viewpoints=['cpitch'],
             # source_viewpoints=['cpintfref'],
-            source_viewpoints=[('cpint', 'cpintfref'), "cpcint"],
-            models=':both',
+            source_viewpoints=[("cpint", "cpintfref"), "cpcint"],
+            models=":both",
             detail=2,
-            ppm_order=1  # Set the order of the PPM models
+            ppm_order=1,  # Set the order of the PPM models
         )
     else:
-        logger.warning(f"--- Example MIDI directory '{example_midi_dir}' not found. ---")
+        logger.warning(
+            f"--- Example MIDI directory '{example_midi_dir}' not found. ---"
+        )
         logger.info("Please create it and add some MIDI files to it,")
         logger.info("or change the 'example_midi_dir' variable in the script.")

@@ -1,7 +1,9 @@
 """
 Implements features derived from Narmour (1990) concerning Gestalt principles for melody.
 """
+
 __author__ = "David Whyatt"
+
 
 def proximity(values: list[float]) -> float:
     """Calculates the proximity score between consecutive notes.
@@ -26,7 +28,7 @@ def proximity(values: list[float]) -> float:
     -----
     Implements a proximity measure where:
     - Returns 6 for unison (0 semitones)
-    - Returns 4 for whole tone (2 semitones) 
+    - Returns 4 for whole tone (2 semitones)
     - Returns 1 for perfect fourth (5 semitones)
     - Returns 0 for tritone or greater (≥6 semitones)
 
@@ -56,6 +58,7 @@ def proximity(values: list[float]) -> float:
 
     # Return 0 if proximity would be negative (interval ≥ 6)
     return float(max(0, proximity_score))
+
 
 def registral_return(values: list[float]) -> float:
     """Calculates the registral return score for a sequence of three notes.
@@ -111,7 +114,7 @@ def registral_return(values: list[float]) -> float:
 
     # Calculate intervals between consecutive notes
     implicative = pitch2 - pitch1  # First interval
-    realized = pitch3 - pitch2     # Second interval
+    realized = pitch3 - pitch2  # Second interval
 
     # Check if intervals are in different directions (one positive, one negative)
     different_direction = (implicative * realized) < 0
@@ -126,6 +129,7 @@ def registral_return(values: list[float]) -> float:
         return float(3 - abs(pitch3 - pitch1))
 
     return 0.0
+
 
 def registral_direction(values: list[float]) -> float:
     """Determines the registral direction based on the last three notes.
@@ -193,8 +197,9 @@ def registral_direction(values: list[float]) -> float:
     else:
         return 0.0
 
+
 def intervallic_difference(values: list[float]) -> float:
-    """Determines if a large interval is followed by a smaller interval or if a small interval 
+    """Determines if a large interval is followed by a smaller interval or if a small interval
     is followed by a similar interval.
 
     Parameters
@@ -253,8 +258,12 @@ def intervallic_difference(values: list[float]) -> float:
         return 1.0 if abs(realized) < abs(implicative) - margin else 0.0
     elif small_interval(implicative):
         margin = 3 if same_direction(implicative, realized) else 2
-        return (1.0 if abs(realized) >= abs(implicative) - margin and
-                abs(realized) <= abs(implicative) + margin else 0.0)
+        return (
+            1.0
+            if abs(realized) >= abs(implicative) - margin
+            and abs(realized) <= abs(implicative) + margin
+            else 0.0
+        )
     else:
         return 0.0
 
