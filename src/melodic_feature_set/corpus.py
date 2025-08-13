@@ -16,13 +16,18 @@ from typing import List, Dict, Tuple
 import multiprocessing as mp
 from pathlib import Path
 from tqdm import tqdm
+from importlib import resources
 from melodic_feature_set.melody_tokenizer import FantasticTokenizer
 from melodic_feature_set.representations import Melody, read_midijson
 from melodic_feature_set.import_mid import import_midi
 
 
-
-# TODO # essen_corpus = resources.files("melodic_feature_set") / "corpora/Essen_Corpus"
+# Corpus paths for easy access
+try:
+    essen_corpus = resources.files("melodic_feature_set") / "corpora" / "Essen_Corpus"
+except ImportError:
+    # Fallback for development or when package is not installed
+    essen_corpus = Path(__file__).parent / "corpora" / "Essen_Corpus"
 
 
 def process_melody_ngrams(args) -> set:
@@ -359,3 +364,50 @@ def make_corpus_stats_from_json(json_file: str, output_file: str, n_range: Tuple
     logger.info("Corpus statistics saved and loaded successfully.")
     logger.info(f"Corpus size: {loaded_stats['corpus_size']} melodies")
     logger.info(f"N-gram lengths: {loaded_stats['n_range']}")
+
+
+def get_corpus_path(corpus_name: str) -> Path:
+    """Get the path to a bundled corpus.
+    
+    Parameters
+    ----------
+    corpus_name : str
+        Name of the corpus. Currently supports: 'essen'
+        
+    Returns
+    -------
+    Path
+        Path to the corpus directory
+        
+    Raises
+    ------
+    ValueError
+        If the corpus name is not recognized
+    FileNotFoundError
+        If the corpus directory does not exist
+    """
+    corpus_paths = {
+        'essen': essen_corpus
+    }
+    
+    if corpus_name not in corpus_paths:
+        available = ', '.join(corpus_paths.keys())
+        raise ValueError(f"Unknown corpus '{corpus_name}'. Available corpora: {available}")
+    
+    corpus_path = corpus_paths[corpus_name]
+    
+    if not corpus_path.exists():
+        raise FileNotFoundError(f"Corpus directory not found: {corpus_path}")
+    
+    return corpus_path
+
+
+def list_available_corpora() -> List[str]:
+    """List all available bundled corpora.
+    
+    Returns
+    -------
+    List[str]
+        List of available corpus names
+    """
+    return ['essen']

@@ -1,4 +1,4 @@
-from Feature_Set.melsim_wrapper.melsim import get_similarity_from_midi, install_dependencies
+from melodic_feature_set.melsim_wrapper.melsim import get_similarity_from_midi, install_dependencies
 
 if __name__ == "__main__":
     # Install dependencies

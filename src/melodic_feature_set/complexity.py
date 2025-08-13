@@ -233,8 +233,8 @@ def honores_h(ngram_counts: list[Counter]) -> float:
     ...     (('u2', 'e'), ('d2', 'e'), ('d2', None)): 1,
     ...     (('u2', 'e'), ('u2', 'e'), ('d2', 'e'), ('d2', None)): 1
     ... })]
-    >>> honores_h(counts)  # Higher H indicates more unique words
-    2072.326... 
+    >>> honores_h(counts)  # Higher H indicates more unique words  # doctest: +ELLIPSIS
+    2072.326...
     
     >>> # Empty input
     >>> honores_h([])

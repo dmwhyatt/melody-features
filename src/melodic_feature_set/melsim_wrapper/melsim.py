@@ -100,7 +100,7 @@ from tqdm import tqdm
 
 from tenacity import RetryError, Retrying, stop_after_attempt, wait_exponential
 import numpy as np
-from Feature_Set.import_mid import import_midi
+from melodic_feature_set.import_mid import import_midi
 import json
 import subprocess
 

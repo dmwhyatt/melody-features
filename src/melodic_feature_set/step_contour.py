@@ -27,12 +27,12 @@ class StepContour:
     >>> sc = StepContour(pitches, durations)
     >>> sc.contour[:8]  # First 8 values of 64-length contour
     [60, 60, 60, 60, 60, 60, 60, 60]
-    >>> sc.global_variation  # Standard deviation of contour
-    2.3974
-    >>> sc.global_direction  # Correlation with ascending line
-    0.9746
-    >>> sc.local_variation  # Average absolute difference between adjacent values
-    0.1111
+    >>> sc.global_variation  # Standard deviation of contour  # doctest: +ELLIPSIS
+    2.3974...
+    >>> sc.global_direction  # Correlation with ascending line  # doctest: +ELLIPSIS
+    0.9746...
+    >>> sc.local_variation  # Average absolute difference between adjacent values  # doctest: +ELLIPSIS
+    0.1111...
     """
 
     _step_contour_length = 64
@@ -201,8 +201,8 @@ class StepContour:
         Examples
         --------
         >>> sc = StepContour([60, 62, 64], [1.0, 1.0, 1.0])
-        >>> sc.global_variation
-        1.64
+        >>> sc.global_variation  # doctest: +ELLIPSIS
+        1.639...
         """
         return float(np.std(self.contour))
 
@@ -220,14 +220,14 @@ class StepContour:
         Examples
         --------
         >>> sc = StepContour([60, 62, 64], [1.0, 1.0, 1.0])
-        >>> sc.global_direction
-        0.943
+        >>> sc.global_direction  # doctest: +ELLIPSIS
+        0.942...
         >>> sc = StepContour([60, 60, 60], [1.0, 1.0, 1.0])
         >>> sc.global_direction
         0.0
         >>> sc = StepContour([64, 62, 60], [1.0, 1.0, 1.0])  # Descending melody
-        >>> sc.global_direction
-        -0.943
+        >>> sc.global_direction  # doctest: +ELLIPSIS
+        -0.942...
         """
         corr = np.corrcoef(self.contour, np.arange(self._step_contour_length))[0, 1]
         if np.isnan(corr) and len(self.contour) > 1:
@@ -247,8 +247,8 @@ class StepContour:
         Examples
         --------
         >>> sc = StepContour([60, 62, 64], [1.0, 1.0, 1.0])
-        >>> sc.local_variation
-        0.0634
+        >>> sc.local_variation  # doctest: +ELLIPSIS
+        0.0634...
         """
         pairs = list(zip(self.contour, self.contour[1:]))
         local_variation = sum(abs(c2 - c1) for c1, c2 in pairs) / len(pairs)
