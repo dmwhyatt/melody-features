@@ -2,7 +2,7 @@
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=1023590972)
 
-[![Tests](https://github.com/Dav8Circle/melodic_feature_set/workflows/Tests/badge.svg)](https://github.com/Dav8Circle/melodic_feature_set/actions)
+[![Tests](https://github.com/Dav8Circle/melodic_feature_set/workflows/Test/badge.svg)](https://github.com/Dav8Circle/melodic_feature_set/actions)
 
 ## Overview
 This is a Python package designed to facilitate the use of many different melody analyis tools. 
