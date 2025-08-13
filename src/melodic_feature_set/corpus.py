@@ -31,28 +31,26 @@ except ImportError:
 
 # Create essen_first_ten directory with first 10 files
 def _create_essen_first_ten():
-    """Create a temporary directory with the first 10 files from Essen corpus."""
-    import tempfile
+    """Create a permanent directory with the first 10 files from Essen corpus."""
     import shutil
     from natsort import natsorted
+
+    essen_first_ten_dir = essen_corpus.parent / "Essen_Corpus_First_Ten"
     
-    # Create temporary directory
-    temp_dir = Path(tempfile.mkdtemp(prefix="essen_first_ten_"))
+    if not essen_first_ten_dir.exists():
+        essen_first_ten_dir.mkdir(exist_ok=True)
+        
+        midi_files = list(essen_corpus.glob("*.mid"))
+        if not midi_files:
+            raise FileNotFoundError(f"No MIDI files found in {essen_corpus}")
+        
+        sorted_files = natsorted(midi_files)
+        first_ten_files = sorted_files[:10]
+
+        for file in first_ten_files:
+            shutil.copy2(file, essen_first_ten_dir / file.name)
     
-    # Get all MIDI files from Essen corpus
-    midi_files = list(essen_corpus.glob("*.mid"))
-    if not midi_files:
-        raise FileNotFoundError(f"No MIDI files found in {essen_corpus}")
-    
-    # Sort files naturally and take first 10
-    sorted_files = natsorted(midi_files)
-    first_ten_files = sorted_files[:10]
-    
-    # Copy files to temporary directory
-    for file in first_ten_files:
-        shutil.copy2(file, temp_dir / file.name)
-    
-    return temp_dir
+    return essen_first_ten_dir
 
 # Initialize essen_first_ten
 try:
