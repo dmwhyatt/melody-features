@@ -2541,7 +2541,8 @@ def _setup_default_config(config: Optional[Config]) -> Config:
     """
     if config is None:
         config = Config(
-            corpus=str(Path(__file__).parent / "Essen_Corpus"),
+            # I hate this so much
+            corpus=str(Path(__file__).parent.parent.parent / "corpora/Essen_Corpus"),
             idyom={
                 'default_pitch': IDyOMConfig(
                     target_viewpoints=['cpitch'],

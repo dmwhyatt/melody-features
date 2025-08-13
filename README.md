@@ -30,14 +30,14 @@ config = Config(
         target_viewpoints=["cpitch"],
         source_viewpoints=["cpint", "cpintfref"],
         ppm_order=2,
-        corpus="src/melodic_feature_set/Essen_Corpus",
+        corpus="corpora/Essen_Corpus",
         models=":both"
     ),
     "rhythm": IDyOMConfig(
         target_viewpoints=["onset"],
         source_viewpoints=["ioi"],
         ppm_order=1,
-        corpus="src/melodic_feature_set/Essen_Corpus",
+        corpus="corpora/Essen_Corpus",
         models=":both"
     )},
     # Omitting the corpus path in Fantastic here will
