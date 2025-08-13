@@ -5,6 +5,7 @@ Features are the product of an input list and at least one algorithm.
 __author__ = "David Whyatt"
 
 # Suppress warnings from external libraries before any other imports
+from importlib import resources
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
@@ -2542,7 +2543,8 @@ def _setup_default_config(config: Optional[Config]) -> Config:
     if config is None:
         config = Config(
             # I hate this so much
-            corpus=str(Path(__file__).parent.parent.parent / "corpora/Essen_Corpus"),
+            corpus=resources.files("melodic_feature_set") / "corpora/Essen_Corpus",
+            # corpus=str(Path(__file__).parent.parent.parent / "corpora/Essen_Corpus"),
             idyom={
                 'default_pitch': IDyOMConfig(
                     target_viewpoints=['cpitch'],

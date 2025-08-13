@@ -1,0 +1,4 @@
+include *.py
+include *.sh
+recursive-include src/melodic_feature_set *.mid
+recursive-include src/melodic_feature_set *.midi 

@@ -7,6 +7,17 @@ authors = [
 description = "A Python package for computing tonnes of melodic features found in computational musicology literature."
 readme = "README.md"
 requires-python = ">=3.9"
+dependencies = [
+    "matplotlib",
+    "mido",
+    "natsort",
+    "numpy",
+    "pandas",
+    "pretty_midi",
+    "py2lispIDyOM",
+    "scipy",
+    "tqdm",
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: MacOS",
@@ -18,3 +29,10 @@ license-files = ["LICEN[CS]E*"]
 [project.urls]
 Homepage = "https://github.com/Dav8Circle/melodic_feature_set"
 Issues = "https://github.com/Dav8Circle/melodic_feature_set/issues"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

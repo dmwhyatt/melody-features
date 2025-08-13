@@ -21,6 +21,10 @@ from melodic_feature_set.representations import Melody, read_midijson
 from melodic_feature_set.import_mid import import_midi
 
 
+
+# TODO # essen_corpus = resources.files("melodic_feature_set") / "corpora/Essen_Corpus"
+
+
 def process_melody_ngrams(args) -> set:
     """Process n-grams for a single melody.
     
