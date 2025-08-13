@@ -8,3 +8,7 @@ Essen_Corpus_corpus_stats.json
 .DS_Store
 build/
 .pytest_cache/
+notebooks/.ipynb_checkpoints
+notebooks/output1.csv
+notebooks/output2.csv
+notebooks/output3.csv
