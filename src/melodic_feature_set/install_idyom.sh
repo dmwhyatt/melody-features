@@ -3,12 +3,34 @@ set -e
 
 echo "IDyOM installer for Linux/macOS"
 
+# Detect if running in Docker container (no sudo available)
+if [ -f /.dockerenv ] || [ -f /proc/1/cgroup ] && grep -q docker /proc/1/cgroup; then
+    echo "Detected Docker container - running without sudo"
+    DOCKER_MODE=true
+else
+    DOCKER_MODE=false
+fi
+
 # Detect OS and set package manager
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    PM="sudo apt-get"
+    if [ "$DOCKER_MODE" = true ]; then
+        PM="apt-get"
+    else
+        PM="sudo apt-get"
+    fi
     UPDATE_CMD="$PM update"
     INSTALL_CMD="$PM install -y"
     PKGS="sbcl sqlite3 libsqlite3-dev wget curl unzip bzip2"
+elif [[ "$OSTYPE" == "linux-musl"* ]]; then
+    # Alpine Linux
+    if [ "$DOCKER_MODE" = true ]; then
+        PM="apk"
+    else
+        PM="sudo apk"
+    fi
+    UPDATE_CMD="$PM update"
+    INSTALL_CMD="$PM add"
+    PKGS="sbcl sqlite sqlite-dev wget curl unzip bzip2"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS
     if ! command -v brew >/dev/null 2>&1; then

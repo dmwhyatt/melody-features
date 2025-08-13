@@ -17,3 +17,5 @@ RUN pip install jupyter
 
 COPY . .
 RUN pip install -e .
+RUN chmod +x src/melodic_feature_set/install_idyom.sh
+RUN ./src/melodic_feature_set/install_idyom.sh
