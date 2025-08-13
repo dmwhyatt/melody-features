@@ -5,7 +5,7 @@ Tests for IDyOM setup and installation.
 import os
 import subprocess
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 
