@@ -13,6 +13,8 @@ Included in the package are contributions from:
 - IDyOM (Pearce, 2005)
 - MIDI Toolbox (Eerola & Toiviainen, 2004)
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=1023590972)
+
 The feature set can be easily accessed using the top level function `get_all_features`. 
 Below is an example script demonstrating how it may be applied. This can be found in `example.py` in the package source code.
 
