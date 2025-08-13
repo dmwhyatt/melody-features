@@ -29,6 +29,38 @@ except ImportError:
     # Fallback for development or when package is not installed
     essen_corpus = Path(__file__).parent / "corpora" / "Essen_Corpus"
 
+# Create essen_first_ten directory with first 10 files
+def _create_essen_first_ten():
+    """Create a temporary directory with the first 10 files from Essen corpus."""
+    import tempfile
+    import shutil
+    from natsort import natsorted
+    
+    # Create temporary directory
+    temp_dir = Path(tempfile.mkdtemp(prefix="essen_first_ten_"))
+    
+    # Get all MIDI files from Essen corpus
+    midi_files = list(essen_corpus.glob("*.mid"))
+    if not midi_files:
+        raise FileNotFoundError(f"No MIDI files found in {essen_corpus}")
+    
+    # Sort files naturally and take first 10
+    sorted_files = natsorted(midi_files)
+    first_ten_files = sorted_files[:10]
+    
+    # Copy files to temporary directory
+    for file in first_ten_files:
+        shutil.copy2(file, temp_dir / file.name)
+    
+    return temp_dir
+
+# Initialize essen_first_ten
+try:
+    essen_first_ten = _create_essen_first_ten()
+except Exception as e:
+    # Fallback: just point to the original corpus if we can't create the subset
+    essen_first_ten = essen_corpus
+
 
 def process_melody_ngrams(args) -> set:
     """Process n-grams for a single melody.
@@ -372,7 +404,7 @@ def get_corpus_path(corpus_name: str) -> Path:
     Parameters
     ----------
     corpus_name : str
-        Name of the corpus. Currently supports: 'essen'
+        Name of the corpus. Currently supports: 'essen', 'essen_first_ten'
         
     Returns
     -------
@@ -387,7 +419,8 @@ def get_corpus_path(corpus_name: str) -> Path:
         If the corpus directory does not exist
     """
     corpus_paths = {
-        'essen': essen_corpus
+        'essen': essen_corpus,
+        'essen_first_ten': essen_first_ten
     }
     
     if corpus_name not in corpus_paths:
@@ -410,4 +443,4 @@ def list_available_corpora() -> List[str]:
     List[str]
         List of available corpus names
     """
-    return ['essen']
+    return ['essen', 'essen_first_ten']

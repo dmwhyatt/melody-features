@@ -234,24 +234,26 @@ class Config:
     """Configuration class for the feature set.
     Parameters
     ----------
-    corpus : os.PathLike
-        Path to the corpus to use for the feature set. This can be overridden by the corpus parameter in the IDyOMConfig and FantasticConfig classes.
     idyom : dict[str, IDyOMConfig]
         Dictionary of IDyOM configurations, with the key being the name of the IDyOM configuration.
     fantastic : FantasticConfig
         Configuration object for FANTASTIC analysis.
+    corpus : Optional[os.PathLike]
+        Path to the corpus to use for the feature set. This can be overridden by the corpus parameter in the IDyOMConfig and FantasticConfig classes.
+        If None, no corpus-dependent features will be computed unless specified in individual configs.
     """
-    corpus: os.PathLike
     idyom: dict[str, IDyOMConfig]
     fantastic: FantasticConfig
+    corpus: Optional[os.PathLike] = None
     
     def __post_init__(self):
         """Validate the configuration after initialization."""
-        # Validate corpus path
-        if not isinstance(self.corpus, (str, os.PathLike)):
-            raise ValueError(f"corpus must be a string or PathLike, got {type(self.corpus)}")
-        if not Path(self.corpus).exists():
-            raise ValueError(f"corpus path does not exist: {self.corpus}")
+        # Validate corpus path if provided
+        if self.corpus is not None:
+            if not isinstance(self.corpus, (str, os.PathLike)):
+                raise ValueError(f"corpus must be a string or PathLike, got {type(self.corpus)}")
+            if not Path(self.corpus).exists():
+                raise ValueError(f"corpus path does not exist: {self.corpus}")
         
         # Validate idyom dictionary
         if not isinstance(self.idyom, dict):
@@ -2401,6 +2403,26 @@ def get_idyom_results(input_directory, idyom_target_viewpoints, idyom_source_vie
 def to_mido_key_string(key_name):
     """Convert key name to mido key string format."""
     key_name = key_name.strip().lower()
+    
+    # mido only allows certain key names, so we need to catch enharmonics
+    # see https://mido.readthedocs.io/en/stable/meta_message_types.html
+    enharmonic_map = {
+        'a#': 'bb',
+        'a# major': 'bb major',
+        'd#': 'eb',
+        'd# major': 'eb major',
+        'g#': 'ab',
+        'g# major': 'ab major',
+        'c#': 'db',
+        'c# major': 'db major',
+        'f#': 'gb',
+        'f# major': 'gb major'
+    }
+    
+    # Apply enharmonic mapping
+    if key_name in enharmonic_map:
+        key_name = enharmonic_map[key_name]
+    
     if 'minor' in key_name:
         root = key_name.replace(' minor', '').replace('min', '').strip().capitalize()
         return f"{root}m"
