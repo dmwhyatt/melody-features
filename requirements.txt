@@ -63,6 +63,8 @@ six==1.17.0
     # via
     #   pretty-midi
     #   python-dateutil
+tenacity==9.1.2
+    # via melodic_feature_set_Dav8Circle (pyproject.toml)
 tqdm==4.67.1
     # via melodic_feature_set_Dav8Circle (pyproject.toml)
 tzdata==2025.2
