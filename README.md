@@ -70,18 +70,30 @@ get_all_features(
 
 ## Advanced Configuration
 
-### Using Corpus Subsets
+### Using Different Corpus Parameters
 
-The package provides easy access to corpus subsets:
+The package provides an easy way of supplying different corpora to different sets of features. For example:
 
 ```python
 from melodic_feature_set import essen_corpus, essen_first_ten
 
-# Use the full Essen corpus
-config = Config(corpus=essen_corpus)
-
-# Or use just the first 10 files for quick testing
-config = Config(corpus=essen_first_ten)
+config = Config(
+    corpus=essen_corpus,
+    fantastic=FantasticConfig(
+        max_ngram_order=6,
+        phrase_gap=1.5,
+        corpus=essen_first_ten
+    ),
+    idyom={
+        "pitch": IDyOMConfig(
+            target_viewpoints=["cpitch"],
+            source_viewpoints=[("cpint", "cpintfref")],
+            ppm_order=1,
+            models=":both",
+            corpus=None
+        )
+    }
+)
 ```
 
 ### Skipping Corpus-Dependent Features
