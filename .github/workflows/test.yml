@@ -34,12 +34,8 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov
-    
-    - name: Install package in editable mode
-      run: |
         pip install -e .
+        pip install pytest pytest-cov
     
     - name: Run tests
       run: |
@@ -80,12 +76,8 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest
-    
-    - name: Install package in editable mode
-      run: |
         pip install -e .
+        pip install pytest
     
     - name: Run module setup tests
       run: |
@@ -105,12 +97,8 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest
-    
-    - name: Install package in editable mode
-      run: |
         pip install -e .
+        pip install pytest
     
     - name: Test imports (Codespaces-style)
       run: |
