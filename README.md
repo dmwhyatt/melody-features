@@ -78,11 +78,11 @@ The package provides an easy way of supplying different corpora to different set
 from melodic_feature_set import essen_corpus, essen_first_ten
 
 config = Config(
-    corpus=essen_corpus,
+    corpus=essen_corpus, # will be overriden 
     fantastic=FantasticConfig(
         max_ngram_order=6,
         phrase_gap=1.5,
-        corpus=essen_first_ten
+        corpus=essen_first_ten # just use the first 10 of Essen Corpus
     ),
     idyom={
         "pitch": IDyOMConfig(
@@ -90,7 +90,7 @@ config = Config(
             source_viewpoints=[("cpint", "cpintfref")],
             ppm_order=1,
             models=":both",
-            corpus=None
+            corpus=None # No corpus at all, no pretraining
         )
     }
 )
@@ -126,7 +126,7 @@ Since calculating similarities is highly modular in Melsim, we leave the user to
 
 ### Available Corpora
 
-The package comes with an example corpus, a MIDI conversio of the well-known Essen Folksong Collection (Eck, 2024; Schaffrath, 1995).
+The package comes with an example corpus, a MIDI conversion of the well-known Essen Folksong Collection (Eck, 2024; Schaffrath, 1995).
 
 ## Development
 
@@ -145,6 +145,7 @@ python -m pytest tests/test_idyom_setup.py -v
 ## Contributing
 
 Contributions are welcomed, though this project is likely to be migrated into AMADS in the future...
+
 See https://github.com/music-computing/amads
 
 ## License
