@@ -173,10 +173,18 @@ def test_install_idyom_function(mock_run):
     mock_run.return_value.returncode = 0
 
     try:
+        # Call the real install_idyom function
+        # This will use the mocked subprocess.run instead of the real one
         idyom_interface.install_idyom()
+        
+        # Check that subprocess.run was actually called by the function
+        # This tests that the function attempts to run the installation script
         mock_run.assert_called()
+        
     except Exception as e:
-        # Installation might fail in test environment, which is expected
+        # In some test environments, the function might fail for other reasons
+        # (like missing files), which is expected and acceptable
+        # We just check the error message is related to IDyOM installation for now
         assert "IDyOM installation" in str(e) or "install_idyom.sh" in str(e)
 
 

@@ -3,7 +3,6 @@ Comprehensive test suite to verify package installation and importability.
 """
 
 import importlib
-import logging
 import sys
 import tempfile
 from pathlib import Path
@@ -80,7 +79,6 @@ def test_main_functions():
         get_all_features,
     )
 
-    # Test Config creation
     config = Config(
         idyom={
             "pitch": IDyOMConfig(
@@ -98,7 +96,6 @@ def test_main_functions():
     assert hasattr(config, "idyom"), "Config missing idyom attribute"
     assert hasattr(config, "fantastic"), "Config missing fantastic attribute"
     assert config.corpus is None, "Config corpus should be None"
-    # Test get_all_features is imported and callable
     assert callable(get_all_features), "get_all_features should be callable"
 
 
