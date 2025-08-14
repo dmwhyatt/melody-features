@@ -74,7 +74,7 @@ get_all_features(
 
 The `get_all_features` function supports multiple input types:
 
-### Directory Input (Original)
+### Directory Input
 ```python
 # Process all MIDI files in a directory
 get_all_features(
@@ -134,7 +134,7 @@ get_all_features(
     input_path="path/to/midi/files",
     output_file="features_no_idyom.csv",
     config=config,
-    skip_idyom=True  # Skip IDyOM analysis for faster processing
+    skip_idyom=True  # Skip IDyOM analysis if you like
 )
 ```
 
@@ -147,7 +147,7 @@ The package provides an easy way of supplying different corpora to different set
 ```python
 from melodic_feature_set.corpus import get_corpus_path, get_corpus_files
 
-# Get specific files from the corpus
+# Get a subset of files from the corpus
 first_ten_files = get_corpus_files("essen", max_files=10)
 
 config = Config(
