@@ -3240,16 +3240,20 @@ def _run_idyom_analysis(
             f"Running IDyOM analysis for '{idyom_name}' with corpus: {idyom_corpus}"
         )
 
-        idyom_results = get_idyom_results(
-            idyom_input_path,   
-            idyom_config.target_viewpoints,
-            idyom_config.source_viewpoints,
-            idyom_config.models,
-            idyom_config.ppm_order,
-            idyom_corpus,
-            f"IDyOM_{idyom_name}_Results",
-        )
-        idyom_results_dict[idyom_name] = idyom_results
+        try:
+            idyom_results = get_idyom_results(
+                idyom_input_path,
+                idyom_config.target_viewpoints,
+                idyom_config.source_viewpoints,
+                idyom_config.models,
+                idyom_config.ppm_order,
+                idyom_corpus,
+                f"IDyOM_{idyom_name}_Results",
+            )
+            idyom_results_dict[idyom_name] = idyom_results
+        except Exception as e:
+            logger.error(f"Failed to run IDyOM for '{idyom_name}': {e}")
+            idyom_results_dict[idyom_name] = {}
 
     # Clean up temporary directory if it was created
     if isinstance(input_path, list) or (isinstance(input_path, (str, os.PathLike)) and str(input_path).lower().endswith(('.mid', '.midi'))):
@@ -3645,7 +3649,27 @@ def get_all_features(
         logger.info("Skipping IDyOM analysis...")
         idyom_results_dict = {}
     else:
-        idyom_results_dict = _run_idyom_analysis(input_path, config)
+        # Add retry logic for IDyOM to handle database locking issues
+        max_retries = 3
+        retry_delay = 2 
+        
+        for attempt in range(max_retries):
+            try:
+                idyom_results_dict = _run_idyom_analysis(input_path, config)
+                break
+            except Exception as e:
+                if "database is locked" in str(e).lower() or "sqlite" in str(e).lower():
+                    if attempt < max_retries - 1:
+                        logger.warning(f"IDyOM database locked (attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay} seconds...")
+                        import time
+                        time.sleep(retry_delay)
+                        retry_delay *= 2 
+                    else:
+                        logger.error(f"IDyOM failed after {max_retries} attempts due to database locking. Skipping IDyOM analysis.")
+                        idyom_results_dict = {}
+                else:
+                    # Re-raise non-database errors
+                    raise
 
     start_time = time.time()
 
