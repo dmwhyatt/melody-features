@@ -102,9 +102,9 @@ jobs:
     
     - name: Test imports (Codespaces-style)
       run: |
-        python -c "from melodic_feature_set.corpus import essen_corpus, get_corpus_files; print('Import successful')"
+        python -c "from melodic_feature_set.corpus import essen_corpus, get_corpus_path; print('Import successful')"
         python -c "from melodic_feature_set.features import get_all_features; print('Features import successful')"
-        python -c "from melodic_feature_set import essen_corpus, get_corpus_files; print('Main package import successful')"
+        python -c "from melodic_feature_set import essen_corpus, get_corpus_path; print('Main package import successful')"
     
     - name: Run corpus tests
       run: |
