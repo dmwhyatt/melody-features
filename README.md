@@ -60,11 +60,79 @@ config = Config(
     )
 )
 
-# Extract features from a directory of MIDI files
+# Extract features from MIDI files
 get_all_features(
-    input_directory="path/to/your/midi/files",
+    input_path="path/to/your/midi/files",  # Can be directory, single file, or list of files
     output_file="features.csv",
     config=config
+)
+```
+
+## Input Options
+
+The `get_all_features` function supports multiple input types:
+
+### Directory Input (Original)
+```python
+# Process all MIDI files in a directory
+get_all_features(
+    input_path="path/to/midi/directory",
+    output_file="features.csv",
+    config=config
+)
+```
+
+### Single File Input
+```python
+# Process a single MIDI file
+get_all_features(
+    input_path="path/to/single/file.mid",
+    output_file="features.csv",
+    config=config
+)
+```
+
+### List of Files Input
+```python
+# Process specific MIDI files
+midi_files = [
+    "path/to/file1.mid",
+    "path/to/file2.mid", 
+    "path/to/file3.mid"
+]
+get_all_features(
+    input_path=midi_files,
+    output_file="features.csv",
+    config=config
+)
+```
+
+### Using Corpus Files
+```python
+from melodic_feature_set.corpus import get_corpus_files
+
+# Get first 10 files from the Essen corpus
+first_ten_files = get_corpus_files("essen", max_files=10)
+
+get_all_features(
+    input_path=first_ten_files,
+    output_file="first_ten_features.csv",
+    config=config
+)
+```
+
+## Performance Options
+
+### Skipping IDyOM Analysis
+
+IDyOM analysis can be computationally expensive. You can skip it when not needed:
+
+```python
+get_all_features(
+    input_path="path/to/midi/files",
+    output_file="features_no_idyom.csv",
+    config=config,
+    skip_idyom=True  # Skip IDyOM analysis for faster processing
 )
 ```
 
@@ -75,14 +143,17 @@ get_all_features(
 The package provides an easy way of supplying different corpora to different sets of features. For example:
 
 ```python
-from melodic_feature_set import essen_corpus, essen_first_ten
+from melodic_feature_set.corpus import get_corpus_path, get_corpus_files
+
+# Get specific files from the corpus
+first_ten_files = get_corpus_files("essen", max_files=10)
 
 config = Config(
-    corpus=essen_corpus, # will be overriden 
+    corpus=first_ten_files, # will be overriden 
     fantastic=FantasticConfig(
         max_ngram_order=6,
         phrase_gap=1.5,
-        corpus=essen_first_ten # just use the first 10 of Essen Corpus
+        corpus=get_corpus_path("essen") # use full Essen corpus
     ),
     idyom={
         "pitch": IDyOMConfig(

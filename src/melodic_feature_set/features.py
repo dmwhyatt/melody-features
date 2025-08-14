@@ -23,7 +23,7 @@ import os
 import shutil
 import sys
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 # Add src directory to path when running as script
@@ -38,7 +38,7 @@ import logging
 import threading
 import time
 from random import choices
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import mido
 import numpy as np
@@ -2581,7 +2581,7 @@ def process_melody(args):
 
     start_total = time.time()
 
-    melody_data, corpus_stats, idyom_features, phrase_gap, max_ngram_order = args
+    melody_data, corpus_stats, idyom_results_dict, phrase_gap, max_ngram_order = args
     mel = Melody(melody_data, tempo=100)
 
     # Time each feature category
@@ -2642,11 +2642,18 @@ def process_melody(args):
 
         # Add pre-computed IDyOM features if available for this melody's ID
         melody_id_str = str(melody_data["melody_num"])
-
-        if idyom_features and melody_id_str in idyom_features:
-            melody_features["idyom_features"] = idyom_features[melody_id_str]
+        
+        # Handle IDyOM results dictionary (multiple configurations)
+        idyom_features = {}
+        if idyom_results_dict:
+            for idyom_name, idyom_results in idyom_results_dict.items():
+                if idyom_results and melody_id_str in idyom_results:
+                    idyom_features.update(idyom_results[melody_id_str])
+        
+        if idyom_features:
+            melody_features["idyom_features"] = idyom_features
         else:
-            # Add default IDyOM features if not found
+            # Add default IDyOM values if not found
             melody_features["idyom_features"] = {"mean_information_content": -1}
 
     timings["total"] = time.time() - start_total
@@ -3059,13 +3066,13 @@ def _setup_corpus_statistics(config: Config, output_file: str) -> Optional[dict]
     return corpus_stats
 
 
-def _load_melody_data(input_directory: os.PathLike) -> List[dict]:
+def _load_melody_data(input_path: Union[os.PathLike, List[os.PathLike]]) -> List[dict]:
     """Load and validate melody data from MIDI files or JSON.
 
     Parameters
     ----------
-    input_directory : os.PathLike
-        Path to input directory or JSON file
+    input_path : Union[os.PathLike, List[os.PathLike]]
+        Path to input directory, JSON file, list of MIDI file paths, or single MIDI file path
 
     Returns
     -------
@@ -3075,45 +3082,50 @@ def _load_melody_data(input_directory: os.PathLike) -> List[dict]:
     Raises
     ------
     FileNotFoundError
-        If no MIDI files found in directory
+        If no MIDI files found in directory or list
     ValueError
-        If input is neither a directory nor a JSON file
+        If input is not a valid type
     """
     logger = logging.getLogger("melodic_feature_set")
     from multiprocessing import Pool, cpu_count
 
     melody_data_list = []
 
-    if os.path.isdir(input_directory):
-        midi_files = glob.glob(os.path.join(input_directory, "*.mid"))
-        midi_files.extend(glob.glob(os.path.join(input_directory, "*.midi")))
+    if isinstance(input_path, list):
+        midi_files = []
+        for file_path in input_path:
+            if isinstance(file_path, (str, os.PathLike)):
+                file_path = str(file_path)
+                if file_path.lower().endswith(('.mid', '.midi')):
+                    midi_files.append(file_path)
+                else:
+                    logger.warning(f"Skipping non-MIDI file: {file_path}")
+            else:
+                logger.warning(f"Skipping invalid file path: {file_path}")
+        
+        if not midi_files:
+            raise FileNotFoundError("No valid MIDI files found in the provided list")
+        
+        midi_files = natsorted(midi_files)
+        
+    elif os.path.isdir(input_path):
+        midi_files = glob.glob(os.path.join(input_path, "*.mid"))
+        midi_files.extend(glob.glob(os.path.join(input_path, "*.midi")))
 
         if not midi_files:
             raise FileNotFoundError(
-                f"No MIDI files found in the specified directory: {input_directory}"
+                f"No MIDI files found in the specified directory: {input_path}"
             )
 
         # Sort MIDI files in natural order
         midi_files = natsorted(midi_files)
-
-        # Process MIDI files in parallel
-        with Pool(cpu_count()) as pool:
-            for midi_file in midi_files:
-                try:
-                    midi_data = import_midi(midi_file)
-                    if midi_data:
-                        # Perform monophonic check before adding to the list.
-                        temp_mel = Melody(midi_data)
-                        if check_is_monophonic(temp_mel):
-                            melody_data_list.append(midi_data)
-                        else:
-                            logger.warning(f"Skipping polyphonic file: {midi_file}")
-                except Exception as e:
-                    logger.error(f"Error importing {midi_file}: {str(e)}")
-                    continue
-    elif input_directory.endswith(".json"):
-        # Handle JSON file
-        with open(input_directory, encoding="utf-8") as f:
+        
+    elif isinstance(input_path, (str, os.PathLike)) and str(input_path).lower().endswith(('.mid', '.midi')):
+        # Handle single MIDI file
+        midi_files = [str(input_path)]
+        
+    elif isinstance(input_path, (str, os.PathLike)) and str(input_path).endswith(".json"):
+        with open(input_path, encoding="utf-8") as f:
             all_data = json.load(f)
 
         # Filter for monophonic melodies from the JSON data.
@@ -3126,11 +3138,35 @@ def _load_melody_data(input_directory: os.PathLike) -> List[dict]:
                     logger.warning(
                         f"Skipping polyphonic melody from JSON: {melody_data.get('ID', 'Unknown ID')}"
                     )
+        
+        melody_data_list = [m for m in melody_data_list if m is not None]
+        logger.info(f"Processing {len(melody_data_list)} melodies from JSON")
+
+        if not melody_data_list:
+            return []
+
+        for idx, melody_data in enumerate(melody_data_list, 1):
+            melody_data["melody_num"] = idx
+
+        return melody_data_list
 
     else:
         raise ValueError(
-            f"Input must be either a directory containing MIDI files or a JSON file. Got: {input_directory}"
+            f"Input must be a directory containing MIDI files, a JSON file, a list of MIDI file paths, or a single MIDI file path. Got: {input_path}"
         )
+
+    for midi_file in midi_files:
+        try:
+            midi_data = import_midi(midi_file)
+            if midi_data:
+                temp_mel = Melody(midi_data)
+                if check_is_monophonic(temp_mel):
+                    melody_data_list.append(midi_data)
+                else:
+                    logger.warning(f"Skipping polyphonic file: {midi_file}")
+        except Exception as e:
+            logger.error(f"Error importing {midi_file}: {str(e)}")
+            continue
 
     melody_data_list = [m for m in melody_data_list if m is not None]
     logger.info(f"Processing {len(melody_data_list)} melodies")
@@ -3146,14 +3182,14 @@ def _load_melody_data(input_directory: os.PathLike) -> List[dict]:
 
 
 def _run_idyom_analysis(
-    input_directory: os.PathLike, config: Config
+    input_path: Union[os.PathLike, List[os.PathLike]], config: Config
 ) -> Dict[str, dict]:
     """Run IDyOM analysis for all configurations.
 
     Parameters
     ----------
-    input_directory : os.PathLike
-        Path to input directory
+    input_path : Union[os.PathLike, List[os.PathLike]]
+        Path to input directory, list of MIDI file paths, or single MIDI file path
     config : Config
         Configuration object containing IDyOM settings
 
@@ -3164,6 +3200,38 @@ def _run_idyom_analysis(
     """
     logger = logging.getLogger("melodic_feature_set")
     idyom_results_dict = {}
+    
+    if isinstance(input_path, list):
+        temp_dir = tempfile.mkdtemp(prefix="idyom_input_")
+        try:
+            for i, file_path in enumerate(input_path):
+                if isinstance(file_path, (str, os.PathLike)) and str(file_path).lower().endswith(('.mid', '.midi')):
+                    import shutil
+                    file_ext = os.path.splitext(str(file_path))[1]
+                    temp_file_path = os.path.join(temp_dir, f"file_{i+1:04d}{file_ext}")
+                    shutil.copy2(str(file_path), temp_file_path)
+            
+            idyom_input_path = temp_dir
+        except Exception as e:
+            logger.error(f"Error creating temporary directory for IDyOM: {e}")
+            return {}
+    elif os.path.isdir(input_path):
+        idyom_input_path = input_path
+    elif isinstance(input_path, (str, os.PathLike)) and str(input_path).lower().endswith(('.mid', '.midi')):
+        temp_dir = tempfile.mkdtemp(prefix="idyom_input_")
+        try:
+            import shutil
+            file_ext = os.path.splitext(str(input_path))[1]
+            temp_file_path = os.path.join(temp_dir, f"file_0001{file_ext}")
+            shutil.copy2(str(input_path), temp_file_path)
+            idyom_input_path = temp_dir
+        except Exception as e:
+            logger.error(f"Error creating temporary directory for IDyOM: {e}")
+            return {}
+    else:
+        logger.error(f"Unsupported input type for IDyOM: {type(input_path)}")
+        return {}
+    
     for idyom_name, idyom_config in config.idyom.items():
         idyom_corpus = (
             idyom_config.corpus if idyom_config.corpus is not None else config.corpus
@@ -3173,7 +3241,7 @@ def _run_idyom_analysis(
         )
 
         idyom_results = get_idyom_results(
-            input_directory,
+            idyom_input_path,   
             idyom_config.target_viewpoints,
             idyom_config.source_viewpoints,
             idyom_config.models,
@@ -3182,6 +3250,13 @@ def _run_idyom_analysis(
             f"IDyOM_{idyom_name}_Results",
         )
         idyom_results_dict[idyom_name] = idyom_results
+
+    # Clean up temporary directory if it was created
+    if isinstance(input_path, list) or (isinstance(input_path, (str, os.PathLike)) and str(input_path).lower().endswith(('.mid', '.midi'))):
+        try:
+            shutil.rmtree(temp_dir)
+        except Exception as e:
+            logger.warning(f"Could not clean up temporary IDyOM directory: {e}")
 
     return idyom_results_dict
 
@@ -3275,7 +3350,7 @@ def _setup_parallel_processing(
         (
             melody_data,
             corpus_stats,
-            idyom_results,
+            idyom_results_dict,
             config.fantastic.phrase_gap,
             config.fantastic.max_ngram_order,
         )
@@ -3490,25 +3565,31 @@ def _cleanup_idyom_temp_output():
 
 
 def get_all_features(
-    input_directory: os.PathLike,
+    input_path: Union[os.PathLike, List[os.PathLike]],
     output_file: str,
     config: Optional[Config] = None,
     log_level: int = logging.INFO,
+    skip_idyom: bool = False,
 ) -> None:
     """Calculate a multitude of features from across the computational melody analysis field.
-    This function generates a CSV file with a row for every melody in the supplied input
-    directory of MIDI files.
+    This function generates a CSV file with a row for every melody in the supplied input.
+    
+    The input can be:
+    - A directory path containing MIDI files
+    - A list of MIDI file paths
+    - A single MIDI file path
+    
     If a path to a corpus of MIDI files is provided in the Config,
     corpus statistics will be computed following FANTASTIC's n-gram document frequency
     model (Müllensiefen, 2009). If not, this will be skipped.
-    This function will also run IDyOM (Pearce, 2005) on the input directory of MIDI files.
+    This function will also run IDyOM (Pearce, 2005) on the input MIDI files.
     If a corpus of MIDI files is provided in the Config, IDyOM will be run with
     pretraining on the corpus. If not, it will be run without pretraining.
 
     Parameters
     ----------
-    input_directory : os.PathLike
-        Path to input MIDI directory
+    input_path : Union[os.PathLike, List[os.PathLike]]
+        Path to input MIDI directory, list of MIDI file paths, or single MIDI file path
     output_file : str
         Name for output CSV file. If no extension is provided, .csv will be added.
     config : Config
@@ -3518,10 +3599,12 @@ def get_all_features(
         will be included with an identifier in the output.
     log_level : int
         Logging level (default: logging.INFO)
+    skip_idyom : bool
+        If True, skip IDyOM feature calculation (default: False)
 
     Returns
     -------
-    A CSV file with a row for every melody in the input directory.
+    A CSV file with a row for every melody in the input.
 
     """
     # Suppress warnings at the system level
@@ -3552,13 +3635,17 @@ def get_all_features(
 
     corpus_stats = _setup_corpus_statistics(config, output_file)
 
-    melody_data_list = _load_melody_data(input_directory)
+    melody_data_list = _load_melody_data(input_path)
 
     if not melody_data_list:
         logger.warning("No valid monophonic melodies found to process.")
         return
 
-    idyom_results_dict = _run_idyom_analysis(input_directory, config)
+    if skip_idyom:
+        logger.info("Skipping IDyOM analysis...")
+        idyom_results_dict = {}
+    else:
+        idyom_results_dict = _run_idyom_analysis(input_path, config)
 
     start_time = time.time()
 

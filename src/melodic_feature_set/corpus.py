@@ -36,33 +36,7 @@ except ImportError:
     essen_corpus = Path(__file__).parent / "corpora" / "Essen_Corpus"
 
 
-# Create essen_first_ten directory with first 10 files
-def _create_essen_first_ten():
-    """Create a permanent directory with the first 10 files from Essen corpus."""
-    essen_first_ten_dir = essen_corpus.parent / "Essen_Corpus_First_Ten"
 
-    if not essen_first_ten_dir.exists():
-        essen_first_ten_dir.mkdir(exist_ok=True)
-
-        midi_files = list(essen_corpus.glob("*.mid"))
-        if not midi_files:
-            raise FileNotFoundError(f"No MIDI files found in {essen_corpus}")
-
-        sorted_files = natsorted(midi_files)
-        first_ten_files = sorted_files[:10]
-
-        for file in first_ten_files:
-            shutil.copy2(file, essen_first_ten_dir / file.name)
-
-    return essen_first_ten_dir
-
-
-# Initialize essen_first_ten
-try:
-    essen_first_ten = _create_essen_first_ten()
-except Exception:  # noqa: F841
-    # Fallback: just point to the original corpus if we can't create the subset
-    essen_first_ten = essen_corpus
 
 
 def process_melody_ngrams(args) -> set:
@@ -445,7 +419,7 @@ def get_corpus_path(corpus_name: str) -> Path:
     Parameters
     ----------
     corpus_name : str
-        Name of the corpus. Currently supports: 'essen', 'essen_first_ten'
+        Name of the corpus. Currently supports: 'essen'
 
     Returns
     -------
@@ -459,7 +433,7 @@ def get_corpus_path(corpus_name: str) -> Path:
     FileNotFoundError
         If the corpus directory does not exist
     """
-    corpus_paths = {"essen": essen_corpus, "essen_first_ten": essen_first_ten}
+    corpus_paths = {"essen": essen_corpus}
 
     if corpus_name not in corpus_paths:
         available = ", ".join(corpus_paths.keys())
@@ -475,6 +449,42 @@ def get_corpus_path(corpus_name: str) -> Path:
     return corpus_path
 
 
+def get_corpus_files(corpus_name: str, max_files: int = None) -> List[Path]:
+    """Get a list of MIDI files from a bundled corpus.
+
+    Parameters
+    ----------
+    corpus_name : str
+        Name of the corpus. Currently supports: 'essen'
+    max_files : int, optional
+        Maximum number of files to return. If None, returns all files.
+
+    Returns
+    -------
+    List[Path]
+        List of MIDI file paths
+
+    Raises
+    ------
+    ValueError
+        If the corpus name is not recognized
+    FileNotFoundError
+        If the corpus directory does not exist
+    """
+    corpus_path = get_corpus_path(corpus_name)
+    
+    midi_files = list(corpus_path.glob("*.mid"))
+    midi_files.extend(corpus_path.glob("*.midi"))
+    
+    # Sort files naturally
+    midi_files = natsorted(midi_files)
+    
+    if max_files is not None:
+        midi_files = midi_files[:max_files]
+    
+    return midi_files
+
+
 def list_available_corpora() -> List[str]:
     """List all available bundled corpora.
 
@@ -483,4 +493,4 @@ def list_available_corpora() -> List[str]:
     List[str]
         List of available corpus names
     """
-    return ["essen", "essen_first_ten"]
+    return ["essen"]
