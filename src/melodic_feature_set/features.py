@@ -3661,14 +3661,12 @@ def get_all_features(
                 if "database is locked" in str(e).lower() or "sqlite" in str(e).lower():
                     if attempt < max_retries - 1:
                         logger.warning(f"IDyOM database locked (attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay} seconds...")
-                        import time
                         time.sleep(retry_delay)
                         retry_delay *= 2 
                     else:
                         logger.error(f"IDyOM failed after {max_retries} attempts due to database locking. Skipping IDyOM analysis.")
                         idyom_results_dict = {}
                 else:
-                    # Re-raise non-database errors
                     raise
 
     start_time = time.time()
