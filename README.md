@@ -19,6 +19,8 @@ Included in the package are contributions from:
 - **IDyOM** (Pearce, 2005)
 - **MIDI Toolbox** (Eerola & Toiviainen, 2004)
 
+(This package is strictly for monophonic melodies - it will not compute any features for polyphonic music!)
+
 ## Installation
 
 ```bash
