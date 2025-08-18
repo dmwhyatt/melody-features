@@ -2,6 +2,8 @@
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=1023590972)
 
+[![DOI](https://zenodo.org/badge/1023590972.svg)](https://doi.org/10.5281/zenodo.16894207)
+
 [![Tests](https://github.com/Dav8Circle/melodic_feature_set/workflows/Tests/badge.svg)](https://github.com/Dav8Circle/melodic_feature_set/actions)
 
 ## Overview
