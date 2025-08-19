@@ -4,7 +4,7 @@
 
 [![DOI](https://zenodo.org/badge/1023590972.svg)](https://doi.org/10.5281/zenodo.16894207)
 
-[![Tests](https://github.com/Dav8Circle/melodic_feature_set/workflows/Tests/badge.svg)](https://github.com/Dav8Circle/melodic_feature_set/actions)
+[![Tests](https://github.com/dmwhyatt/melodic_feature_set/workflows/Tests/badge.svg)](https://github.com/dmwhyatt/melodic_feature_set/actions)
 
 ## Overview
 This is a Python package designed to facilitate the use of many different melody analyis tools. 
@@ -27,7 +27,7 @@ Included in the package are contributions from:
 
 ```bash
 # Clone the repository
-git clone https://github.com/Dav8Circle/melodic_feature_set.git
+git clone https://github.com/dmwhyatt/melodic_feature_set.git
 cd melodic_feature_set
 
 # Install in development mode
