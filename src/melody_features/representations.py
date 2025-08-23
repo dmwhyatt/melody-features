@@ -99,15 +99,3 @@ class Melody:
 def read_midijson(file_path: str) -> dict:
     with open(file_path, "r", encoding="utf-8") as file:
         return json.load(file)
-
-
-# Example usage
-# melody_data = read_midijson('/Users/davidwhyatt/Documents/GitHub/PhDMelodySet/mididata5.json')[0]
-# melody = Melody(melody_data)
-
-# # This is how you'd get the pitches, starts, and ends for all melodies in the dataset, and
-# # could easily then compute all the features for the dataset, too.
-# for i in range(0, 1920, 1):
-#     melody_data = read_midijson('/Users/davidwhyatt/Documents/GitHub/PhDMelodySet/mididata5.json')[i]
-#     melody = Melody(melody_data, tempo=100)
-#     print(pitch_range(melody.pitches), pitch_standard_deviation(melody.pitches), pitch_entropy(melody.pitches))

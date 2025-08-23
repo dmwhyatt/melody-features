@@ -3,7 +3,7 @@ idyom_results/
 venv/
 pytest.ini
 dist/
-src/melodic_feature_set_dmwhyatt.egg-info
+src/melody_features.egg-info
 Essen_Corpus_corpus_stats.json
 .DS_Store
 build/

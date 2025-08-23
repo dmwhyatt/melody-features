@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Tuple
 
-from .ngram_counter import NGramCounter
-from .representations import Melody
+from melody_features.ngram_counter import NGramCounter
+from melody_features.representations import Melody
 
 
 class MType:

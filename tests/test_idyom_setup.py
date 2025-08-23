@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from melodic_feature_set import idyom_interface
+from melody_features import idyom_interface
 
 
 def test_install_idyom_script_exists():
@@ -17,7 +17,7 @@ def test_install_idyom_script_exists():
     script_path = (
         Path(__file__).parent.parent
         / "src"
-        / "melodic_feature_set"
+        / "melody_features"
         / "install_idyom.sh"
     )
 
@@ -32,7 +32,7 @@ def test_install_idyom_script_content():
     script_path = (
         Path(__file__).parent.parent
         / "src"
-        / "melodic_feature_set"
+        / "melody_features"
         / "install_idyom.sh"
     )
 
@@ -54,7 +54,7 @@ def test_install_idyom_script_os_detection():
     script_path = (
         Path(__file__).parent.parent
         / "src"
-        / "melodic_feature_set"
+        / "melody_features"
         / "install_idyom.sh"
     )
 
@@ -72,7 +72,7 @@ def test_install_idyom_script_docker_detection():
     script_path = (
         Path(__file__).parent.parent
         / "src"
-        / "melodic_feature_set"
+        / "melody_features"
         / "install_idyom.sh"
     )
 
@@ -94,7 +94,7 @@ def test_install_idyom_script_execution(mock_run):
     script_path = (
         Path(__file__).parent.parent
         / "src"
-        / "melodic_feature_set"
+        / "melody_features"
         / "install_idyom.sh"
     )
 
@@ -118,7 +118,7 @@ def test_install_idyom_script_execution_failure(mock_run):
     script_path = (
         Path(__file__).parent.parent
         / "src"
-        / "melodic_feature_set"
+        / "melody_features"
         / "install_idyom.sh"
     )
 
@@ -153,7 +153,7 @@ def test_idyom_interface_functions_exist():
 
 def test_idyom_viewpoints_validation():
     """Test that IDyOM viewpoint validation works correctly."""
-    from melodic_feature_set.idyom_interface import VALID_VIEWPOINTS
+    from melody_features.idyom_interface import VALID_VIEWPOINTS
 
     # Check that valid viewpoints are defined
     assert isinstance(VALID_VIEWPOINTS, set), "VALID_VIEWPOINTS should be a set"
@@ -193,7 +193,7 @@ def test_idyom_environment_variables():
     script_path = (
         Path(__file__).parent.parent
         / "src"
-        / "melodic_feature_set"
+        / "melody_features"
         / "install_idyom.sh"
     )
 
@@ -211,7 +211,7 @@ def test_idyom_dependencies():
     script_path = (
         Path(__file__).parent.parent
         / "src"
-        / "melodic_feature_set"
+        / "melody_features"
         / "install_idyom.sh"
     )
 
@@ -229,7 +229,7 @@ def test_idyom_script_permissions():
     script_path = (
         Path(__file__).parent.parent
         / "src"
-        / "melodic_feature_set"
+        / "melody_features"
         / "install_idyom.sh"
     )
 

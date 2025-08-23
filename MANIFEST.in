@@ -1,4 +1,4 @@
 include *.py
 include *.sh
-recursive-include src/melodic_feature_set *.mid
-recursive-include src/melodic_feature_set *.midi 
+recursive-include src/melody_features *.mid
+recursive-include src/melody_features *.midi 

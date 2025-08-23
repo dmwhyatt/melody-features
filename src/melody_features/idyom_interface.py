@@ -149,7 +149,7 @@ def start_idyom():
 
     def fixed_get_files_from_paths(self, path):
         """Fixed version of _get_files_from_paths that properly filters MIDI and Kern files"""
-        logger = logging.getLogger("melodic_feature_set")
+        logger = logging.getLogger("melody_features")
         # Ensure the path ends with a slash for proper directory traversal
         if not path.endswith("/"):
             path = path + "/"
@@ -189,7 +189,7 @@ def run_idyom(
     detail=3,
     ppm_order=None,
 ):
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     """
     Run IDyOM on a directory of MIDI files.
 
@@ -223,7 +223,7 @@ def run_idyom(
             f"Valid viewpoints are: {', '.join(sorted(list(VALID_VIEWPOINTS)))}"
         )
 
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     if not is_idyom_installed():
         logger.warning("IDyOM installation not found.")
         try:
@@ -406,7 +406,7 @@ if __name__ == "__main__":
     # This block provides a simple example of how to use the run_idyom function.
     # It will run IDyOM on the MIDI files in the supplied directory.
 
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     example_midi_dir = "/Users/davidwhyatt/Downloads/Essen_First_10"
 
     if Path(example_midi_dir).is_dir():

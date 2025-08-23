@@ -103,7 +103,7 @@ import numpy as np
 from tenacity import RetryError, Retrying, stop_after_attempt, wait_exponential
 from tqdm import tqdm
 
-from melodic_feature_set.import_mid import import_midi
+from melody_features.import_mid import import_midi
 
 r_base_packages = ["base", "utils"]
 r_cran_packages = [
@@ -177,7 +177,7 @@ def check_r_packages_installed(install_missing: bool = False, n_retries: int = 3
 
 def install_r_package(package: str):
     """Install an R package."""
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     if package in r_cran_packages:
         logger.info(f"Installing CRAN package '{package}'...")
         install_script = f"""
@@ -201,7 +201,7 @@ def install_r_package(package: str):
 
 def install_dependencies():
     """Install all required R packages."""
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     # Check which packages need to be installed
     check_script = """
     packages <- c({packages})
@@ -571,7 +571,7 @@ def _batch_compute_similarities(args_list: List[Tuple]) -> List[float]:
 
 def _load_melody(file):
     """Helper function to load a melody file for parallel processing."""
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     try:
         return file.name, load_midi_file(file)
     except Exception as e:
@@ -638,7 +638,7 @@ def get_similarity_from_midi(
             raise ValueError(f"No MIDI files found in {midi_path1}")
 
         # Load all melodies in parallel with progress bar
-        logger = logging.getLogger("melodic_feature_set")
+        logger = logging.getLogger("melody_features")
         logger.info("Loading melodies...")
         n_cores = n_cores or cpu_count()
 

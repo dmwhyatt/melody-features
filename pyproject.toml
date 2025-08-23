@@ -1,6 +1,6 @@
 [project]
-name = "melodic_feature_set_dmwhyatt"
-version = "0.1.2"
+name = "melody-features"
+version = "0.1.3"
 authors = [
   { name="David Whyatt", email="dmw56@cam.ac.uk" },
 ]
@@ -28,8 +28,8 @@ license = "MIT"
 license-files = ["LICEN[CS]E*"]
 
 [project.urls]
-Homepage = "https://github.com/dmwhyatt/melodic_feature_set"
-Issues = "https://github.com/dmwhyatt/melodic_feature_set/issues"
+Homepage = "https://github.com/dmwhyatt/melody-features"
+Issues = "https://github.com/dmwhyatt/melody-features/issues"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]

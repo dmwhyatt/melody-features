@@ -14,3 +14,13 @@ from .features import (
     IDyOMConfig,  # noqa: F401
     get_all_features,
 )
+
+__all__ = [
+    "essen_corpus",
+    "get_corpus_path",
+    "list_available_corpora",
+    "Config",
+    "FantasticConfig",
+    "IDyOMConfig",
+    "get_all_features",
+]

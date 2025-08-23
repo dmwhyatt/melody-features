@@ -32,7 +32,7 @@ def import_midi(midi_file: str) -> dict:
         - ends: List of note end times
         Returns None if the file cannot be imported
     """
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
 
     try:
         # Parse the MIDI file

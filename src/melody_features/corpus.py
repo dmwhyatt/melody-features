@@ -24,13 +24,13 @@ from typing import Dict, List, Tuple
 from natsort import natsorted
 from tqdm import tqdm
 
-from melodic_feature_set.import_mid import import_midi
-from melodic_feature_set.melody_tokenizer import FantasticTokenizer
-from melodic_feature_set.representations import Melody, read_midijson
+from melody_features.import_mid import import_midi
+from melody_features.melody_tokenizer import FantasticTokenizer
+from melody_features.representations import Melody, read_midijson
 
 # Corpus paths for easy access
 try:
-    essen_corpus = resources.files("melodic_feature_set") / "corpora" / "Essen_Corpus"
+    essen_corpus = resources.files("melody_features") / "corpora" / "Essen_Corpus"
 except ImportError:
     # Fallback for development or when package is not installed
     essen_corpus = Path(__file__).parent / "corpora" / "Essen_Corpus"
@@ -240,7 +240,7 @@ def load_midi_melody(midi_path: str) -> Melody:
         "ignore", category=UserWarning, message=".*pkg_resources is deprecated.*"
     )
 
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     try:
         melody_data = import_midi(midi_path)
         if melody_data is None:
@@ -268,7 +268,7 @@ def load_melodies_from_directory(
     List[Melody]
         List of loaded melody objects
     """
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     directory = Path(directory)
     if not directory.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
@@ -335,7 +335,7 @@ def make_corpus_stats(midi_dir: str, output_file: str) -> None:
     output_file : str
         Path where to save the corpus statistics JSON file
     """
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     # Load melodies from MIDI files
     melodies = load_melodies_from_directory(midi_dir, file_type="midi")
     # Filter out None values
@@ -373,7 +373,7 @@ def make_corpus_stats_from_json(
     n_range : Tuple[int, int], optional
         Range of n-gram lengths to consider (min, max), by default (1, 6)
     """
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     # Load melody data from JSON
     logger.info(f"Loading melodies from JSON file: {json_file}")
     melody_data = read_midijson(json_file)

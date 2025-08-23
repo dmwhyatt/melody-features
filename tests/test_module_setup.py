@@ -25,14 +25,14 @@ def test_package_installation():
     """Test if the package is properly installed."""
     # Test if package is in Python path
     try:
-        import melodic_feature_set
+        import melody_features
 
-        assert melodic_feature_set is not None, "Package import returned None"
+        assert melody_features is not None, "Package import returned None"
         assert hasattr(
-            melodic_feature_set, "__file__"
+            melody_features, "__file__"
         ), "Package has no __file__ attribute"
         assert Path(
-            melodic_feature_set.__file__
+            melody_features.__file__
         ).parent.exists(), "Package directory does not exist"
     except ImportError as e:
         pytest.fail(f"Package import failed: {e}")
@@ -41,21 +41,21 @@ def test_package_installation():
 def test_core_imports():
     """Test if core modules can be imported."""
     core_modules = [
-        "melodic_feature_set.features",
-        "melodic_feature_set.corpus",
-        "melodic_feature_set.algorithms",
-        "melodic_feature_set.complexity",
-        "melodic_feature_set.distributional",
-        "melodic_feature_set.idyom_interface",
-        "melodic_feature_set.import_mid",
-        "melodic_feature_set.interpolation_contour",
-        "melodic_feature_set.melody_tokenizer",
-        "melodic_feature_set.ngram_counter",
-        "melodic_feature_set.narmour",
-        "melodic_feature_set.representations",
-        "melodic_feature_set.stats",
-        "melodic_feature_set.step_contour",
-        "melodic_feature_set.melsim_wrapper.melsim",
+        "melody_features.features",
+        "melody_features.corpus",
+        "melody_features.algorithms",
+        "melody_features.complexity",
+        "melody_features.distributional",
+        "melody_features.idyom_interface",
+        "melody_features.import_mid",
+        "melody_features.interpolation_contour",
+        "melody_features.melody_tokenizer",
+        "melody_features.ngram_counter",
+        "melody_features.narmour",
+        "melody_features.representations",
+        "melody_features.stats",
+        "melody_features.step_contour",
+        "melody_features.melsim_wrapper.melsim",
     ]
 
     failed_imports = []
@@ -72,7 +72,7 @@ def test_core_imports():
 
 def test_main_functions():
     """Test if main functions can be imported and called."""
-    from melodic_feature_set.features import (
+    from melody_features.features import (
         Config,
         FantasticConfig,
         IDyOMConfig,
@@ -148,7 +148,7 @@ def test_resource_access():
     """Test importlib.resources access."""
     from importlib import resources
 
-    essen_path = resources.files("melodic_feature_set") / "corpora" / "Essen_Corpus"
+    essen_path = resources.files("melody_features") / "corpora" / "Essen_Corpus"
 
     assert essen_path is not None, "Resource path is None"
     assert essen_path.exists(), f"Resource path does not exist: {essen_path}"
@@ -163,7 +163,7 @@ def test_importlib_resources_compatibility():
 
     # Test that we can access package resources
     try:
-        package_files = resources.files("melodic_feature_set")
+        package_files = resources.files("melody_features")
         assert package_files.exists(), "Package files path does not exist"
 
         # Test that corpora directory exists
@@ -181,15 +181,15 @@ def test_importlib_resources_compatibility():
 def test_environment_consistency():
     """Test that the environment is consistent across different import methods."""
     # Test that importing from different paths gives consistent results
-    from melodic_feature_set import essen_corpus as essen_from_main
-    from melodic_feature_set.corpus import essen_corpus as essen_from_corpus
+    from melody_features import essen_corpus as essen_from_main
+    from melody_features.corpus import essen_corpus as essen_from_corpus
 
     assert (
         essen_from_corpus == essen_from_main
     ), "essen_corpus inconsistent between import methods"
 
     # Test that get_corpus_path gives consistent results
-    from melodic_feature_set.corpus import get_corpus_path
+    from melody_features.corpus import get_corpus_path
 
     essen_from_function = get_corpus_path("essen")
 

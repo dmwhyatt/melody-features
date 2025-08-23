@@ -45,7 +45,7 @@ import numpy as np
 import scipy
 from natsort import natsorted
 
-from melodic_feature_set.algorithms import (
+from melody_features.algorithms import (
     arpeggiation_proportion,
     chromatic_motion_proportion,
     circle_of_fifths,
@@ -60,34 +60,34 @@ from melodic_feature_set.algorithms import (
     repeated_notes_proportion,
     stepwise_motion_proportion,
 )
-from melodic_feature_set.complexity import consecutive_fifths, repetition_rate
-from melodic_feature_set.corpus import load_corpus_stats, make_corpus_stats
-from melodic_feature_set.distributional import (
+from melody_features.complexity import consecutive_fifths, repetition_rate
+from melody_features.corpus import load_corpus_stats, make_corpus_stats
+from melody_features.distributional import (
     distribution_proportions,
     histogram_bins,
     kurtosis,
     skew,
 )
-from melodic_feature_set.idyom_interface import run_idyom
-from melodic_feature_set.import_mid import import_midi
-from melodic_feature_set.interpolation_contour import InterpolationContour
-from melodic_feature_set.melody_tokenizer import FantasticTokenizer
-from melodic_feature_set.narmour import (
+from melody_features.idyom_interface import run_idyom
+from melody_features.import_mid import import_midi
+from melody_features.interpolation_contour import InterpolationContour
+from melody_features.melody_tokenizer import FantasticTokenizer
+from melody_features.narmour import (
     closure,
     intervallic_difference,
     proximity,
     registral_direction,
     registral_return,
 )
-from melodic_feature_set.ngram_counter import NGramCounter
-from melodic_feature_set.representations import Melody
-from melodic_feature_set.stats import (
+from melody_features.ngram_counter import NGramCounter
+from melody_features.representations import Melody
+from melody_features.stats import (
     mode,
     range_func,
     shannon_entropy,
     standard_deviation,
 )
-from melodic_feature_set.step_contour import StepContour
+from melody_features.step_contour import StepContour
 
 VALID_VIEWPOINTS = {
     "onset",
@@ -173,7 +173,7 @@ def _setup_logger(level: int = logging.INFO) -> logging.Logger:
     logging.Logger
         Configured logger instance
     """
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     logger.setLevel(level)
 
     if not logger.handlers:
@@ -2670,7 +2670,7 @@ def get_idyom_results(
     corpus_path,
     experiment_name="IDyOM_Feature_Set_Results",
 ) -> dict:
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     """Run IDyOM on the input MIDI directory and return mean information content for each melody.
     Uses the parameters supplied from Config dataclass to control IDyOM behaviour.
 
@@ -2679,7 +2679,7 @@ def get_idyom_results(
     dict
         A dictionary mapping melody IDs to their mean information content.
     """
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
 
     # Set default IDyOM viewpoints if not provided.
     if idyom_target_viewpoints is None:
@@ -2835,7 +2835,7 @@ def create_temp_midi_with_key_signature(input_directory: str, temp_dir: str) -> 
     str
         Path to the temporary directory containing MIDI files with key signatures
     """
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     from mido import MetaMessage, MidiFile
 
     # Create temporary directory
@@ -2966,7 +2966,7 @@ def _setup_default_config(config: Optional[Config]) -> Config:
     if config is None:
         config = Config(
             # I hate this so much
-            corpus=resources.files("melodic_feature_set") / "corpora/Essen_Corpus",
+            corpus=resources.files("melody_features") / "corpora/Essen_Corpus",
             # corpus=str(Path(__file__).parent.parent.parent / "corpora/Essen_Corpus"),
             idyom={
                 "default_pitch": IDyOMConfig(
@@ -3022,7 +3022,7 @@ def _setup_corpus_statistics(config: Config, output_file: str) -> Optional[dict]
     FileNotFoundError
         If corpus path is not a valid directory
     """
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
 
     # Determine which corpus to use for FANTASTIC
     fantastic_corpus = (
@@ -3066,12 +3066,12 @@ def _setup_corpus_statistics(config: Config, output_file: str) -> Optional[dict]
     return corpus_stats
 
 
-def _load_melody_data(input_path: Union[os.PathLike, List[os.PathLike]]) -> List[dict]:
+def _load_melody_data(input: Union[os.PathLike, List[os.PathLike]]) -> List[dict]:
     """Load and validate melody data from MIDI files or JSON.
 
     Parameters
     ----------
-    input_path : Union[os.PathLike, List[os.PathLike]]
+    input : Union[os.PathLike, List[os.PathLike]]
         Path to input directory, JSON file, list of MIDI file paths, or single MIDI file path
 
     Returns
@@ -3086,14 +3086,14 @@ def _load_melody_data(input_path: Union[os.PathLike, List[os.PathLike]]) -> List
     ValueError
         If input is not a valid type
     """
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     from multiprocessing import Pool, cpu_count
 
     melody_data_list = []
 
-    if isinstance(input_path, list):
+    if isinstance(input, list):
         midi_files = []
-        for file_path in input_path:
+        for file_path in input:
             if isinstance(file_path, (str, os.PathLike)):
                 file_path = str(file_path)
                 if file_path.lower().endswith(('.mid', '.midi')):
@@ -3108,24 +3108,24 @@ def _load_melody_data(input_path: Union[os.PathLike, List[os.PathLike]]) -> List
         
         midi_files = natsorted(midi_files)
         
-    elif os.path.isdir(input_path):
-        midi_files = glob.glob(os.path.join(input_path, "*.mid"))
-        midi_files.extend(glob.glob(os.path.join(input_path, "*.midi")))
+    elif os.path.isdir(input):
+        midi_files = glob.glob(os.path.join(input, "*.mid"))
+        midi_files.extend(glob.glob(os.path.join(input, "*.midi")))
 
         if not midi_files:
             raise FileNotFoundError(
-                f"No MIDI files found in the specified directory: {input_path}"
+                f"No MIDI files found in the specified directory: {input}"
             )
 
         # Sort MIDI files in natural order
         midi_files = natsorted(midi_files)
         
-    elif isinstance(input_path, (str, os.PathLike)) and str(input_path).lower().endswith(('.mid', '.midi')):
+    elif isinstance(input, (str, os.PathLike)) and str(input).lower().endswith(('.mid', '.midi')):
         # Handle single MIDI file
-        midi_files = [str(input_path)]
+        midi_files = [str(input)]
         
-    elif isinstance(input_path, (str, os.PathLike)) and str(input_path).endswith(".json"):
-        with open(input_path, encoding="utf-8") as f:
+    elif isinstance(input, (str, os.PathLike)) and str(input).endswith(".json"):
+        with open(input, encoding="utf-8") as f:
             all_data = json.load(f)
 
         # Filter for monophonic melodies from the JSON data.
@@ -3152,7 +3152,7 @@ def _load_melody_data(input_path: Union[os.PathLike, List[os.PathLike]]) -> List
 
     else:
         raise ValueError(
-            f"Input must be a directory containing MIDI files, a JSON file, a list of MIDI file paths, or a single MIDI file path. Got: {input_path}"
+            f"Input must be a directory containing MIDI files, a JSON file, a list of MIDI file paths, or a single MIDI file path. Got: {input}"
         )
 
     for midi_file in midi_files:
@@ -3182,13 +3182,13 @@ def _load_melody_data(input_path: Union[os.PathLike, List[os.PathLike]]) -> List
 
 
 def _run_idyom_analysis(
-    input_path: Union[os.PathLike, List[os.PathLike]], config: Config
+    input: Union[os.PathLike, List[os.PathLike]], config: Config
 ) -> Dict[str, dict]:
     """Run IDyOM analysis for all configurations.
 
     Parameters
     ----------
-    input_path : Union[os.PathLike, List[os.PathLike]]
+    input : Union[os.PathLike, List[os.PathLike]]
         Path to input directory, list of MIDI file paths, or single MIDI file path
     config : Config
         Configuration object containing IDyOM settings
@@ -3198,13 +3198,13 @@ def _run_idyom_analysis(
     Dict[str, dict]
         Dictionary mapping IDyOM configuration names to their results
     """
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     idyom_results_dict = {}
     
-    if isinstance(input_path, list):
+    if isinstance(input, list):
         temp_dir = tempfile.mkdtemp(prefix="idyom_input_")
         try:
-            for i, file_path in enumerate(input_path):
+            for i, file_path in enumerate(input):
                 if isinstance(file_path, (str, os.PathLike)) and str(file_path).lower().endswith(('.mid', '.midi')):
                     import shutil
                     file_ext = os.path.splitext(str(file_path))[1]
@@ -3215,21 +3215,21 @@ def _run_idyom_analysis(
         except Exception as e:
             logger.error(f"Error creating temporary directory for IDyOM: {e}")
             return {}
-    elif os.path.isdir(input_path):
-        idyom_input_path = input_path
-    elif isinstance(input_path, (str, os.PathLike)) and str(input_path).lower().endswith(('.mid', '.midi')):
+    elif os.path.isdir(input):
+        idyom_input_path = input
+    elif isinstance(input, (str, os.PathLike)) and str(input).lower().endswith(('.mid', '.midi')):
         temp_dir = tempfile.mkdtemp(prefix="idyom_input_")
         try:
             import shutil
-            file_ext = os.path.splitext(str(input_path))[1]
+            file_ext = os.path.splitext(str(input))[1]
             temp_file_path = os.path.join(temp_dir, f"file_0001{file_ext}")
-            shutil.copy2(str(input_path), temp_file_path)
+            shutil.copy2(str(input), temp_file_path)
             idyom_input_path = temp_dir
         except Exception as e:
             logger.error(f"Error creating temporary directory for IDyOM: {e}")
             return {}
     else:
-        logger.error(f"Unsupported input type for IDyOM: {type(input_path)}")
+        logger.error(f"Unsupported input type for IDyOM: {type(input)}")
         return {}
     
     for idyom_name, idyom_config in config.idyom.items():
@@ -3256,7 +3256,7 @@ def _run_idyom_analysis(
             idyom_results_dict[idyom_name] = {}
 
     # Clean up temporary directory if it was created
-    if isinstance(input_path, list) or (isinstance(input_path, (str, os.PathLike)) and str(input_path).lower().endswith(('.mid', '.midi'))):
+    if isinstance(input, list) or (isinstance(input, (str, os.PathLike)) and str(input).lower().endswith(('.mid', '.midi'))):
         try:
             shutil.rmtree(temp_dir)
         except Exception as e:
@@ -3343,7 +3343,7 @@ def _setup_parallel_processing(
             # Already prefixed for IDyOM
             headers.append(category)
 
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     logger.info("Starting parallel processing...")
     # Create pool of workers
     n_cores = cpu_count()
@@ -3454,7 +3454,7 @@ def _process_melodies_parallel(
                         for category, duration in timings.items():
                             timing_stats[category].append(duration)
                     except Exception as e:
-                        logger = logging.getLogger("melodic_feature_set")
+                        logger = logging.getLogger("melody_features")
                         logger.error(f"Error processing melody {i}: {str(e)}")
                         continue
         else:
@@ -3496,7 +3496,7 @@ def _process_melodies_parallel(
                         timing_stats[category].append(duration)
 
                 except Exception as e:
-                    logger = logging.getLogger("melodic_feature_set")
+                    logger = logging.getLogger("melody_features")
                     logger.error(f"Error processing melody {i}: {str(e)}")
                     continue
     finally:
@@ -3528,7 +3528,7 @@ def _process_results_and_output(
     timing_stats : Dict[str, List[float]]
         Timing statistics dictionary
     """
-    logger = logging.getLogger("melodic_feature_set")
+    logger = logging.getLogger("melody_features")
     logger.info("Processing complete")
 
     # Sort results by melody_id
@@ -3559,7 +3559,7 @@ def _cleanup_idyom_temp_output():
 
     idyom_temp_dir = Path("idyom_temp_output")
     if idyom_temp_dir.exists():
-        logger = logging.getLogger("melodic_feature_set")
+        logger = logging.getLogger("melody_features")
         logger.info(f"Cleaning up existing IDyOM temporary directory: {idyom_temp_dir}")
         try:
             shutil.rmtree(idyom_temp_dir)
@@ -3569,7 +3569,7 @@ def _cleanup_idyom_temp_output():
 
 
 def get_all_features(
-    input_path: Union[os.PathLike, List[os.PathLike]],
+    input: Union[os.PathLike, List[os.PathLike]],
     output_file: str,
     config: Optional[Config] = None,
     log_level: int = logging.INFO,
@@ -3592,7 +3592,7 @@ def get_all_features(
 
     Parameters
     ----------
-    input_path : Union[os.PathLike, List[os.PathLike]]
+    input : Union[os.PathLike, List[os.PathLike]]
         Path to input MIDI directory, list of MIDI file paths, or single MIDI file path
     output_file : str
         Name for output CSV file. If no extension is provided, .csv will be added.
@@ -3639,7 +3639,7 @@ def get_all_features(
 
     corpus_stats = _setup_corpus_statistics(config, output_file)
 
-    melody_data_list = _load_melody_data(input_path)
+    melody_data_list = _load_melody_data(input)
 
     if not melody_data_list:
         logger.warning("No valid monophonic melodies found to process.")
@@ -3655,7 +3655,7 @@ def get_all_features(
         
         for attempt in range(max_retries):
             try:
-                idyom_results_dict = _run_idyom_analysis(input_path, config)
+                idyom_results_dict = _run_idyom_analysis(input, config)
                 break
             except Exception as e:
                 if "database is locked" in str(e).lower() or "sqlite" in str(e).lower():

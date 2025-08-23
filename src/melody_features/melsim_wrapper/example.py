@@ -1,4 +1,4 @@
-from melodic_feature_set.melsim_wrapper.melsim import (
+from melody_features.melsim_wrapper.melsim import (
     get_similarity_from_midi,
     install_dependencies,
 )
