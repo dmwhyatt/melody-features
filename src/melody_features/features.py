@@ -42,6 +42,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import mido
 import numpy as np
+import pandas as pd
 import scipy
 from natsort import natsorted
 
@@ -3570,13 +3571,12 @@ def _cleanup_idyom_temp_output():
 
 def get_all_features(
     input: Union[os.PathLike, List[os.PathLike]],
-    output_file: str,
     config: Optional[Config] = None,
     log_level: int = logging.INFO,
     skip_idyom: bool = False,
-) -> None:
+) -> "pd.DataFrame":
     """Calculate a multitude of features from across the computational melody analysis field.
-    This function generates a CSV file with a row for every melody in the supplied input.
+    This function returns a pandas DataFrame with a row for every melody in the supplied input.
     
     The input can be:
     - A directory path containing MIDI files
@@ -3594,8 +3594,6 @@ def get_all_features(
     ----------
     input : Union[os.PathLike, List[os.PathLike]]
         Path to input MIDI directory, list of MIDI file paths, or single MIDI file path
-    output_file : str
-        Name for output CSV file. If no extension is provided, .csv will be added.
     config : Config
         Configuration object containing corpus path, IDyOM configurations (as a dict), and FANTASTIC configuration.
         If idyom.corpus or fantastic.corpus is set, those take precedence over config.corpus for their respective methods.
@@ -3608,7 +3606,9 @@ def get_all_features(
 
     Returns
     -------
-    A CSV file with a row for every melody in the input.
+    pd.DataFrame
+        A pandas DataFrame with a row for every melody in the input, containing all extracted features.
+        You can save this to CSV using df.to_csv('filename.csv') if needed.
 
     """
     # Suppress warnings at the system level
@@ -3628,16 +3628,14 @@ def get_all_features(
     # Clean up any existing IDyOM temporary output directory
     _cleanup_idyom_temp_output()
 
-    # Ensure output file has .csv extension
-    if not output_file.endswith(".csv"):
-        output_file = output_file + ".csv"
-
     config = _setup_default_config(config)
     _validate_config(config)
 
     logger.info("Starting feature extraction job...")
 
-    corpus_stats = _setup_corpus_statistics(config, output_file)
+    # Use a temporary output file path for corpus statistics
+    temp_output_file = "temp_corpus_stats.csv"
+    corpus_stats = _setup_corpus_statistics(config, temp_output_file)
 
     melody_data_list = _load_melody_data(input)
 
@@ -3689,8 +3687,25 @@ def get_all_features(
 
     if not all_features:
         logger.warning("No features were successfully extracted from any melodies")
-        return
+        return pd.DataFrame()
 
-    _process_results_and_output(
-        all_features, headers, output_file, start_time, timing_stats
-    )
+    # Create DataFrame from results
+    
+    # Sort results by melody_id
+    all_features.sort(key=lambda x: x[0])
+    
+    # Create DataFrame
+    df = pd.DataFrame(all_features, columns=headers)
+    
+    # Log timing statistics
+    end_time = time.time()
+    logger.info(f"Total processing time: {end_time - start_time:.2f} seconds")
+    logger.info("Timing Statistics (average milliseconds per melody):")
+    for category, times in timing_stats.items():
+        if times:  # Only print if we have timing data
+            avg_time = sum(times) / len(times) * 1000  # Convert to milliseconds
+            logger.info(f"{category:15s}: {avg_time:8.2f}ms")
+    
+    logger.info(f"Successfully extracted features for {len(df)} melodies")
+    
+    return df

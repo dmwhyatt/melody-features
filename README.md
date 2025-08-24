@@ -41,15 +41,16 @@ The feature set can be easily accessed using the top-level function `get_all_fea
 ```python
 from melody_features import get_all_features
 
-# Extract features from MIDI files
-get_all_features(
-    input="path/to/your/midi/files",  # Can be directory, single file, or list of files
-    output_file="features.csv"
-)
+# Extract features from a directory of MIDI files, a single MIDI file
+# or a list of paths to MIDI files
+results = get_all_features(input="path/to/your/midi/files")
+
+# Print the result of all feature calculations
+print(results.iloc[:1,].to_json(indent=4, orient="records"))
+
 ```
 
-By default, this function will produce the following features, using the Essen Folksong Collection as the
-reference corpus.
+By default, this function will produce a Pandas DataFrame containing the following features, using the Essen Folksong Collection as the reference corpus.
 
 ```json
 [
