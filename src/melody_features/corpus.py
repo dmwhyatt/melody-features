@@ -200,7 +200,7 @@ def load_melody(idx: int, filename: str) -> Melody:
         raise IndexError(
             f"Index {idx} is out of range for file with {len(melody_data)} melodies"
         )
-    return Melody(melody_data[idx], tempo=100)
+    return Melody(melody_data[idx])
 
 
 def load_midi_melody(midi_path: str) -> Melody:
@@ -232,7 +232,7 @@ def load_midi_melody(midi_path: str) -> Melody:
         melody_data = import_midi(midi_path)
         if melody_data is None:
             return None
-        return Melody(melody_data, tempo=100)
+        return Melody(melody_data)
     except Exception as e:
         logger.warning(f"Error creating Melody object from {midi_path}: {str(e)}")
         return None
@@ -362,7 +362,7 @@ def make_corpus_stats_from_json(
     melodies = []
     for i, data in enumerate(tqdm(melody_data, desc="Converting to Melody objects")):
         try:
-            melody = Melody(data, tempo=100)
+            melody = Melody(data)
             melodies.append(melody)
         except Exception as e:
             logger.warning(f"Error creating Melody object from entry {i}: {str(e)}")

@@ -2583,7 +2583,7 @@ def process_melody(args):
     start_total = time.time()
 
     melody_data, corpus_stats, idyom_results_dict, phrase_gap, max_ngram_order = args
-    mel = Melody(melody_data, tempo=100)
+    mel = Melody(melody_data)
 
     # Time each feature category
     timings = {}
@@ -3304,7 +3304,7 @@ def _setup_parallel_processing(
     from multiprocessing import cpu_count
 
     # Process first melody to get header structure
-    mel = Melody(melody_data_list[0], tempo=100)
+    mel = Melody(melody_data_list[0])
     first_features = {
         "pitch_features": get_pitch_features(mel),
         "interval_features": get_interval_features(mel),

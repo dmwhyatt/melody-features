@@ -20,16 +20,24 @@ class Melody:
         ends (list[float]): List of note end times in order of appearance
     """
 
-    def __init__(self, midi_data: dict, tempo: float = 100.00):
+    def __init__(self, midi_data: dict, tempo: float = None):
         """Initialize a Melody object from MIDI sequence data.
 
         Args:
             midi_data (dict): Dictionary containing MIDI sequence data
+            tempo (float, optional): Tempo in BPM. If None, uses tempo from midi_data if available.
         """
         self._midi_data = midi_data
         # Split on 'Note(' and remove the first empty string
         self._midi_sequence = midi_data["MIDI Sequence"].split("Note(")[1:]
-        self._tempo = tempo
+
+        # Use tempo from midi_data if available, otherwise use provided tempo or default
+        if tempo is not None:
+            self._tempo = tempo
+        elif "tempo" in midi_data:
+            self._tempo = midi_data["tempo"]
+        else:
+            self._tempo = 100.00  # Default fallback tempo
 
     @property
     def pitches(self) -> list[int]:
