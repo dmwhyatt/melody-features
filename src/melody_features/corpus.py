@@ -14,8 +14,6 @@ The actual feature calculations are handled in features.py.
 """
 import json
 import logging
-import multiprocessing as mp
-import shutil
 from collections import Counter
 from importlib import resources
 from pathlib import Path
@@ -115,22 +113,11 @@ def compute_corpus_ngrams(
         "ignore", category=UserWarning, message=".*pkg_resources is deprecated.*"
     )
 
-    # Prepare arguments for multiprocessing
-    args = [(melody, n_range) for melody in melodies]
-
-    # Use all available CPU cores
-    num_cores = mp.cpu_count()
-
-    # Create a pool of workers
-    with mp.Pool(num_cores) as pool:
-        # Process melodies in parallel with progress bar
-        results = list(
-            tqdm(
-                pool.imap(process_melody_ngrams, args),
-                total=len(melodies),
-                desc=f"Computing n-grams using {num_cores} cores",
-            )
-        )
+    # Process melodies sequentially
+    results = []
+    for melody in tqdm(melodies, desc="Computing n-grams sequentially"):
+        result = process_melody_ngrams((melody, n_range))
+        results.append(result)
 
     # Count document frequency (number of melodies containing each n-gram)
     doc_freq = Counter()
@@ -287,19 +274,11 @@ def load_melodies_from_directory(
         num_melodies = len(melody_data)
         logger.info(f"Found {num_melodies} melodies in {json_files[0]}")
 
-        # Create arguments for parallel loading
-        num_cores = mp.cpu_count()
-        melody_indices = [(i, str(json_files[0])) for i in range(num_melodies)]
-
-        # Load melodies in parallel
-        with mp.Pool(num_cores) as pool:
-            melodies = list(
-                tqdm(
-                    pool.starmap(load_melody, melody_indices),
-                    total=len(melody_indices),
-                    desc=f"Loading melodies using {num_cores} cores",
-                )
-            )
+        # Load melodies sequentially
+        melodies = []
+        for i in tqdm(range(num_melodies), desc="Loading melodies sequentially"):
+            melody = load_melody(i, str(json_files[0]))
+            melodies.append(melody)
 
     elif file_type == "midi":
         # For MIDI, we expect multiple files, each containing one melody
@@ -309,16 +288,11 @@ def load_melodies_from_directory(
 
         logger.info(f"Found {len(midi_files)} MIDI files")
 
-        # Load melodies in parallel
-        num_cores = mp.cpu_count()
-        with mp.Pool(num_cores) as pool:
-            melodies = list(
-                tqdm(
-                    pool.imap(load_midi_melody, [str(f) for f in midi_files]),
-                    total=len(midi_files),
-                    desc=f"Loading MIDI files using {num_cores} cores",
-                )
-            )
+        # Load melodies sequentially
+        melodies = []
+        for midi_file in tqdm(midi_files, desc="Loading MIDI files sequentially"):
+            melody = load_midi_melody(str(midi_file))
+            melodies.append(melody)
     else:
         raise ValueError("file_type must be either 'json' or 'midi'")
 
