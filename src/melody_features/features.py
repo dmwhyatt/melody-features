@@ -51,6 +51,7 @@ from melody_features.algorithms import (
     chromatic_motion_proportion,
     circle_of_fifths,
     compute_tonality_vector,
+    get_duration_ratios,
     longest_conjunct_scalar_passage,
     longest_monotonic_conjunct_scalar_passage,
     melodic_embellishment_proportion,
@@ -69,6 +70,7 @@ from melody_features.distributional import (
     kurtosis,
     skew,
 )
+from melody_features.huron_contour import HuronContour
 from melody_features.idyom_interface import run_idyom
 from melody_features.import_mid import import_midi
 from melody_features.interpolation_contour import InterpolationContour
@@ -81,6 +83,7 @@ from melody_features.narmour import (
     registral_return,
 )
 from melody_features.ngram_counter import NGramCounter
+from melody_features.polynomial_contour import PolynomialContour
 from melody_features.representations import Melody
 from melody_features.stats import (
     mode,
@@ -1147,9 +1150,39 @@ def get_interpolation_contour_features(
         ic.class_label,
     )
 
+def get_polynomial_contour_features(
+    melody: Melody
+) -> PolynomialContour:
+    """Calculate polynomial contour features.
+
+    Parameters
+
+    Returns
+    -------
+    List[float]
+        List of first 3 polynomial contour coefficients for the melody
+    """
+    pc = PolynomialContour(melody)
+    return pc.coefficients
+
+
+def get_huron_contour_features(melody: Melody) -> str:
+    """Calculate Huron contour features.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    str
+        Huron contour classification
+    """
+    hc = HuronContour(melody)
+    return hc.huron_contour
 
 # Duration Features
-
 
 def get_tempo(melody: Melody) -> float:
     """Access tempo of melody.
@@ -1512,6 +1545,93 @@ def ioi_histogram(starts: list[float]) -> dict:
     return histogram_bins(intervals, num_intervals)
 
 
+
+def equal_duration_transitions(starts: list[float], ends: list[float]) -> float:
+    """Calculate proportion of equal duration transitions (d.eq.trans).
+    
+    Based on Steinbeck (1982) as implemented in FANTASTIC toolbox.
+    Measures the relative frequency of duration transitions where the ratio equals 1.0.
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times  
+    ends : list[float]
+        List of note end times
+        
+    Returns
+    -------
+    float
+        Proportion of equal duration transitions (0.0 to 1.0)
+    """
+    ratios = get_duration_ratios(starts, ends)
+    if not ratios:
+        return 0.0
+    
+    # Count ratios that equal 1.0 (equal durations)
+    equal_count = sum(1 for ratio in ratios if ratio == 1.0)
+    
+    return equal_count / len(ratios)
+
+
+def half_duration_transitions(starts: list[float], ends: list[float]) -> float:
+    """Calculate proportion of half/double duration transitions (d.half.trans).
+    
+    Based on Steinbeck (1982) as implemented in FANTASTIC toolbox.
+    Measures transitions where duration is halved (ratio = 0.5) or doubled (ratio = 2.0).
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float] 
+        List of note end times
+        
+    Returns
+    -------
+    float
+        Proportion of half/double duration transitions (0.0 to 1.0)
+    """
+    ratios = get_duration_ratios(starts, ends)
+    if not ratios:
+        return 0.0
+    
+    # Count ratios that equal 0.5 or round to 2
+    half_count = sum(1 for ratio in ratios if ratio == 0.5)
+    double_count = sum(1 for ratio in ratios if round(ratio) == 2)
+    
+    return (half_count + double_count) / len(ratios)
+
+
+def dotted_duration_transitions(starts: list[float], ends: list[float]) -> float:
+    """Calculate proportion of dotted duration transitions (d.dotted.trans).
+    
+    Based on Steinbeck (1982) as implemented in FANTASTIC toolbox.
+    Measures transitions involving dotted note relationships (1/3 or 3/1 ratios).
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+        
+    Returns
+    -------
+    float
+        Proportion of dotted duration transitions (0.0 to 1.0)
+    """
+    ratios = get_duration_ratios(starts, ends)
+    if not ratios:
+        return 0.0
+    
+    # Count ratios that equal 1/3 or round to 3
+    one_third_count = sum(1 for ratio in ratios if abs(ratio - (1/3)) < 1e-10)
+    triple_count = sum(1 for ratio in ratios if round(ratio) == 3)
+    
+    return (one_third_count + triple_count) / len(ratios)
+
+
 # Tonality Features
 def tonalness(pitches: list[int]) -> float:
     """Calculate tonalness as magnitude of highest key correlation.
@@ -1777,7 +1897,6 @@ def temperley_likelihood(pitches: list[int]) -> float:
         total_prob *= note_prob
 
     return total_prob
-
 
 def tonalness_histogram(pitches: list[int]) -> dict:
     """
@@ -2057,6 +2176,286 @@ def get_ngram_document_frequency(ngram: tuple, corpus_stats: dict) -> int:
     return doc_freqs.get(ngram_str, {}).get("count", 0)
 
 
+def entropy_based_local_weight(ngram_counts: dict) -> list[float]:
+    """Calculate local weights for n-grams using entropy-based weighting.
+    
+    Local weight is defined as log2(frequency + 1) following FANTASTIC implementation.
+    
+    Parameters
+    ----------
+    ngram_counts : dict
+        Dictionary mapping n-grams to their frequencies
+        
+    Returns
+    -------
+    list[float]
+        List of local weights for each n-gram
+    """
+    if not ngram_counts:
+        return []
+        
+    local_weights = []
+    for tf in ngram_counts.values():
+        local_weight = np.log2(tf + 1)
+        local_weights.append(local_weight)
+    
+    return local_weights
+
+
+def entropy_based_global_weight(ngram_counts: dict, corpus_stats: dict) -> list[float]:
+    """Calculate global weights for n-grams using entropy-based weighting.
+    
+    Global weight is based on the entropy of the ratio Pc(τ) = fc(τ) / fC(τ),
+    where fc(τ) is local frequency and fC(τ) is corpus frequency.
+    Formula: glob.w = 1 + Σ Pc(τ) · log2(Pc(τ)) / log2(|C|)
+    
+    Parameters
+    ----------
+    ngram_counts : dict
+        Dictionary mapping n-grams to their frequencies
+    corpus_stats : dict
+        Dictionary containing corpus statistics including document_frequencies
+        
+    Returns
+    -------
+    list[float]
+        List of global weights for each n-gram
+    """
+    if not ngram_counts or not corpus_stats:
+        return []
+        
+    doc_freqs = corpus_stats.get("document_frequencies", {})
+    total_docs = len(doc_freqs) if doc_freqs else 1
+    
+    global_weights = []
+    for ngram, tf in ngram_counts.items():
+        ngram_str = str(ngram)
+        df = doc_freqs.get(ngram_str, {}).get("count", 0)
+        
+        if df > 0 and total_docs > 0:
+            # Pc(τ) = fc(τ) / fC(τ) - ratio of local freq to corpus freq
+            pc_ratio = tf / df if df > 0 else 0.0
+            
+            # Global weight calculation based on entropy
+            if pc_ratio > 0:
+                entropy_term = pc_ratio * np.log2(pc_ratio)
+                global_weight = 1 + entropy_term / np.log2(total_docs)
+            else:
+                global_weight = 1.0
+        else:
+            global_weight = 1.0
+            
+        global_weights.append(global_weight)
+    
+    return global_weights
+
+
+def entropy_based_combined_weight(ngram_counts: dict, corpus_stats: dict) -> list[float]:
+    """Calculate combined local-global weights for n-grams.
+    
+    Combined weight is the product of local and global weights:
+    glob.loc.w(τ) = loc.w(τ) · glob.w(τ)
+    
+    Parameters
+    ----------
+    ngram_counts : dict
+        Dictionary mapping n-grams to their frequencies
+    corpus_stats : dict
+        Dictionary containing corpus statistics including document_frequencies
+        
+    Returns
+    -------
+    list[float]
+        List of combined weights for each n-gram
+    """
+    if not ngram_counts:
+        return []
+        
+    local_weights = entropy_based_local_weight(ngram_counts)
+    global_weights = entropy_based_global_weight(ngram_counts, corpus_stats)
+    
+    if len(local_weights) != len(global_weights):
+        return []
+        
+    combined_weights = []
+    for local_w, global_w in zip(local_weights, global_weights):
+        combined_weights.append(local_w * global_w)
+    
+    return combined_weights
+
+
+def mean_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate mean of combined local-global entropy weights for a melody.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Mean of combined local-global weights
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+    
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+    
+    all_combined_weights = []
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+            
+        if ngram_counts:
+            combined_weights = entropy_based_combined_weight(ngram_counts, corpus_stats)
+            all_combined_weights.extend(combined_weights)
+    
+    return float(np.mean(all_combined_weights) if all_combined_weights else 0.0)
+
+
+def std_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate standard deviation of combined local-global entropy weights for a melody.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Standard deviation of combined local-global weights
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+    
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+    
+    all_combined_weights = []
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+            
+        if ngram_counts:
+            combined_weights = entropy_based_combined_weight(ngram_counts, corpus_stats)
+            all_combined_weights.extend(combined_weights)
+    
+    return float(np.std(all_combined_weights, ddof=1) if len(all_combined_weights) > 1 else 0.0)
+
+
+def mean_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate mean of global entropy weights for a melody.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Mean of global weights
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+    
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+    
+    all_global_weights = []
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+            
+        if ngram_counts:
+            global_weights = entropy_based_global_weight(ngram_counts, corpus_stats)
+            all_global_weights.extend(global_weights)
+    
+    return float(np.mean(all_global_weights) if all_global_weights else 0.0)
+
+
+def std_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate standard deviation of global entropy weights for a melody.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Standard deviation of global weights
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+    
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+    
+    all_global_weights = []
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+            
+        if ngram_counts:
+            global_weights = entropy_based_global_weight(ngram_counts, corpus_stats)
+            all_global_weights.extend(global_weights)
+    
+    return float(np.std(all_global_weights, ddof=1) if len(all_global_weights) > 1 else 0.0)
+
+
 def get_corpus_features(
     melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int
 ) -> Dict:
@@ -2189,6 +2588,51 @@ def get_corpus_features(
     features["max_log_df"] = float(np.log1p(max_df) if max_df > 0 else 0.0)
     features["min_log_df"] = float(np.log1p(min_df) if min_df < float("inf") else 0.0)
     features["mean_log_df"] = float(total_log_df / df_count if df_count > 0 else 0.0)
+
+    # Entropy-based weighting features optimized using pre-computed ngram_data
+    all_combined_weights = []
+    all_global_weights = []
+    
+    if ngram_data and total_docs > 0:
+        log_total_docs = np.log2(total_docs)
+        
+        for data in ngram_data:
+            for ngram, tf in zip(data["ngrams"], data["tf_values"]):
+                # Local weight = log2(frequency + 1)
+                local_weight = np.log2(tf + 1)
+                
+                # Global weight computation
+                ngram_str = str(ngram)
+                df = doc_freqs.get(ngram_str, {}).get("count", 0)
+                
+                if df > 0:
+                    pc_ratio = tf / df
+                    if pc_ratio > 0:
+                        entropy_term = pc_ratio * np.log2(pc_ratio)
+                        global_weight = 1 + entropy_term / log_total_docs
+                    else:
+                        global_weight = 1.0
+                else:
+                    global_weight = 1.0
+                    
+                combined_weight = local_weight * global_weight
+                all_combined_weights.append(combined_weight)
+                all_global_weights.append(global_weight)
+    
+    # Calculate statistics
+    if all_combined_weights:
+        features["mean_global_local_weight"] = float(np.mean(all_combined_weights))
+        features["std_global_local_weight"] = float(np.std(all_combined_weights, ddof=1) if len(all_combined_weights) > 1 else 0.0)
+    else:
+        features["mean_global_local_weight"] = 0.0
+        features["std_global_local_weight"] = 0.0
+        
+    if all_global_weights:
+        features["mean_global_weight"] = float(np.mean(all_global_weights))
+        features["std_global_weight"] = float(np.std(all_global_weights, ddof=1) if len(all_global_weights) > 1 else 0.0)
+    else:
+        features["mean_global_weight"] = 0.0
+        features["std_global_weight"] = 0.0
 
     return features
 
@@ -2324,7 +2768,8 @@ def get_contour_features(melody: Melody) -> Dict:
         3
     ]
     contour_features["interpolation_contour_class_label"] = interpolation_contour[4]
-
+    contour_features["polynomial_contour_coefficients"] = get_polynomial_contour_features(melody)
+    contour_features["huron_contour"] = get_huron_contour_features(melody)
     return contour_features
 
 
@@ -2369,6 +2814,15 @@ def get_duration_features(melody: Melody) -> Dict:
     duration_features["ioi_range"] = ioi_range(melody.starts)
     duration_features["ioi_histogram"] = ioi_histogram(melody.starts)
     duration_features["duration_histogram"] = duration_histogram(
+        melody.starts, melody.ends
+    )
+    duration_features["equal_duration_transitions"] = equal_duration_transitions(
+        melody.starts, melody.ends
+    )
+    duration_features["half_duration_transitions"] = half_duration_transitions(
+        melody.starts, melody.ends
+    )
+    duration_features["dotted_duration_transitions"] = dotted_duration_transitions(
         melody.starts, melody.ends
     )
     return duration_features
@@ -2525,6 +2979,8 @@ def get_tonality_features(melody: Melody) -> Dict:
 
     # Histogram using cached correlations
     tonality_features["tonalness_histogram"] = histogram_bins(correlations[0][1], 24)
+
+    tonality_features["mode"] = "major" if is_major else "minor"
 
     return tonality_features
 

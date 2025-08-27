@@ -767,6 +767,15 @@ def get_durations(starts: list[float], ends: list[float]) -> list[float]:
 
     Parameters
     ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+
+    Returns
+    -------
+    list[float]
+        List of note durations
     """
     if not starts or not ends or len(starts) != len(ends):
         return []
@@ -775,6 +784,55 @@ def get_durations(starts: list[float], ends: list[float]) -> list[float]:
         return [end - start for start, end in zip(starts, ends)]
     except (TypeError, ValueError):
         return []
+
+
+def get_duration_ratios(starts: list[float], ends: list[float]) -> list[float]:
+    """Calculate duration ratios between subsequent notes.
+    
+    Based on Steinbeck (1982) as implemented in FANTASTIC toolbox.
+    Computes ri = ΔTi / ΔTi+1 where ΔTi is the duration of note i.
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+        
+    Returns
+    -------
+    list[float]
+        List of duration ratios between subsequent notes.
+        Returns empty list for melodies with fewer than 2 notes.
+        
+    Raises
+    ------
+    TypeError
+        If any element cannot be converted to float
+        
+    Examples
+    --------
+    >>> get_duration_ratios([0, 1, 2, 3], [1, 2, 3, 4])  # Equal durations
+    [1.0, 1.0, 1.0]
+    >>> get_duration_ratios([0, 1, 3], [1, 3, 4])  # Varying durations
+    [0.5, 2.0]
+    >>> get_duration_ratios([0], [1])  # Single note
+    []
+    """
+    if len(starts) < 2 or len(ends) < 2:
+        return []
+    
+    durations = get_durations(starts, ends)
+    if len(durations) < 2:
+        return []
+    
+    # Calculate ratios ri = duration[i] / duration[i+1]
+    ratios = []
+    for i in range(len(durations) - 1):
+        if durations[i + 1] != 0:  # Avoid division by zero
+            ratios.append(durations[i] / durations[i + 1])
+    
+    return ratios
 
 
 def melodic_embellishment_proportion(
