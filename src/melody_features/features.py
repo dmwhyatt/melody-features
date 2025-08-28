@@ -35,7 +35,6 @@ if __name__ == "__main__":
 
 import glob
 import logging
-import threading
 import time
 from random import choices
 from typing import Dict, List, Optional, Tuple, Union
@@ -45,6 +44,7 @@ import numpy as np
 import pandas as pd
 import scipy
 from natsort import natsorted
+from tqdm import tqdm
 
 from melody_features.algorithms import (
     arpeggiation_proportion,
@@ -3072,14 +3072,23 @@ def get_corpus_features(
 
         if len(all_tf) >= 2:
             try:
-                spearman = scipy.stats.spearmanr(all_tf, all_df)[0]
-                kendall = scipy.stats.kendalltau(all_tf, all_df)[0]
-                features["tfdf_spearman"] = float(
-                    spearman if not np.isnan(spearman) else 0.0
-                )
-                features["tfdf_kendall"] = float(
-                    kendall if not np.isnan(kendall) else 0.0
-                )
+                # Check for constant arrays (no variance) to avoid correlation warnings
+                tf_variance = np.var(all_tf)
+                df_variance = np.var(all_df)
+                
+                if tf_variance == 0 or df_variance == 0:
+                    # If either array is constant, correlation is undefined
+                    features["tfdf_spearman"] = 0.0
+                    features["tfdf_kendall"] = 0.0
+                else:
+                    spearman = scipy.stats.spearmanr(all_tf, all_df)[0]
+                    kendall = scipy.stats.kendalltau(all_tf, all_df)[0]
+                    features["tfdf_spearman"] = float(
+                        spearman if not np.isnan(spearman) else 0.0
+                    )
+                    features["tfdf_kendall"] = float(
+                        kendall if not np.isnan(kendall) else 0.0
+                    )
             except:
                 features["tfdf_spearman"] = 0.0
                 features["tfdf_kendall"] = 0.0
@@ -3929,28 +3938,7 @@ def create_temp_midi_with_key_signature(input_directory: str, temp_dir: str) -> 
 # config = Config(corpus_path="path/to/corpus", idyom_configs=idyom_configs, fantastic_max_ngram_order=3)
 
 
-class SpinnerThread(threading.Thread):
-    """Thread for displaying processing progress with a spinner animation."""
 
-    def __init__(self):
-        super().__init__()
-        self.stop_event = threading.Event()
-        self.spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-        self.idx = 0
-
-    def run(self):
-        while not self.stop_event.is_set():
-            print(
-                f"\r{self.spinner[self.idx]} Processing melodies...", end="", flush=True
-            )
-            self.idx = (self.idx + 1) % len(self.spinner)
-            time.sleep(0.1)  # Control animation speed
-
-    def stop(self):
-        self.stop_event.set()
-        self.join()
-        print("\r", end="", flush=True)  # Clear the spinner line
-        print("\n")
 
 
 def _setup_default_config(config: Optional[Config]) -> Config:
@@ -4387,7 +4375,6 @@ def _process_melodies_parallel(
     melody_data_list: List[dict],
     idyom_results_dict: Dict[str, dict],
     timing_stats: Dict[str, List[float]],
-    spinner: SpinnerThread,
 ) -> List[List]:
     """Process melodies in parallel and collect results.
 
@@ -4403,8 +4390,6 @@ def _process_melodies_parallel(
         Dictionary of IDyOM results
     timing_stats : Dict[str, List[float]]
         Timing statistics dictionary
-    spinner : SpinnerThread
-        Spinner thread for progress display
 
     Returns
     -------
@@ -4431,17 +4416,86 @@ def _process_melodies_parallel(
         chunk_size = max(1, len(melody_args) // (n_cores * 4))
 
         with Pool(n_cores) as pool:
-            for i, result in enumerate(
-                pool.imap(process_melody, melody_args, chunksize=chunk_size)
-            ):
+            # Use tqdm to show progress as melodies are processed
+            with tqdm(
+                total=len(melody_args),
+                desc="Processing melodies",
+                unit="melody",
+                ncols=80,
+                mininterval=0.5, 
+                maxinterval=2.0,  
+                miniters=1,   
+                smoothing=0.1,
+                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"
+            ) as pbar:
+                for result in pool.imap(process_melody, melody_args, chunksize=chunk_size):
+                    try:
+                        melody_id, melody_features, timings = result
+                        melody_num = None
+                        for m in melody_data_list:
+                            if str(m["ID"]) == str(melody_id):
+                                melody_num = m.get("melody_num", None)
+                                break
+                        row = [melody_num, melody_id]
+                        for header in headers[2:]:  # Skip melody_num and melody_id headers
+                            if header.startswith("idyom_"):
+                                prefix, feature_name = header.split(".", 1)
+                                idyom_name = prefix[len("idyom_") : -len("_features")]
+                                # Use melody_num for IDyOM lookup since IDyOM results are indexed by melody number
+                                value = (
+                                    idyom_results_dict.get(idyom_name, {})
+                                    .get(str(melody_num), {})
+                                    .get(feature_name, 0.0)
+                                )
+                                row.append(value)
+                            else:
+                                category, feature_name = header.split(".", 1)
+                                value = melody_features.get(category, {}).get(
+                                    feature_name, 0.0
+                                )
+                                row.append(value)
+                        all_features.append(row)
+
+                        for category, duration in timings.items():
+                            timing_stats[category].append(duration)
+                            
+                        # Update progress bar
+                        pbar.update(1)
+                        
+                    except Exception as e:
+                        logger = logging.getLogger("melody_features")
+                        logger.error(f"Error processing melody: {str(e)}")
+                        pbar.update(1)  # Still update progress even on error
+                        continue
+                    
+    except Exception as e:
+        # Fall back to sequential processing if multiprocessing fails
+        logger = logging.getLogger("melody_features")
+        logger.warning(f"Parallel processing failed ({str(e)}), falling back to sequential processing")
+        
+        with tqdm(
+            total=len(melody_args),
+            desc="Processing melodies (sequential)",
+            unit="melody",
+            ncols=80,
+            mininterval=0.5, 
+            maxinterval=2.0, 
+            miniters=1,      
+            smoothing=0.1,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"
+        ) as pbar:
+            for i, args in enumerate(melody_args):
                 try:
+                    result = process_melody(args)
                     melody_id, melody_features, timings = result
+
                     melody_num = None
                     for m in melody_data_list:
                         if str(m["ID"]) == str(melody_id):
                             melody_num = m.get("melody_num", None)
                             break
                     row = [melody_num, melody_id]
+
                     for header in headers[2:]:  # Skip melody_num and melody_id headers
                         if header.startswith("idyom_"):
                             prefix, feature_name = header.split(".", 1)
@@ -4461,106 +4515,20 @@ def _process_melodies_parallel(
                             row.append(value)
                     all_features.append(row)
 
+                    # Update timing statistics
                     for category, duration in timings.items():
                         timing_stats[category].append(duration)
+
+                    # Update progress bar
+                    pbar.update(1)
+
                 except Exception as e:
-                    logger = logging.getLogger("melody_features")
                     logger.error(f"Error processing melody {i}: {str(e)}")
+                    pbar.update(1)  # Still update progress even on error
                     continue
-                    
-    except Exception as e:
-        # Fall back to sequential processing if multiprocessing fails
-        logger = logging.getLogger("melody_features")
-        logger.warning(f"Parallel processing failed ({str(e)}), falling back to sequential processing")
-        for i, args in enumerate(melody_args):
-            try:
-                result = process_melody(args)
-                melody_id, melody_features, timings = result
-
-                melody_num = None
-                for m in melody_data_list:
-                    if str(m["ID"]) == str(melody_id):
-                        melody_num = m.get("melody_num", None)
-                        break
-                row = [melody_num, melody_id]
-
-                for header in headers[2:]:  # Skip melody_num and melody_id headers
-                    if header.startswith("idyom_"):
-                        prefix, feature_name = header.split(".", 1)
-                        idyom_name = prefix[len("idyom_") : -len("_features")]
-                        # Use melody_num for IDyOM lookup since IDyOM results are indexed by melody number
-                        value = (
-                            idyom_results_dict.get(idyom_name, {})
-                            .get(str(melody_num), {})
-                            .get(feature_name, 0.0)
-                        )
-                        row.append(value)
-                    else:
-                        category, feature_name = header.split(".", 1)
-                        value = melody_features.get(category, {}).get(
-                            feature_name, 0.0
-                        )
-                        row.append(value)
-                all_features.append(row)
-
-                # Update timing statistics
-                for category, duration in timings.items():
-                    timing_stats[category].append(duration)
-
-            except Exception as e:
-                logger.error(f"Error processing melody {i}: {str(e)}")
-                continue
-    finally:
-        # Stop spinner thread
-        spinner.stop()
 
     return all_features
 
-
-def _process_results_and_output(
-    all_features: List[List],
-    headers: List[str],
-    output_file: str,
-    start_time: float,
-    timing_stats: Dict[str, List[float]],
-) -> None:
-    """Process results and write to CSV file.
-
-    Parameters
-    ----------
-    all_features : List[List]
-        List of feature rows
-    headers : List[str]
-        CSV headers
-    output_file : str
-        Output file path
-    start_time : float
-        Start time for timing calculation
-    timing_stats : Dict[str, List[float]]
-        Timing statistics dictionary
-    """
-    logger = logging.getLogger("melody_features")
-    logger.info("Processing complete")
-
-    # Sort results by melody_id
-    all_features.sort(key=lambda x: x[0])
-
-    # Write results to CSV
-    with open(output_file, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(headers)
-        writer.writerows(all_features)
-
-    end_time = time.time()
-    logger.info(f"Total processing time: {end_time - start_time:.2f} seconds")
-    logger.info(f"Results written to {output_file}")
-
-    # Print timing statistics
-    logger.info("Timing Statistics (average milliseconds per melody):")
-    for category, times in timing_stats.items():
-        if times:  # Only print if we have timing data
-            avg_time = sum(times) / len(times) * 1000  # Convert to milliseconds
-            logger.info(f"{category:15s}: {avg_time:8.2f}ms")
 
 
 def _cleanup_idyom_temp_output():
@@ -4683,16 +4651,12 @@ def get_all_features(
         melody_data_list, corpus_stats, idyom_results_dict, config
     )
 
-    spinner = SpinnerThread()
-    spinner.start()
-
     all_features = _process_melodies_parallel(
         melody_args,
         headers,
         melody_data_list,
         idyom_results_dict,
         timing_stats,
-        spinner,
     )
 
     if not all_features:
