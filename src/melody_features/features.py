@@ -4414,71 +4414,34 @@ def _process_melodies_parallel(
     all_features = []
 
     try:
-        # Use multiprocessing if possible as main module
-        if __name__ == "__main__":
-            from multiprocessing import Pool, cpu_count
-            logger = logging.getLogger("melody_features")
-            logger.info("Parallel processing initiated")
+        # Try to use multiprocessing
+        from multiprocessing import Pool, cpu_count
+        import multiprocessing as mp
+        
+        # Set start method to 'fork' for better compatibility
+        try:
+            mp.set_start_method('fork', force=True)
+        except RuntimeError:
+            pass  # Start method already set
             
-            n_cores = cpu_count()
-            chunk_size = max(1, len(melody_args) // (n_cores * 4))
+        logger = logging.getLogger("melody_features")
+        logger.info("Parallel processing initiated")
+        
+        n_cores = cpu_count()
+        chunk_size = max(1, len(melody_args) // (n_cores * 4))
 
-            with Pool(n_cores) as pool:
-                for i, result in enumerate(
-                    pool.imap(process_melody, melody_args, chunksize=chunk_size)
-                ):
-                    try:
-                        melody_id, melody_features, timings = result
-                        melody_num = None
-                        for m in melody_data_list:
-                            if str(m["ID"]) == str(melody_id):
-                                melody_num = m.get("melody_num", None)
-                                break
-                        row = [melody_num, melody_id]
-                        for header in headers[
-                            2:
-                        ]:  # Skip melody_num and melody_id headers
-                            if header.startswith("idyom_"):
-                                prefix, feature_name = header.split(".", 1)
-                                idyom_name = prefix[len("idyom_") : -len("_features")]
-                                # Use melody_num for IDyOM lookup since IDyOM results are indexed by melody number
-                                value = (
-                                    idyom_results_dict.get(idyom_name, {})
-                                    .get(str(melody_num), {})
-                                    .get(feature_name, 0.0)
-                                )
-                                row.append(value)
-                            else:
-                                category, feature_name = header.split(".", 1)
-                                value = melody_features.get(category, {}).get(
-                                    feature_name, 0.0
-                                )
-                                row.append(value)
-                        all_features.append(row)
-
-                        for category, duration in timings.items():
-                            timing_stats[category].append(duration)
-                    except Exception as e:
-                        logger = logging.getLogger("melody_features")
-                        logger.error(f"Error processing melody {i}: {str(e)}")
-                        continue
-        else:
-            # Process melodies sequentially when imported if
-            # multiprocessing is not available.
-            logger = logging.getLogger("melody_features")
-            logger.info("Parallel processing failed, falling back to sequential processing")
-            for i, args in enumerate(melody_args):
+        with Pool(n_cores) as pool:
+            for i, result in enumerate(
+                pool.imap(process_melody, melody_args, chunksize=chunk_size)
+            ):
                 try:
-                    result = process_melody(args)
                     melody_id, melody_features, timings = result
-
                     melody_num = None
                     for m in melody_data_list:
                         if str(m["ID"]) == str(melody_id):
                             melody_num = m.get("melody_num", None)
                             break
                     row = [melody_num, melody_id]
-
                     for header in headers[2:]:  # Skip melody_num and melody_id headers
                         if header.startswith("idyom_"):
                             prefix, feature_name = header.split(".", 1)
@@ -4498,14 +4461,55 @@ def _process_melodies_parallel(
                             row.append(value)
                     all_features.append(row)
 
-                    # Update timing statistics
                     for category, duration in timings.items():
                         timing_stats[category].append(duration)
-
                 except Exception as e:
                     logger = logging.getLogger("melody_features")
                     logger.error(f"Error processing melody {i}: {str(e)}")
                     continue
+                    
+    except Exception as e:
+        # Fall back to sequential processing if multiprocessing fails
+        logger = logging.getLogger("melody_features")
+        logger.warning(f"Parallel processing failed ({str(e)}), falling back to sequential processing")
+        for i, args in enumerate(melody_args):
+            try:
+                result = process_melody(args)
+                melody_id, melody_features, timings = result
+
+                melody_num = None
+                for m in melody_data_list:
+                    if str(m["ID"]) == str(melody_id):
+                        melody_num = m.get("melody_num", None)
+                        break
+                row = [melody_num, melody_id]
+
+                for header in headers[2:]:  # Skip melody_num and melody_id headers
+                    if header.startswith("idyom_"):
+                        prefix, feature_name = header.split(".", 1)
+                        idyom_name = prefix[len("idyom_") : -len("_features")]
+                        # Use melody_num for IDyOM lookup since IDyOM results are indexed by melody number
+                        value = (
+                            idyom_results_dict.get(idyom_name, {})
+                            .get(str(melody_num), {})
+                            .get(feature_name, 0.0)
+                        )
+                        row.append(value)
+                    else:
+                        category, feature_name = header.split(".", 1)
+                        value = melody_features.get(category, {}).get(
+                            feature_name, 0.0
+                        )
+                        row.append(value)
+                all_features.append(row)
+
+                # Update timing statistics
+                for category, duration in timings.items():
+                    timing_stats[category].append(duration)
+
+            except Exception as e:
+                logger.error(f"Error processing melody {i}: {str(e)}")
+                continue
     finally:
         # Stop spinner thread
         spinner.stop()
