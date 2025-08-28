@@ -617,6 +617,91 @@ def number_of_pitches(pitches: list[int]) -> int:
     return int(len(set(pitches)))
 
 
+def tessitura(pitches: list[int]) -> list[float]:
+    """Calculate melodic tessitura for each note based on von Hippel (2000).
+    Implementation based on MIDI toolbox "tessitura.m"
+    
+    Tessitura is based on deviation from median pitch height. The median range 
+    of the melody tends to be favoured and thus more expected. Tessitura predicts 
+    whether listeners expect tones close to median pitch height.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    list[float]
+        Absolute tessitura value for each note in the sequence
+    """
+    if len(pitches) < 2:
+        return [0.0] if len(pitches) == 1 else []
+    
+    tessitura_values = [0.0]
+    
+    for i in range(2, len(pitches) + 1):
+        # Calculate median of previous pitches (notes 1 to i-1)
+        median_prev = np.median(pitches[:i-1])
+        
+        # Calculate standard deviation of previous pitches
+        if i == 2:
+            # For second note, std of single value is 0, so tessitura is 0
+            tessitura_values.append(0.0)
+            continue
+            
+        std_prev = np.std(pitches[:i-1], ddof=1)
+        
+        # Avoid division by zero
+        if std_prev == 0:
+            tessitura_values.append(0.0)
+        else:
+            # Calculate tessitura: (current_pitch - median) / std_deviation
+            current_pitch = pitches[i-1]  # Current note
+            tessitura_val = (current_pitch - median_prev) / std_prev
+            tessitura_values.append(abs(tessitura_val))
+    
+    return tessitura_values
+
+
+def mean_tessitura(pitches: list[int]) -> float:
+    """Calculate mean tessitura across all notes.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Mean tessitura value
+    """
+    tess_values = tessitura(pitches)
+    if not tess_values:
+        return 0.0
+    return float(np.mean(tess_values))
+
+
+def tessitura_std(pitches: list[int]) -> float:
+    """Calculate standard deviation of tessitura values.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Standard deviation of tessitura values
+    """
+    tess_values = tessitura(pitches)
+    if len(tess_values) < 2:
+        return 0.0
+    return float(np.std(tess_values, ddof=1))
+
+
 def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
     """Create histogram of pitch classes arranged in circle of fifths.
 
@@ -769,7 +854,7 @@ def standard_deviation_absolute_interval(pitches: list[int]) -> float:
     float
         Standard deviation of absolute interval sizes in semitones
     """
-    return float(np.std([abs(x) for x in pitch_interval(pitches)]))
+    return float(np.std([abs(x) for x in pitch_interval(pitches)], ddof=1))
 
 
 def modal_interval(pitches: list[int]) -> int:
@@ -1261,7 +1346,7 @@ def duration_standard_deviation(starts: list[float], ends: list[float]) -> float
     durations = get_durations(starts, ends)
     if not durations:
         return 0.0
-    return float(np.std(durations))
+    return float(np.std(durations, ddof=1))
 
 
 def modal_duration(starts: list[float], ends: list[float]) -> float:
@@ -1402,7 +1487,7 @@ def ioi(starts: list[float]) -> tuple[float, float]:
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
     if not intervals:
         return 0.0, 0.0
-    return float(np.mean(intervals)), float(np.std(intervals))
+    return float(np.mean(intervals)), float(np.std(intervals, ddof=1))
 
 
 def ioi_ratio(starts: list[float]) -> tuple[float, float]:
@@ -1429,7 +1514,7 @@ def ioi_ratio(starts: list[float]) -> tuple[float, float]:
 
     # Calculate ratios between consecutive intervals
     ratios = [intervals[i] / intervals[i - 1] for i in range(1, len(intervals))]
-    return float(np.mean(ratios)), float(np.std(ratios))
+    return float(np.mean(ratios)), float(np.std(ratios, ddof=1))
 
 
 def ioi_range(starts: list[float]) -> float:
@@ -1480,7 +1565,7 @@ def ioi_standard_deviation(starts: list[float]) -> float:
         Standard deviation of inter-onset intervals
     """
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
-    return float(np.std(intervals))
+    return float(np.std(intervals, ddof=1))
 
 
 def ioi_contour(starts: list[float]) -> tuple[float, float]:
@@ -1502,7 +1587,7 @@ def ioi_contour(starts: list[float]) -> tuple[float, float]:
 
     ratios = [intervals[i] / intervals[i - 1] for i in range(1, len(intervals))]
     contour = [int(np.sign(ratio - 1)) for ratio in ratios]
-    return float(np.mean(contour)), float(np.std(contour))
+    return float(np.mean(contour)), float(np.std(contour, ddof=1))
 
 
 def duration_histogram(starts: list[float], ends: list[float]) -> dict:
@@ -1631,6 +1716,137 @@ def dotted_duration_transitions(starts: list[float], ends: list[float]) -> float
     
     return (one_third_count + triple_count) / len(ratios)
 
+
+def duration_accent(starts: list[float], ends: list[float], tau: float = 0.5, accent_index: float = 2.0) -> list[float]:
+    """Calculate duration accent for each note based on Parncutt (1994).
+    
+    Duration accent represents the perceptual salience of notes based on their duration.
+    The MIDI toolbox implementation uses defaults of 0.5 for tau (saturation duration) 
+    and 2.0 for accent_index (minimum discriminable duration).
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+    tau : float, optional
+        Saturation duration in seconds, by default 0.5
+    accent_index : float, optional
+        Minimum discriminable duration parameter, by default 2.0
+        
+    Returns
+    -------
+    list[float]
+        List of duration accent values for each note
+    """
+    durations = get_durations(starts, ends)
+    if not durations:
+        return []
+
+    accents = []
+    for dur in durations:
+        if dur <= 0:
+            accents.append(0.0)
+        else:
+            accent = (1 - np.exp(-dur / tau)) ** accent_index
+            accents.append(float(accent))
+    
+    return accents
+
+
+def mean_duration_accent(starts: list[float], ends: list[float], tau: float = 0.5, accent_index: float = 2.0) -> float:
+    """Calculate mean duration accent across all notes.
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+    tau : float, optional
+        Saturation duration in seconds, by default 0.5
+    accent_index : float, optional
+        Minimum discriminable duration parameter, by default 2.0
+        
+    Returns
+    -------
+    float
+        Mean duration accent value
+    """
+    accents = duration_accent(starts, ends, tau, accent_index)
+    if not accents:
+        return 0.0
+    return float(np.mean(accents))
+
+
+def duration_accent_std(starts: list[float], ends: list[float], tau: float = 0.5, accent_index: float = 2.0) -> float:
+    """Calculate standard deviation of duration accents.
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+    tau : float, optional
+        Saturation duration in seconds, by default 0.5
+    accent_index : float, optional
+        Minimum discriminable duration parameter, by default 2.0
+        
+    Returns
+    -------
+    float
+        Standard deviation of duration accent values
+    """
+    accents = duration_accent(starts, ends, tau, accent_index)
+    if not accents:
+        return 0.0
+    return float(np.std(accents, ddof=1))
+
+
+def npvi(starts: list[float], ends: list[float]) -> float:
+    """Calculate normalized Pairwise Variability Index (nPVI) for durations.
+    Implementation based on MIDI toolbox "nPVI.m"
+    The nPVI measures durational variability of events, originally developed for 
+    language research to distinguish stress-timed vs. syllable-timed languages.
+    It has been applied to music by Patel & Daniele (2003) to study prosodic
+    influences on musical rhythm.
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+        
+    Returns
+    -------
+    float
+        nPVI index value (higher values indicate greater durational variability)
+    """
+    durations = get_durations(starts, ends)
+    if len(durations) < 2:
+        return 0.0
+    
+    normalized_diffs = []
+    for i in range(1, len(durations)):
+        prev_dur = durations[i-1]
+        curr_dur = durations[i]
+        
+        if prev_dur + curr_dur == 0:
+            normalized_diffs.append(0.0)
+        else:
+            # Normalized difference: (d1 - d2) / ((d1 + d2) / 2)
+            mean_duration = (prev_dur + curr_dur) / 2
+            normalized_diff = (prev_dur - curr_dur) / mean_duration
+            normalized_diffs.append(abs(normalized_diff))
+
+    if not normalized_diffs:
+        return 0.0
+    
+    npvi_value = (100 / len(normalized_diffs)) * sum(normalized_diffs)
+    return float(npvi_value)
 
 # Tonality Features
 def tonalness(pitches: list[int]) -> float:
@@ -2073,6 +2289,301 @@ def check_is_monophonic(melody: Melody) -> bool:
     return True
 
 
+def gradus(pitches: list[int]) -> int:
+    """Calculate degree of melodiousness based on Euler's gradus suavitatis (1739).
+    Implementation based on MIDI toolbox "gradus.m"
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    int
+        Mean gradus suavitatis value across all intervals, where lower values 
+        indicate higher melodiousness.
+    """
+    if len(pitches) < 2:
+        return 0
+    
+    # Calculate intervals and collapse to within one octave (interval classes)
+    intervals = [abs(pitches[i+1] - pitches[i]) for i in range(len(pitches) - 1)]
+    intervals = [(interval % 12) for interval in intervals]
+    
+    # Frequency ratios for intervals (0-11 semitones)
+    numerators = [1, 16, 9, 6, 5, 4, 45, 3, 8, 5, 16, 15]
+    denominators = [1, 15, 8, 5, 4, 3, 32, 2, 5, 3, 9, 8]
+    
+    gradus_values = []
+    
+    for interval in intervals:
+        if interval == 0:  # Unison
+            gradus_values.append(1.0)
+            continue
+            
+        # Get frequency ratio for this interval
+        n = numerators[interval]
+        d = denominators[interval]
+        
+        # Calculate gradus suavitatis using prime factorization
+        product = n * d
+        
+        # Get prime factors
+        factors = []
+        temp = product
+        divisor = 2
+        while divisor * divisor <= temp:
+            while temp % divisor == 0:
+                factors.append(divisor)
+                temp //= divisor
+            divisor += 1
+        if temp > 1:
+            factors.append(temp)
+        
+        # gradus = sum of (prime - 1) + 1
+        if factors:
+            gradus = sum(factor - 1 for factor in factors) + 1
+        else:
+            gradus = 1
+            
+        gradus_values.append(float(gradus))
+    
+    return int(np.mean(gradus_values)) if gradus_values else 0
+
+
+def mobility(pitches: list[int]) -> list[float]:
+    """Calculate melodic mobility for each note based on von Hippel (2000).
+    Implementation based on MIDI toolbox "mobility.m"
+    
+    Mobility describes why melodies change direction after large skips by 
+    observing that they would otherwise run out of the comfortable melodic range.
+    It uses lag-one autocorrelation between successive pitch heights.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    list[float]
+        Absolute mobility value for each note in the sequence
+    """
+    if len(pitches) < 2:
+        return [0.0] if len(pitches) == 1 else []
+    
+    mobility_values = [0.0]  # First note gets 0
+    
+    for i in range(2, len(pitches) + 1):  # Start from note 2 (index 1)
+        if i == 2:
+            mobility_values.append(0.0)  # Second note gets 0
+            continue
+            
+        # Calculate mean of previous pitches (notes 1 to i-1)
+        mean_prev = np.mean(pitches[:i-1])
+        
+        # Calculate deviations from mean for correlation
+        p = [pitches[j] - mean_prev for j in range(i-1)]
+        
+        if len(p) < 2:
+            mobility_values.append(0.0)
+            continue
+            
+        # Create lagged series for correlation
+        p_current = p[:-1]  # p[0] to p[i-3]
+        p_lagged = p[1:]    # p[1] to p[i-2]
+        
+        if len(p_current) < 2 or len(p_lagged) < 2:
+            mobility_values.append(0.0)
+            continue
+            
+        # Calculate correlation coefficient
+        try:
+            # Check for variance before computing correlation to avoid zero division errors
+            if np.var(p_current) == 0 or np.var(p_lagged) == 0:
+                correlation = 0.0
+            else:
+                correlation_matrix = np.corrcoef(p_current, p_lagged)
+                correlation = correlation_matrix[0, 1]
+                
+                # Handle NaN correlation (when no variance)
+                if np.isnan(correlation):
+                    correlation = 0.0
+                
+        except (ValueError, np.linalg.LinAlgError):
+            correlation = 0.0
+        
+        # Calculate mobility for current note
+        # mob(i) * (pitch(i) - mean_prev)
+        current_deviation = pitches[i-2] - mean_prev  # Previous note deviation
+        mob_value = correlation * current_deviation
+        mobility_values.append(abs(mob_value))
+    
+    return mobility_values
+
+
+def mean_mobility(pitches: list[int]) -> float:
+    """Calculate mean mobility across all notes.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Mean mobility value
+    """
+    mob_values = mobility(pitches)
+    if not mob_values:
+        return 0.0
+    return float(np.mean(mob_values))
+
+
+def mobility_std(pitches: list[int]) -> float:
+    """Calculate standard deviation of mobility values.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Standard deviation of mobility values
+    """
+    mob_values = mobility(pitches)
+    if len(mob_values) < 2:
+        return 0.0
+    return float(np.std(mob_values, ddof=1))
+
+
+def melodic_accent(pitches: list[int]) -> list[float]:
+    """Calculate melodic accent salience according to Thomassen's model.
+    Implementation based on MIDI toolbox "melaccent.m"
+
+    "Thomassen's model assigns melodic accents according to the possible
+    melodic contours arising in 3-pitch windows. Accent values vary between
+    0 (no salience) and 1 (maximum salience)."
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    list[float]
+        List of accent values for each note
+    """
+    if len(pitches) < 3:
+        # Return default accents for short melodies
+        if len(pitches) == 0:
+            return []
+        elif len(pitches) == 1:
+            return [1.0]
+        elif len(pitches) == 2:
+            return [1.0, 0.0]
+    
+    accent_values = np.zeros(len(pitches))
+    
+    # using 3-note windows
+    accent_pairs = np.zeros((len(pitches) - 2, 2))
+    
+    for i in range(len(pitches) - 2):
+        # make 3-note window
+        current_window = pitches[i:i+3]
+        
+        # Calculate motions between adjacent notes
+        first_interval = current_window[1] - current_window[0]
+        second_interval = current_window[2] - current_window[1]
+        
+        # Assign accent values based on melodic contour
+        if first_interval == 0 and second_interval == 0:
+            # No motion
+            current_accents = [0.00001, 0.0]
+        elif first_interval != 0 and second_interval == 0:
+            # Motion then stationary
+            current_accents = [1.0, 0.0]
+        elif first_interval == 0 and second_interval != 0:
+            # Stationary then motion
+            current_accents = [0.00001, 1.0]
+        elif first_interval > 0 and second_interval < 0:
+            # Up then down (peak)
+            current_accents = [0.83, 0.17]
+        elif first_interval < 0 and second_interval > 0:
+            # Down then up (valley)
+            current_accents = [0.71, 0.29]
+        elif first_interval > 0 and second_interval > 0:
+            # Continuous upward motion
+            current_accents = [0.33, 0.67]
+        elif first_interval < 0 and second_interval < 0:
+            # Continuous downward motion
+            current_accents = [0.5, 0.5]
+        else:
+            current_accents = [0.0, 0.0]
+            
+        accent_pairs[i, :] = current_accents
+    
+    # Combine overlapping accent values
+    accent_values[0] = 1.0  # First note gets accent of 1
+    accent_values[1] = accent_pairs[0, 0]  # Second note
+    
+    # For middle notes, multiply overlapping accent values
+    for note_idx in range(2, len(pitches) - 1):
+        overlapping_accents = [accent_pairs[note_idx-2, 1], accent_pairs[note_idx-1, 0]]
+        # Product of non-zero values
+        non_zero_accents = [x for x in overlapping_accents if x != 0]
+        if non_zero_accents:
+            accent_values[note_idx] = np.prod(non_zero_accents)
+        else:
+            accent_values[note_idx] = 0.0
+
+    accent_values[len(pitches) - 1] = accent_pairs[-1, 1]
+    
+    return accent_values.tolist()
+
+
+def mean_melodic_accent(pitches: list[int]) -> float:
+    """Calculate mean melodic accent across all notes.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Mean melodic accent value
+    """
+    accents = melodic_accent(pitches)
+    if not accents:
+        return 0.0
+    return float(np.mean(accents))
+
+
+def melodic_accent_std(pitches: list[int]) -> float:
+    """Calculate standard deviation of melodic accents.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Standard deviation of melodic accent values
+    """
+    accents = melodic_accent(pitches)
+    if not accents:
+        return 0.0
+    return float(np.std(accents, ddof=1))
+
 def get_mtype_features(melody: Melody, phrase_gap: float, max_ngram_order: int) -> dict:
     """Calculate various n-gram statistics for the melody.
 
@@ -2456,6 +2967,30 @@ def std_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max
     return float(np.std(all_global_weights, ddof=1) if len(all_global_weights) > 1 else 0.0)
 
 
+def get_complexity_features(melody: Melody) -> Dict:
+    """Compute all complexity features for a melody.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    Dict
+        Dictionary of complexity feature values
+    """
+    complexity_features = {}
+    complexity_features["gradus"] = gradus(melody.pitches)
+    complexity_features["mean_mobility"] = mean_mobility(melody.pitches)
+    complexity_features["mobility_std"] = mobility_std(melody.pitches)
+    
+    # Add Narmour implication-realization features
+    narmour_features = get_narmour_features(melody)
+    complexity_features.update(narmour_features)
+    
+    return complexity_features
+
 def get_corpus_features(
     melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int
 ) -> Dict:
@@ -2677,6 +3212,8 @@ def get_pitch_features(melody: Melody) -> Dict:
     pitch_features["pitch_class_variability_after_folding"] = (
         pitch_class_variability_after_folding(melody.pitches)
     )
+    pitch_features["mean_tessitura"] = mean_tessitura(melody.pitches)
+    pitch_features["tessitura_std"] = tessitura_std(melody.pitches)
 
     return pitch_features
 
@@ -2770,6 +3307,8 @@ def get_contour_features(melody: Melody) -> Dict:
     contour_features["interpolation_contour_class_label"] = interpolation_contour[4]
     contour_features["polynomial_contour_coefficients"] = get_polynomial_contour_features(melody)
     contour_features["huron_contour"] = get_huron_contour_features(melody)
+    contour_features["mean_melodic_accent"] = mean_melodic_accent(melody.pitches)
+    contour_features["melodic_accent_std"] = melodic_accent_std(melody.pitches)
     return contour_features
 
 
@@ -2825,6 +3364,13 @@ def get_duration_features(melody: Melody) -> Dict:
     duration_features["dotted_duration_transitions"] = dotted_duration_transitions(
         melody.starts, melody.ends
     )
+    duration_features["mean_duration_accent"] = mean_duration_accent(
+        melody.starts, melody.ends
+    )
+    duration_features["duration_accent_std"] = duration_accent_std(
+        melody.starts, melody.ends
+    )
+    duration_features["npvi"] = npvi(melody.starts, melody.ends)
     return duration_features
 
 
@@ -3065,10 +3611,6 @@ def process_melody(args):
     timings["tonality"] = time.time() - start
 
     start = time.time()
-    narmour_features = get_narmour_features(mel)
-    timings["narmour"] = time.time() - start
-
-    start = time.time()
     melodic_movement_features = get_melodic_movement_features(mel)
     timings["melodic_movement"] = time.time() - start
 
@@ -3078,15 +3620,19 @@ def process_melody(args):
     )
     timings["mtype"] = time.time() - start
 
+    start = time.time()
+    complexity_features = get_complexity_features(mel)
+    timings["complexity"] = time.time() - start
+
     melody_features = {
         "pitch_features": pitch_features,
         "interval_features": interval_features,
         "contour_features": contour_features,
         "duration_features": duration_features,
         "tonality_features": tonality_features,
-        "narmour_features": narmour_features,
         "melodic_movement_features": melodic_movement_features,
         "mtype_features": mtype_features,
+        "complexity_features": complexity_features,
     }
 
     # Add corpus features only if corpus stats are available
@@ -3767,13 +4313,13 @@ def _setup_parallel_processing(
         "contour_features": get_contour_features(mel),
         "duration_features": get_duration_features(mel),
         "tonality_features": get_tonality_features(mel),
-        "narmour_features": get_narmour_features(mel),
         "melodic_movement_features": get_melodic_movement_features(mel),
         "mtype_features": get_mtype_features(
             mel,
             phrase_gap=config.fantastic.phrase_gap,
             max_ngram_order=config.fantastic.max_ngram_order,
         ),
+        "complexity_features": get_complexity_features(mel),
     }
 
     if corpus_stats:
@@ -3825,9 +4371,9 @@ def _setup_parallel_processing(
         "contour": [],
         "duration": [],
         "tonality": [],
-        "narmour": [],
         "melodic_movement": [],
         "mtype": [],
+        "complexity": [],
         "corpus": [],
         "total": [],
     }
@@ -3871,7 +4417,9 @@ def _process_melodies_parallel(
         # Use multiprocessing if possible as main module
         if __name__ == "__main__":
             from multiprocessing import Pool, cpu_count
-
+            logger = logging.getLogger("melody_features")
+            logger.info("Parallel processing initiated")
+            
             n_cores = cpu_count()
             chunk_size = max(1, len(melody_args) // (n_cores * 4))
 
@@ -3917,6 +4465,8 @@ def _process_melodies_parallel(
         else:
             # Process melodies sequentially when imported if
             # multiprocessing is not available.
+            logger = logging.getLogger("melody_features")
+            logger.info("Parallel processing failed, falling back to sequential processing")
             for i, args in enumerate(melody_args):
                 try:
                     result = process_melody(args)

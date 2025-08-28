@@ -59,6 +59,8 @@ scipy==1.16.1
     # via
     #   melody-features (pyproject.toml)
     #   py2lispidyom
+setuptools
+    # pretty-midi relies on this, but it's not listed as a dependency
 six==1.17.0
     # via
     #   pretty-midi
