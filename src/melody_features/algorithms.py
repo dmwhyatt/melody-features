@@ -12,56 +12,6 @@ from typing import Optional
 import numpy as np
 
 
-def ratio(x: list[float], y: list[float]) -> list[float]:
-    """Calculates the ratio between corresponding elements in two lists.
-
-    Parameters
-    ----------
-    x : list[float]
-        First list of numeric values
-    y : list[float]
-        Second list of numeric values. Must have same length as x.
-
-    Returns
-    -------
-    list[float]
-        List containing ratios of corresponding elements (x[i]/y[i]).
-        Returns empty list if input lists are empty or have different lengths.
-        Returns None for any division by zero.
-
-    Raises
-    ------
-    TypeError
-        If any element cannot be converted to float
-
-    Examples
-    --------
-    >>> ratio([2, 4, 6], [1, 2, 3])  # Simple ratios
-    [2.0, 2.0, 2.0]
-    >>> ratio([1, 2], [0, 2])  # Division by zero
-    [None, 1.0]
-    >>> ratio([], [1, 2])  # Empty/unequal lists
-    []
-    """
-    if not x or not y or len(x) != len(y):
-        return []
-
-    try:
-        x_array = np.array(x, dtype=float)
-        y_array = np.array(y, dtype=float)
-    except (TypeError, ValueError) as exc:
-        raise TypeError("All elements must be numbers") from exc
-
-    # Handle division by zero by converting to None
-    ratios = []
-    for _, (x_val, y_val) in enumerate(zip(x_array, y_array)):
-        if y_val == 0 or x_val == 0:
-            ratios.append(None)
-        else:
-            ratios.append(float(x_val / y_val))
-
-    return ratios
-
 
 def rank_values(values: list[float], descending: bool = False) -> list[float]:
     """Ranks the input values from 1 to n. Ties get the same rank.
@@ -117,133 +67,6 @@ def rank_values(values: list[float], descending: bool = False) -> list[float]:
     ranks = [rank_map[order * val] for val in values_array]
 
     return ranks
-
-
-def modulo_twelve(values: list[float]) -> list[float]:
-    """Takes modulo 12 of each number in the input list.
-
-    Parameters
-    ----------
-    values : list[float]
-        List of numeric values
-
-    Returns
-    -------
-    list[float]
-        List with modulo 12 of each value. Returns empty list for empty input.
-
-    Raises
-    ------
-    TypeError
-        If any element cannot be converted to float
-
-    Examples
-    --------
-    >>> modulo_twelve([14, 25, 36])  # Values > 12
-    [2.0, 1.0, 0.0]
-    >>> modulo_twelve([5, 7, 11])  # Values < 12
-    [5.0, 7.0, 11.0]
-    >>> modulo_twelve([])  # Empty input
-    []
-    """
-    if not values:
-        return []
-
-    try:
-        values_array = np.array(values, dtype=float)
-    except (TypeError, ValueError) as exc:
-        raise TypeError("All elements must be numbers") from exc
-
-    return [float(x) for x in values_array % 12]
-
-
-def absolute_values(values: list[float]) -> list[float]:
-    """Returns a list with absolute values of all input numbers.
-
-    Parameters
-    ----------
-    values : list[float]
-        List of numeric values
-
-    Returns
-    -------
-    list[float]
-        List containing absolute values of input numbers. Returns empty list for empty input.
-
-    Raises
-    ------
-    TypeError
-        If any element cannot be converted to float
-
-    Examples
-    --------
-    >>> absolute_values([-1, 2, -3])  # Mixed signs
-    [1.0, 2.0, 3.0]
-    >>> absolute_values([0, -0.5, 1.5])  # Decimal values
-    [0.0, 0.5, 1.5]
-    >>> absolute_values([])  # Empty input
-    []
-    """
-    if not values:
-        return []
-
-    try:
-        values_array = np.array(values, dtype=float)
-    except (TypeError, ValueError) as exc:
-        raise TypeError("All elements must be numbers") from exc
-
-    return [float(x) for x in np.abs(values_array)]
-
-
-def limit(values: list[float], x: float = None, y: float = None) -> list[float]:
-    """Removes values larger than x or smaller than y from the input list.
-
-    Parameters
-    ----------
-    values : list[float]
-        List of numeric values
-    x : float, optional
-        Upper limit (inclusive). If None, no upper limit is applied.
-    y : float, optional
-        Lower limit (inclusive). If None, no lower limit is applied.
-
-    Returns
-    -------
-    list[float]
-        List containing only values within the specified limits. Returns empty list for empty input.
-
-    Raises
-    ------
-    TypeError
-        If any element cannot be converted to float
-
-    Examples
-    --------
-    >>> limit([1, 2, 3, 4, 5], x=3)  # Upper limit only
-    [1.0, 2.0, 3.0]
-    >>> limit([1, 2, 3, 4, 5], y=3)  # Lower limit only
-    [3.0, 4.0, 5.0]
-    >>> limit([1, 2, 3, 4, 5], x=4, y=2)  # Both limits
-    [2.0, 3.0, 4.0]
-    """
-    if not values:
-        return []
-
-    try:
-        values_array = np.array(values, dtype=float)
-    except (TypeError, ValueError) as exc:
-        raise TypeError("All elements must be numbers") from exc
-
-    mask = np.ones(len(values_array), dtype=bool)
-
-    if x is not None:
-        mask &= values_array <= x
-
-    if y is not None:
-        mask &= values_array >= y
-
-    return [float(x) for x in values_array[mask]]
-
 
 def nine_percent_significant_values(
     values: list[float], threshold: float = 0.09
@@ -355,139 +178,7 @@ def circle_of_fifths(pitches: list[float], counts: list[float]) -> dict[int, flo
     return result
 
 
-def contour_extrema(values: list[float]) -> list[tuple[int, float]]:
-    """Finds all contour extremum notes in a sequence.
 
-    Identifies:
-    - First and last notes
-    - Local maxima where surrounding notes are lower
-    - Local minima where surrounding notes are higher
-    - Handles plateaus by looking at extended context
-
-    Parameters
-    ----------
-    values : list[float]
-        List of numeric values
-
-    Returns
-    -------
-    list[tuple[int, float]]
-        List of tuples (index, value) for each extrema point.
-        Returns empty list for empty input or lists shorter than 2 elements.
-
-    Raises
-    ------
-    TypeError
-        If any element cannot be converted to float
-
-    Examples
-    --------
-    >>> contour_extrema([1, 3, 2, 4, 1])  # Simple peaks and valleys
-    [(0, 1.0), (1, 3.0), (2, 2.0), (3, 4.0), (4, 1.0)]
-    >>> contour_extrema([1, 2, 2, 2, 1])  # Plateau
-    [(0, 1.0), (4, 1.0)]
-    >>> contour_extrema([1])  # Too short
-    []
-    """
-    if not values or len(values) < 2:
-        return []
-
-    try:
-        values_array = np.array(values, dtype=float)
-    except (TypeError, ValueError) as exc:
-        raise TypeError("All elements must be numbers") from exc
-
-    extrema = [(0, values_array[0])]  # First note is always included
-    n = len(values_array)
-
-    # Check each interior point
-    for i in range(1, n - 1):
-        # Get values for comparison
-        prev = values_array[i - 1]
-        curr = values_array[i]
-        next_val = values_array[i + 1]
-
-        # Simple case: clear maximum or minimum
-        if (prev < curr and next_val < curr) or (prev > curr and next_val > curr):
-            extrema.append((i, curr))
-            continue
-
-        # Handle plateaus by looking at extended context
-        if prev == curr or next_val == curr:
-            # Look back up to 2 positions if available
-            back2 = values_array[i - 2] if i >= 2 else None
-
-            # Look forward up to 2 positions if available
-            forward2 = values_array[i + 2] if i < n - 2 else None
-
-            # Check plateau cases
-            if prev == curr and forward2 is not None:
-                if (back2 is not None and back2 < curr and next_val < curr) or (
-                    back2 is not None and back2 > curr and next_val > curr
-                ):
-                    extrema.append((i, curr))
-            elif next_val == curr and back2 is not None:
-                if (forward2 is not None and forward2 < curr and prev < curr) or (
-                    forward2 is not None and forward2 > curr and prev > curr
-                ):
-                    extrema.append((i, curr))
-
-    extrema.append((n - 1, values_array[n - 1]))  # Last note is always included
-    return [(i, float(v)) for i, v in extrema]  # Ensure values are float
-
-
-def contour_gradients(values: list[float]) -> list[float]:
-    """Calculates gradients between consecutive contour extrema points.
-
-    For each pair of consecutive extrema points (ti,pi) and (tj,pj),
-    calculates the gradient m = (pj-pi)/(tj-ti)
-
-    Parameters
-    ----------
-    values : list[float]
-        List of numeric values
-
-    Returns
-    -------
-    list[float]
-        List of gradients between consecutive extrema points.
-        Returns empty list for empty input or lists shorter than 2 elements.
-
-    Raises
-    ------
-    TypeError
-        If any element cannot be converted to float
-
-    Examples
-    --------
-    >>> contour_gradients([1, 3, 2, 4, 1])  # Simple sequence
-    [2.0, -1.0, 2.0, -3.0]
-    >>> contour_gradients([1, 1, 1])  # Flat sequence
-    [0.0]
-    >>> contour_gradients([1])  # Too short
-    []
-    """
-    if not values or len(values) < 2:
-        return []
-
-    # Get extrema points using existing function
-    extrema = contour_extrema(values)
-
-    # Calculate gradients between consecutive extrema
-    gradients = []
-    for i in range(len(extrema) - 1):
-        t1, p1 = extrema[i]
-        t2, p2 = extrema[i + 1]
-
-        # Skip if time difference is zero (shouldn't happen with current extrema logic)
-        if t2 - t1 == 0:
-            continue
-
-        # Calculate gradient
-        gradient = (p2 - p1) / (t2 - t1)
-        gradients.append(float(gradient))
-
-    return gradients
 
 
 def compute_tonality_vector(pitch_classes) -> list[tuple[str, float]]:
@@ -762,28 +453,7 @@ def repeated_notes_proportion(pitch_values: list[float]) -> float:
     return value
 
 
-def get_durations(starts: list[float], ends: list[float]) -> list[float]:
-    """Calculate durations from start and end times.
 
-    Parameters
-    ----------
-    starts : list[float]
-        List of note start times
-    ends : list[float]
-        List of note end times
-
-    Returns
-    -------
-    list[float]
-        List of note durations
-    """
-    if not starts or not ends or len(starts) != len(ends):
-        return []
-
-    try:
-        return [end - start for start, end in zip(starts, ends)]
-    except (TypeError, ValueError):
-        return []
 
 
 def get_duration_ratios(starts: list[float], ends: list[float]) -> list[float]:
@@ -819,10 +489,15 @@ def get_duration_ratios(starts: list[float], ends: list[float]) -> list[float]:
     >>> get_duration_ratios([0], [1])  # Single note
     []
     """
-    if len(starts) < 2 or len(ends) < 2:
+    if len(starts) < 2 or len(ends) < 2 or len(starts) != len(ends):
         return []
     
-    durations = get_durations(starts, ends)
+    # Calculate durations directly
+    try:
+        durations = [end - start for start, end in zip(starts, ends)]
+    except (TypeError, ValueError):
+        return []
+    
     if len(durations) < 2:
         return []
     
@@ -869,7 +544,12 @@ def melodic_embellishment_proportion(
         return -1.0
 
     # Calculate the duration of each note
-    note_durations = get_durations(note_starts, note_ends)
+    if len(note_starts) != len(note_ends):
+        return -1.0
+    try:
+        note_durations = [end - start for start, end in zip(note_starts, note_ends)]
+    except (TypeError, ValueError):
+        return -1.0
     # Count embellished notes (notes surrounded by shorter notes)
     embellished = 0
     for i in range(1, len(note_durations) - 1):

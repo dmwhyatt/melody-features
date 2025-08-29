@@ -62,7 +62,6 @@ from melody_features.algorithms import (
     repeated_notes_proportion,
     stepwise_motion_proportion,
 )
-from melody_features.complexity import consecutive_fifths, repetition_rate
 from melody_features.corpus import load_corpus_stats, make_corpus_stats
 from melody_features.distributional import (
     distribution_proportions,
@@ -514,7 +513,7 @@ def pitch_ranking(pitches: list[int]) -> float:
 
 
 def melodic_pitch_variety(pitches: list[int]) -> float:
-    """Calculate rate of pitch repetition.
+    """Calculate average number of notes before a pitch is repeated.
 
     Parameters
     ----------
@@ -524,9 +523,72 @@ def melodic_pitch_variety(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Rate of pitch repetition
+        Average number of notes before pitch repetition (including the repeated note)
     """
-    return repetition_rate(pitches)
+    if not pitches or len(pitches) < 2:
+        return 0.0
+    
+    distances_to_repetition = []
+    
+    # For each note, find the distance to its next occurrence
+    for i in range(len(pitches)):
+        current_pitch = pitches[i]
+        
+        # Look ahead up to 16 notes for the same pitch
+        for j in range(i + 1, min(i + 17, len(pitches))):
+            if pitches[j] == current_pitch:
+                # Distance includes the repeated note itself
+                distance = j - i + 1
+                distances_to_repetition.append(distance)
+                break  # Found first repetition, stop looking
+    
+    # Return average distance, or 0 if no qualifying repetitions found
+    if distances_to_repetition:
+        return float(np.mean(distances_to_repetition))
+    else:
+        return 0.0
+
+
+def consecutive_fifths(pitch_classes: list[int]) -> list[int]:
+    """Find longest sequence of pitch classes separated by perfect fifths.
+    
+    Parameters
+    ----------
+    pitch_classes : list[int]
+        List of pitch classes (0-11)
+        
+    Returns
+    -------
+    list[int]
+        Longest sequence of consecutive pitch classes separated by perfect fifths
+    """
+    if not pitch_classes:
+        return []
+    
+    # Circle of fifths order: C, G, D, A, E, B, F#, C#, G#, D#, A#, F
+    circle_of_fifths = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5]
+    
+    longest_sequence = [pitch_classes[0]]  # Start with first pitch class
+    current_sequence = [pitch_classes[0]]
+    
+    for i in range(1, len(pitch_classes)):
+        pc = pitch_classes[i]
+        last_pc = current_sequence[-1]
+        
+        # Check if current PC is a fifth away from the last PC
+        if (circle_of_fifths.index(pc) - circle_of_fifths.index(last_pc)) % 12 == 1:
+            current_sequence.append(pc)
+        else:
+            # Sequence broken, check if it's the longest so far
+            if len(current_sequence) > len(longest_sequence):
+                longest_sequence = current_sequence[:]
+            current_sequence = [pc]  # Start new sequence
+    
+    # Check final sequence
+    if len(current_sequence) > len(longest_sequence):
+        longest_sequence = current_sequence[:]
+    
+    return longest_sequence
 
 
 def dominant_spread(pitches: list[int]) -> float:
