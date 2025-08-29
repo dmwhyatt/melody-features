@@ -44,7 +44,6 @@ def test_core_imports():
         "melody_features.features",
         "melody_features.corpus",
         "melody_features.algorithms",
-        "melody_features.complexity",
         "melody_features.distributional",
         "melody_features.idyom_interface",
         "melody_features.import_mid",
