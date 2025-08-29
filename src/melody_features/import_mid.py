@@ -5,6 +5,8 @@ import warnings
 import pretty_midi
 from mido.midifiles.meta import KeySignatureError
 
+from .meter_estimation import estimate_meter, meter_to_time_signature
+
 # Suppress warnings from external libraries
 warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
@@ -64,6 +66,9 @@ def import_midi(midi_file: str) -> dict:
 
         # Extract tempo information
         tempo = extract_tempo_from_midi(midi_data)
+        
+        # Extract time signature information (with meter estimation fallback)
+        time_sig_info = extract_time_signatures_from_midi(midi_data, starts, ends, pitches)
 
         return {
             "ID": os.path.basename(midi_file),
@@ -72,6 +77,7 @@ def import_midi(midi_file: str) -> dict:
             "starts": starts,
             "ends": ends,
             "tempo": tempo,
+            "time_signature_info": time_sig_info,
         }
 
     except (KeySignatureError, ValueError, IOError) as e:
@@ -80,6 +86,83 @@ def import_midi(midi_file: str) -> dict:
     except Exception as e:
         logger.warning(f"Unexpected error importing {midi_file}: {str(e)}")
         return None
+
+
+def extract_time_signatures_from_midi(midi_data: pretty_midi.PrettyMIDI, starts: list[float] = None, 
+                                     ends: list[float] = None, pitches: list[int] = None) -> dict:
+    """Extract time signature information from MIDI data with meter estimation fallback.
+    
+    Parameters
+    ----------
+    midi_data : pretty_midi.PrettyMIDI
+        The MIDI data object
+    starts : list[float], optional
+        Note start times for meter estimation fallback
+    ends : list[float], optional  
+        Note end times for meter estimation fallback
+    pitches : list[int], optional
+        MIDI pitch values for optimal meter estimation
+        
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - 'first_time_signature': tuple of (numerator, denominator) for first time sig
+        - 'all_time_signatures': list of (time, numerator, denominator) for all time sigs
+        - 'metric_stability': proportion (0.0-1.0) that first time sig comprises of total
+        - 'is_estimated': bool indicating if meter was estimated vs read from file
+    """
+    time_signatures = midi_data.time_signature_changes
+    
+    if not time_signatures:
+        # use meter estimation as fallback
+        if starts and ends:
+            estimated_meter = estimate_meter(starts, ends, pitches, use_optimal=True)
+            estimated_time_sig = meter_to_time_signature(estimated_meter)
+        else:
+            raise ValueError("Cannot estimate meter: no note timing data (starts/ends) provided and no time signature found in MIDI file")
+            
+        return {
+            'first_time_signature': estimated_time_sig,
+            'all_time_signatures': [(0.0, estimated_time_sig[0], estimated_time_sig[1])],
+            'metric_stability': 0.0,  # No stability when meter is estimated
+            'is_estimated': True
+        }
+    
+    # Time signatures found in MIDI file
+    first_ts = time_signatures[0]
+    first_time_sig = (first_ts.numerator, first_ts.denominator)
+    
+    # Get all time signatures with their times
+    all_time_sigs = []
+    for ts in time_signatures:
+        all_time_sigs.append((ts.time, ts.numerator, ts.denominator))
+    
+    # Calculate metric stability
+    if len(time_signatures) == 1:
+        # Only one time signature = perfectly stable
+        metric_stability = 1.0
+    else:
+        # Calculate proportion of time spent in first time signature
+        total_duration = midi_data.get_end_time()
+        if total_duration == 0:
+            metric_stability = 1.0
+        else:
+            # Find when first time signature ends (when next one begins)
+            if len(time_signatures) > 1:
+                first_ts_duration = time_signatures[1].time - time_signatures[0].time
+            else:
+                first_ts_duration = total_duration
+            
+            # Calculate what proportion of total time is in first time signature
+            metric_stability = min(1.0, first_ts_duration / total_duration)
+    
+    return {
+        'first_time_signature': first_time_sig,
+        'all_time_signatures': all_time_sigs,
+        'metric_stability': metric_stability,
+        'is_estimated': False
+    }
 
 
 def extract_tempo_from_midi(midi_data: pretty_midi.PrettyMIDI) -> float:

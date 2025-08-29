@@ -103,6 +103,33 @@ class Melody:
         """
         return self._tempo
 
+    @property
+    def meter(self) -> tuple[int, int]:
+        """Extract the first time signature from the melody.
+        
+        Returns:
+            tuple[int, int]: First time signature as (numerator, denominator)
+                           Defaults to (4, 4) if no time signature information available
+        """
+        time_sig_info = self._midi_data.get("time_signature_info")
+        if time_sig_info and "first_time_signature" in time_sig_info:
+            return time_sig_info["first_time_signature"]
+        return (4, 4)  # Default to 4/4 if no information available
+
+    @property  
+    def metric_stability(self) -> float:
+        """Calculate the proportion of time spent in the first time signature.
+        
+        Returns:
+            float: Proportion (0.0 to 1.0) that the first time signature comprises 
+                   of the total melody duration. 1.0 means the melody uses only 
+                   one time signature throughout.
+        """
+        time_sig_info = self._midi_data.get("time_signature_info")
+        if time_sig_info and "metric_stability" in time_sig_info:
+            return time_sig_info["metric_stability"]
+        return 0.0  # Default to unstable if no information available
+
 
 def read_midijson(file_path: str) -> dict:
     with open(file_path, "r", encoding="utf-8") as file:

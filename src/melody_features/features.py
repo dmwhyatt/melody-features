@@ -92,6 +92,10 @@ from melody_features.stats import (
     standard_deviation,
 )
 from melody_features.step_contour import StepContour
+from melody_features.meter_estimation import (
+    duration_accent,
+    melodic_accent
+)
 
 VALID_VIEWPOINTS = {
     "onset",
@@ -930,17 +934,17 @@ def ivdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
 
     Returns
     -------
-    float
+    dict
         Duration-weighted distribution proportion of intervals
     """
     if not pitches or not starts or not ends or len(pitches) < 2:
-        return 0.0
+        return {}
 
     intervals = pitch_interval(pitches)
     durations = get_durations(starts, ends)
 
     if not intervals or not durations:
-        return 0.0
+        return {}
 
     weighted_intervals = []
     for interval, duration in zip(intervals, durations[:-1]):
@@ -948,9 +952,98 @@ def ivdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
         weighted_intervals.extend([interval] * repetitions)
 
     if not weighted_intervals:
-        return 0.0
+        return {}
 
     return distribution_proportions(weighted_intervals)
+
+
+def ivdirdist1(pitches: list[int]) -> dict[int, float]:
+    """Calculate proportion of upward intervals for each interval size (1-12 semitones).
+    Implementation based on MIDI toolbox "ivdirdist1.m"
+    
+    Returns the proportion of upward intervals for each interval size in the melody
+    as a dictionary mapping interval sizes to their directional bias values.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    dict[int, float]
+        Dictionary mapping interval sizes (1-12 semitones) to directional bias values.
+        Each value ranges from -1.0 (all downward) to 1.0 (all upward), with 0.0 being equal.
+        Keys: 1=minor second, 2=major second, ..., 12=octave
+    """
+    if not pitches or len(pitches) < 2:
+        return {interval_size: 0.0 for interval_size in range(1, 13)}
+    
+    intervals = pitch_interval(pitches)
+    if not intervals:
+        return {interval_size: 0.0 for interval_size in range(1, 13)}
+    
+    interval_distribution = distribution_proportions(intervals)
+    
+    interval_direction_distribution = {}
+    
+    for interval_size in range(1, 13):
+        upward_proportion = interval_distribution.get(float(interval_size), 0.0)
+        downward_proportion = interval_distribution.get(float(-interval_size), 0.0)
+        
+        total_proportion = upward_proportion + downward_proportion
+        
+        if total_proportion > 0:
+            directional_bias = (upward_proportion - downward_proportion) / total_proportion
+            interval_direction_distribution[interval_size] = directional_bias
+        else:
+            interval_direction_distribution[interval_size] = 0.0
+    
+    return interval_direction_distribution
+
+
+def ivsizedist1(pitches: list[int]) -> dict[int, float]:
+    """Calculate distribution of interval sizes (0-12 semitones).
+    Implementation based on MIDI toolbox "ivsizedist1.m"
+    
+    Returns the distribution of interval sizes by combining upward and downward 
+    intervals of the same absolute size. The first component represents unison (0)
+    and the last component represents octave (12).
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    dict[int, float]
+        Dictionary mapping interval sizes (0-12 semitones) to their proportions.
+        Keys: 0=unison, 1=minor second, 2=major second, ..., 12=octave
+    """
+    if not pitches or len(pitches) < 2:
+        return {interval_size: 0.0 for interval_size in range(13)}
+    
+    intervals = pitch_interval(pitches)
+    if not intervals:
+        return {interval_size: 0.0 for interval_size in range(13)}
+    
+    interval_distribution = distribution_proportions(intervals)
+    
+    interval_size_distribution = {}
+    
+    for interval_size in range(13):
+        if interval_size == 0:
+            size_proportion = interval_distribution.get(0.0, 0.0)
+        else:
+            # Combine upward and downward intervals of same absolute size
+            upward_proportion = interval_distribution.get(float(interval_size), 0.0)
+            downward_proportion = interval_distribution.get(float(-interval_size), 0.0)
+            size_proportion = upward_proportion + downward_proportion
+        
+        interval_size_distribution[interval_size] = size_proportion
+    
+    return interval_size_distribution
 
 
 def interval_direction(pitches: list[int]) -> tuple[float, float]:
@@ -1717,42 +1810,7 @@ def dotted_duration_transitions(starts: list[float], ends: list[float]) -> float
     return (one_third_count + triple_count) / len(ratios)
 
 
-def duration_accent(starts: list[float], ends: list[float], tau: float = 0.5, accent_index: float = 2.0) -> list[float]:
-    """Calculate duration accent for each note based on Parncutt (1994).
-    
-    Duration accent represents the perceptual salience of notes based on their duration.
-    The MIDI toolbox implementation uses defaults of 0.5 for tau (saturation duration) 
-    and 2.0 for accent_index (minimum discriminable duration).
-    
-    Parameters
-    ----------
-    starts : list[float]
-        List of note start times
-    ends : list[float]
-        List of note end times
-    tau : float, optional
-        Saturation duration in seconds, by default 0.5
-    accent_index : float, optional
-        Minimum discriminable duration parameter, by default 2.0
-        
-    Returns
-    -------
-    list[float]
-        List of duration accent values for each note
-    """
-    durations = get_durations(starts, ends)
-    if not durations:
-        return []
 
-    accents = []
-    for dur in durations:
-        if dur <= 0:
-            accents.append(0.0)
-        else:
-            accent = (1 - np.exp(-dur / tau)) ** accent_index
-            accents.append(float(accent))
-    
-    return accents
 
 
 def mean_duration_accent(starts: list[float], ends: list[float], tau: float = 0.5, accent_index: float = 2.0) -> float:
@@ -1847,6 +1905,99 @@ def npvi(starts: list[float], ends: list[float]) -> float:
     
     npvi_value = (100 / len(normalized_diffs)) * sum(normalized_diffs)
     return float(npvi_value)
+
+
+def onset_autocorrelation(starts: list[float], ends: list[float], divisions_per_quarter: int = 4, max_lag_quarters: int = 8) -> list[float]:
+    """Calculate autocorrelation function of onset times weighted by duration accents.
+    Implementation based on MIDI toolbox "onsetacorr.m"
+    
+    This function calculates the autocorrelation of onset times weighted by onset durations,
+    which are in turn weighted by Parncutt's durational accent (1994). This is useful for
+    meter induction and rhythmic analysis.
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times in seconds
+    ends : list[float]
+        List of note end times in seconds
+    divisions_per_quarter : int, optional
+        Divisions per quarter note, by default 4
+    max_lag_quarters : int, optional
+        Maximum lag in quarter notes, by default 8
+        
+    Returns
+    -------
+    list[float]
+        Autocorrelation values from lag 0 to max_lag_quarters quarter notes
+    """
+    expected_length = max_lag_quarters * divisions_per_quarter + 1
+    
+    if not starts or not ends or len(starts) != len(ends):
+        return [0.0] * expected_length
+    
+    if len(starts) == 0:
+        return [0.0] * expected_length
+    
+    # Get duration accents using Parncutt's model
+    duration_accents = duration_accent(starts, ends)
+    if not duration_accents:
+        return [0.0] * expected_length
+    
+    # Create onset time grid
+    max_onset_time = max(starts) if starts else 0
+    grid_length = divisions_per_quarter * max(2 * max_lag_quarters, int(np.ceil(max_onset_time)) + 1)
+    onset_grid = np.zeros(grid_length)
+    
+    # Place accents at quantized onset positions
+    for note_idx, onset_time in enumerate(starts):
+        if note_idx < len(duration_accents):
+            # Quantize onset time to grid divisions
+            grid_index = int(np.round(onset_time * divisions_per_quarter)) % len(onset_grid)
+            onset_grid[grid_index] += duration_accents[note_idx]
+    
+    # autocorrelation using scipy's cross-correlation function
+    from scipy.signal import correlate
+    
+    # Compute autocorrelation
+    full_autocorr = correlate(onset_grid, onset_grid, mode='full')
+    
+    # Extract the positive lags up to max_lag_quarters
+    center_index = len(full_autocorr) // 2
+    autocorr_result = full_autocorr[center_index:center_index + expected_length]
+    
+    # Normalize by the zero-lag value
+    if autocorr_result[0] != 0:
+        autocorr_result = autocorr_result / autocorr_result[0]
+    else:
+        autocorr_result = np.zeros_like(autocorr_result)
+    
+    return autocorr_result.tolist()
+
+
+def onset_autocorr_peak(starts: list[float], ends: list[float], divisions_per_quarter: int = 4, max_lag_quarters: int = 8) -> float:
+    """Calculate the maximum autocorrelation value (excluding lag 0).
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times in seconds
+    ends : list[float]
+        List of note end times in seconds
+    divisions_per_quarter : int, optional
+        Divisions per quarter note, by default 4
+    max_lag_quarters : int, optional
+        Maximum lag in quarter notes, by default 8
+        
+    Returns
+    -------
+    float
+        Maximum autocorrelation value excluding lag 0
+    """
+    autocorr_values = onset_autocorrelation(starts, ends, divisions_per_quarter, max_lag_quarters)
+    if len(autocorr_values) <= 1:
+        return 0.0
+    return float(max(autocorr_values[1:]))
 
 # Tonality Features
 def tonalness(pitches: list[int]) -> float:
@@ -2461,90 +2612,7 @@ def mobility_std(pitches: list[int]) -> float:
     return float(np.std(mob_values, ddof=1))
 
 
-def melodic_accent(pitches: list[int]) -> list[float]:
-    """Calculate melodic accent salience according to Thomassen's model.
-    Implementation based on MIDI toolbox "melaccent.m"
 
-    "Thomassen's model assigns melodic accents according to the possible
-    melodic contours arising in 3-pitch windows. Accent values vary between
-    0 (no salience) and 1 (maximum salience)."
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-        
-    Returns
-    -------
-    list[float]
-        List of accent values for each note
-    """
-    if len(pitches) < 3:
-        # Return default accents for short melodies
-        if len(pitches) == 0:
-            return []
-        elif len(pitches) == 1:
-            return [1.0]
-        elif len(pitches) == 2:
-            return [1.0, 0.0]
-    
-    accent_values = np.zeros(len(pitches))
-    
-    # using 3-note windows
-    accent_pairs = np.zeros((len(pitches) - 2, 2))
-    
-    for i in range(len(pitches) - 2):
-        # make 3-note window
-        current_window = pitches[i:i+3]
-        
-        # Calculate motions between adjacent notes
-        first_interval = current_window[1] - current_window[0]
-        second_interval = current_window[2] - current_window[1]
-        
-        # Assign accent values based on melodic contour
-        if first_interval == 0 and second_interval == 0:
-            # No motion
-            current_accents = [0.00001, 0.0]
-        elif first_interval != 0 and second_interval == 0:
-            # Motion then stationary
-            current_accents = [1.0, 0.0]
-        elif first_interval == 0 and second_interval != 0:
-            # Stationary then motion
-            current_accents = [0.00001, 1.0]
-        elif first_interval > 0 and second_interval < 0:
-            # Up then down (peak)
-            current_accents = [0.83, 0.17]
-        elif first_interval < 0 and second_interval > 0:
-            # Down then up (valley)
-            current_accents = [0.71, 0.29]
-        elif first_interval > 0 and second_interval > 0:
-            # Continuous upward motion
-            current_accents = [0.33, 0.67]
-        elif first_interval < 0 and second_interval < 0:
-            # Continuous downward motion
-            current_accents = [0.5, 0.5]
-        else:
-            current_accents = [0.0, 0.0]
-            
-        accent_pairs[i, :] = current_accents
-    
-    # Combine overlapping accent values
-    accent_values[0] = 1.0  # First note gets accent of 1
-    accent_values[1] = accent_pairs[0, 0]  # Second note
-    
-    # For middle notes, multiply overlapping accent values
-    for note_idx in range(2, len(pitches) - 1):
-        overlapping_accents = [accent_pairs[note_idx-2, 1], accent_pairs[note_idx-1, 0]]
-        # Product of non-zero values
-        non_zero_accents = [x for x in overlapping_accents if x != 0]
-        if non_zero_accents:
-            accent_values[note_idx] = np.prod(non_zero_accents)
-        else:
-            accent_values[note_idx] = 0.0
-
-    accent_values[len(pitches) - 1] = accent_pairs[-1, 1]
-    
-    return accent_values.tolist()
 
 
 def mean_melodic_accent(pitches: list[int]) -> float:
@@ -3251,6 +3319,8 @@ def get_interval_features(melody: Melody) -> Dict:
     interval_features["modal_interval"] = modal_interval(melody.pitches)
     interval_features["interval_entropy"] = interval_entropy(melody.pitches)
     interval_features["ivdist1"] = ivdist1(melody.pitches, melody.starts, melody.ends)
+    interval_features["ivdirdist1"] = ivdirdist1(melody.pitches)
+    interval_features["ivsizedist1"] = ivsizedist1(melody.pitches)
     direction_mean, direction_sd = interval_direction(melody.pitches)
     interval_features["interval_direction_mean"] = direction_mean
     interval_features["interval_direction_sd"] = direction_sd
@@ -3380,6 +3450,14 @@ def get_duration_features(melody: Melody) -> Dict:
         melody.starts, melody.ends
     )
     duration_features["npvi"] = npvi(melody.starts, melody.ends)
+    duration_features["onset_autocorr_peak"] = onset_autocorr_peak(
+        melody.starts, melody.ends
+    )
+    # Add meter and metric stability features
+    duration_features["meter_numerator"] = melody.meter[0]
+    duration_features["meter_denominator"] = melody.meter[1] 
+    duration_features["metric_stability"] = melody.metric_stability
+    
     return duration_features
 
 
