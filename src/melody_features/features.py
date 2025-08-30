@@ -26,13 +26,6 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-# Add src directory to path when running as script
-if __name__ == "__main__":
-    script_dir = Path(__file__).parent
-    src_dir = script_dir.parent
-    if str(src_dir) not in sys.path:
-        sys.path.insert(0, str(src_dir))
-
 import glob
 import logging
 import time

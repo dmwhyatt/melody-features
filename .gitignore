@@ -1,7 +1,6 @@
 __pycache__/
 idyom_results/
 venv/
-pytest.ini
 dist/
 src/melody_features.egg-info
 Essen_Corpus_corpus_stats.json
@@ -10,3 +9,5 @@ build/
 .pytest_cache/
 notebooks/.ipynb_checkpoints
 notebooks/output*
+temp.py
+essen_corpus_features.csv
