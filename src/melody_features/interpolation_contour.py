@@ -310,6 +310,7 @@ class InterpolationContour:
         -------
         float
             Standard deviation of the gradient values (by default, using Bessel's correction)
+            Returns 0.0 for contours with fewer than 2 gradient values.
 
         Examples
         --------
@@ -321,7 +322,15 @@ class InterpolationContour:
         >>> ic = InterpolationContour([60, 62, 64, 62, 60], [0, 1, 2, 3, 4], method="fantastic")
         >>> ic.gradient_std
         0.0
+        
+        Single gradient value returns 0.0 (no variation)
+        >>> ic = InterpolationContour([60, 67], [0, 1])
+        >>> ic.gradient_std
+        0.0
         """
+        # Handle edge case where there's only one gradient value
+        if len(self.contour) < 2:
+            return 0.0
         return float(np.std(self.contour, ddof=1))
 
     @property
