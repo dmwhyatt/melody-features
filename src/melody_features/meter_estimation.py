@@ -365,6 +365,138 @@ def estimate_meter(starts: list[float], ends: list[float], pitches: list[int] = 
         return estimate_meter_simple(starts, ends)
 
 
+def _onset_mod_meter(starts: list[float], ends: list[float], 
+                   time_signature: tuple[int, int] = None, tempo: float = 120.0,
+                   pitches: list[int] = None) -> list[float]:
+    """Calculate onset times modulo meter.
+    
+    Implementation based on MIDI toolbox "onsetmodmeter.m"
+    Wraps onset times within a measure based on known or estimated meter.
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times in seconds
+    ends : list[float]
+        List of note end times in seconds  
+    pitches : list[int], optional
+        List of MIDI pitch values, by default None
+    time_signature : tuple[int, int], optional
+        Known time signature as (numerator, denominator), by default None
+    tempo : float, optional
+        Tempo in BPM for calculating measure duration, by default 120.0
+        
+    Returns
+    -------
+    list[float]
+        Onset times modulo meter (wrapped within measure)
+    """
+    if not starts or len(starts) == 0:
+        return []
+    
+    if len(starts) != len(ends):
+        raise ValueError("starts and ends must have the same length")
+    
+    if time_signature:
+        numerator, denominator = time_signature
+        quarter_note_duration = 60.0 / tempo
+        measure_duration = (numerator * 4.0 / denominator) * quarter_note_duration
+    else:
+        estimated_meter_val = estimate_meter(starts, ends, pitches, use_optimal=bool(pitches))
+        quarter_note_duration = 0.5
+        if estimated_meter_val == 2:
+            measure_duration = 2.0
+            meter_type = 2
+        else:
+            measure_duration = 1.5
+            meter_type = 3
+    
+    durations = [end - start for start, end in zip(starts, ends)]
+    
+    # Create onset grid based on quarter note subdivisions
+    subdivisions_per_quarter = 4
+    grid_size = int(subdivisions_per_quarter * measure_duration / quarter_note_duration)
+    onset_weights = [0.0] * max(grid_size, 1)
+    
+    # Weight each grid position by duration of notes starting there
+    for start_time, duration in zip(starts, durations):
+        # Wrap onset time within meter
+        onset_mod = start_time % measure_duration
+        # Quantize 
+        grid_pos = int(round(onset_mod / quarter_note_duration * subdivisions_per_quarter)) % len(onset_weights)
+        onset_weights[grid_pos] += duration
+    
+    # Find the grid position with maximum weight (strongest beat)
+    max_weight_pos = onset_weights.index(max(onset_weights)) if onset_weights else 0
+    
+    # Calculate beat offset
+    beat_offset = max_weight_pos * quarter_note_duration / subdivisions_per_quarter
+    
+    # Return onset times modulo meter, adjusted for beat alignment
+    return [(start - beat_offset) % measure_duration for start in starts]
+
+
+def metric_hierarchy(starts: list[float], ends: list[float],
+                    time_signature: tuple[int, int] = None, tempo: float = 120.0,
+                    pitches: list[int] = None) -> list[int]:
+    """Calculate metric hierarchy for each note.
+    
+    Implementation based on MIDI toolbox "metrichierarchy.m"
+    Returns a vector indicating the location of each note in the metric hierarchy.
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times in seconds
+    ends : list[float]
+        List of note end times in seconds
+    pitches : list[int], optional
+        List of MIDI pitch values, by default None
+    time_signature : tuple[int, int], optional
+        Known time signature as (numerator, denominator), by default None
+    tempo : float, optional
+        Tempo in BPM for calculating beat positions, by default 120.0
+        
+    Returns
+    -------
+    list[int]
+        Metric hierarchy values for each note
+    """
+    if not starts or len(starts) == 0:
+        return []
+
+    onset_mod = _onset_mod_meter(starts, ends, time_signature=time_signature, tempo=tempo, pitches=pitches)
+
+    if time_signature:
+        _numerator, denominator = time_signature
+        quarter_note_duration = 60.0 / tempo
+        beat_duration = 4.0 / denominator * quarter_note_duration
+    else:
+        beat_duration = 0.5
+
+    hierarchy = []
+
+    for onset_time in onset_mod:
+        level = 1
+        
+        tolerance = 1e-6
+        
+        if abs(onset_time) < tolerance:
+            level = 5
+        elif abs(onset_time % beat_duration) < tolerance:
+            level = 4
+        else:
+            for subdivision_level in range(1, 4):
+                subdivision_duration = beat_duration / (2 ** subdivision_level)
+                if abs(onset_time % subdivision_duration) < tolerance:
+                    level = max(level, 4 - subdivision_level)
+                    break
+
+        hierarchy.append(level)
+
+    return hierarchy
+
+
 def meter_to_time_signature(estimated_meter: int) -> tuple[int, int]:
     """Convert estimated meter to a time signature tuple.
     

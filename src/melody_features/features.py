@@ -86,7 +86,8 @@ from melody_features.stats import (
 from melody_features.step_contour import StepContour
 from melody_features.meter_estimation import (
     duration_accent,
-    melodic_accent
+    melodic_accent,
+    metric_hierarchy
 )
 
 VALID_VIEWPOINTS = {
@@ -2667,7 +2668,180 @@ def mobility_std(pitches: list[int]) -> float:
     return float(np.std(mob_values, ddof=1))
 
 
+def _stability_distance(weight1: float, weight2: float, proximity: float) -> float:
+    """Calculate stability distance for melodic attraction.
+    
+    Helper function implementing the stabilitydistance subfunction from melattraction.m
+    
+    Parameters
+    ----------
+    weight1 : float
+        Anchoring weight of first note
+    weight2 : float  
+        Anchoring weight of second note
+    proximity : float
+        Distance in semitones between notes
+        
+    Returns
+    -------
+    float
+        Stability distance value
+    """
+    if weight1 == 0 or proximity == 0:
+        return 0.0
 
+    return (weight2 / weight1) * (1.0 / (proximity ** 2))
+
+
+def melodic_attraction(pitches: list[int]) -> list[float]:
+    """Calculate melodic attraction according to Lerdahl (1996).
+    Implementation based on MIDI toolbox "melattraction.m"
+    
+    Calculates melodic attraction based on tonal pitch space theory.
+    Each tone in a key has certain anchoring strength ("weight") in tonal pitch space.
+    Melodic attraction strength is affected by the distance between tones and 
+    directed motion patterns.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    list[float]
+        Melodic attraction values for each note (0-1 scale, higher = more attraction)
+    """
+    if len(pitches) < 2:
+        return [0.0] if len(pitches) == 1 else []
+
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+
+    if not correlations:
+        return [0.0] * len(pitches)
+
+    key_name = correlations[0][0].split()[0]
+    is_major = "major" in correlations[0][0]
+
+    # Get tonic pitch class for transposition to C
+    key_distances = get_key_distances()
+    tonic_pc = key_distances[key_name]
+    
+    transposed_pcs = [(pc - tonic_pc) % 12 for pc in pitch_classes]
+    
+    # Anchoring weights for each pitch class (C=0, C#=1, ..., B=11)
+    if is_major:
+        anchor_weights = [4, 1, 2, 1, 3, 2, 1, 3, 1, 2, 1, 2]  # MAJOR
+    else:
+        anchor_weights = [4, 1, 2, 3, 1, 2, 1, 3, 2, 2, 1, 2]  # MINOR
+    
+    pc_weights = [anchor_weights[pc] for pc in transposed_pcs]
+    
+    # Calculate directed motion index
+    # (change of direction = -1, repetition = 0, continuation = 1)
+    pitch_diffs = [pitches[i+1] - pitches[i] for i in range(len(pitches)-1)]
+    directions = [1 if diff > 0 else -1 if diff < 0 else 0 for diff in pitch_diffs]
+    
+    motion = [0]
+    for i in range(1, len(directions)):
+        if directions[i] == 0:
+            motion.append(0)
+        elif i == 0 or directions[i-1] == 0:  # First direction or after repetition
+            motion.append(1)
+        elif directions[i] == directions[i-1]:  # Continuation
+            motion.append(1)
+        else:  # Direction change
+            motion.append(-1)
+    
+    attraction_values = [0.0]
+    
+    for i in range(len(pitches) - 1):
+        current_weight = pc_weights[i]
+        next_weight = pc_weights[i + 1]
+        proximity = abs(pitches[i + 1] - pitches[i])
+        
+        # Primary attraction (sd1)
+        if current_weight >= next_weight:
+            sd1 = 0.0
+        else:
+            sd1 = _stability_distance(current_weight, next_weight, proximity)
+        
+        # Alternative attraction (sd2) - attraction to other stable tones
+        current_pc = transposed_pcs[i]
+        
+        # Check other pitch classes for stronger alternatives
+        sd2_values = []
+        for candidate_pc in range(12):
+            candidate_weight = anchor_weights[candidate_pc]
+            
+            # Only consider stable candidates
+            if candidate_weight > current_weight and candidate_pc != transposed_pcs[i + 1]:
+                candidate_distance = min(abs(candidate_pc - current_pc), 12 - abs(candidate_pc - current_pc))
+                sd2_candidate = _stability_distance(current_weight, candidate_weight, candidate_distance)
+                sd2_values.append(sd2_candidate)
+        
+        # Calculate total alternative attraction
+        if len(sd2_values) > 1:
+            # Take max + half of others
+            max_sd2 = max(sd2_values)
+            other_sd2 = sum(val * 0.5 for val in sd2_values if val != max_sd2)
+            sd2 = max_sd2 + other_sd2
+        elif len(sd2_values) == 1:
+            sd2 = sd2_values[0]
+        else:
+            sd2 = 0.0
+        
+        # Combine with directed motion
+        anchoring = sd1 - sd2
+        attraction = motion[i] + anchoring
+        
+        attraction_values.append(attraction)
+
+    # Scale results between 0 and 1
+    scaled_attraction = [(val + 1) / 5 for val in attraction_values]
+
+    # Clamp to [0, 1]
+    scaled_attraction = [max(0.0, min(1.0, val)) for val in scaled_attraction]
+
+    return scaled_attraction
+
+def mean_melodic_attraction(pitches: list[int]) -> float:
+    """Calculate mean melodic attraction across all notes.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Mean melodic attraction value
+    """
+    attraction_values = melodic_attraction(pitches)
+    if not attraction_values:
+        return 0.0
+    return float(np.mean(attraction_values))
+
+
+def melodic_attraction_std(pitches: list[int]) -> float:
+    """Calculate standard deviation of melodic attraction values.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Standard deviation of melodic attraction values
+    """
+    attraction_values = melodic_attraction(pitches)
+    if len(attraction_values) < 2:
+        return 0.0
+    return float(np.std(attraction_values, ddof=1))
 
 
 def mean_melodic_accent(pitches: list[int]) -> float:
@@ -3090,6 +3264,239 @@ def std_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max
     return float(np.std(all_global_weights, ddof=1) if len(all_global_weights) > 1 else 0.0)
 
 
+def _get_simonton_transition_matrix() -> np.ndarray:
+    """Get Simonton's pitch class transition probabilities from 15,618 classical themes.
+    
+    This is basically just refstat('pcdist2classical1') from MIDI toolbox.
+    Matrix indices correspond to an enumeration of the 12 pitch classes.
+    
+    Returns
+    -------
+    np.ndarray
+        12x12 matrix of transition probabilities
+    """
+    transition_matrix = np.zeros((12, 12))
+    
+    transition_matrix[4, :] = 0.005  
+    transition_matrix[9, :] = 0.005  
+    transition_matrix[11, :] = 0.005  
+    transition_matrix[:, 4] = 0.005  
+    transition_matrix[:, 9] = 0.005  
+    transition_matrix[:, 11] = 0.005  
+    transition_matrix[7, 8] = 0.005  
+    transition_matrix[8, 7] = 0.005  
+    
+    common_transitions = [
+        (8, 8, 0.067),  
+        (1, 1, 0.053),  
+        (8, 1, 0.049),  
+        (1, 3, 0.044),  
+        (1, 12, 0.032), 
+        (1, 8, 0.032),  
+        (8, 6, 0.031),  
+        (5, 5, 0.030),  
+        (5, 3, 0.030),  
+        (3, 1, 0.030),  
+        (8, 5, 0.029),  
+        (8, 10, 0.029), 
+        (5, 6, 0.028),  
+        (5, 8, 0.026),  
+        (3, 5, 0.024),  
+        (12, 1, 0.023), 
+        (1, 5, 0.022),  
+        (6, 8, 0.021),  
+        (6, 5, 0.021),  
+        (10, 8, 0.020), 
+        (4, 3, 0.018),  
+        (5, 1, 0.016),  
+        (3, 4, 0.014),  
+        (10, 12, 0.012),
+        (12, 10, 0.011),
+        (3, 3, 0.011),  
+        (9, 8, 0.011),  
+    ]
+    
+    # convert from 1-indexed MATLAB to 0-indexed Python and set probabilities
+    for from_pc_matlab, to_pc_matlab, prob in common_transitions:
+        from_pc = (from_pc_matlab - 1) % 12
+        to_pc = (to_pc_matlab - 1) % 12
+        transition_matrix[from_pc, to_pc] = prob
+    
+    return transition_matrix
+
+
+def compltrans(melody: Melody) -> float:
+    """Calculate melodic originality measure (Simonton, 1984).
+    Implementation based on MIDI toolbox "compltrans.m"
+    
+    Calculates Simonton's melodic originality score based on 2nd order pitch-class
+    distribution derived from 15,618 classical music themes. Higher values indicate
+    higher melodic originality (less predictable transitions).
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    float
+        Originality score scaled 0-10 (higher = more original/unexpected)
+    """
+    if not melody.pitches or len(melody.pitches) < 2:
+        return 5.0  # Return neutral originality for edge cases
+    
+    melody_pitch_classes = [pitch % 12 for pitch in melody.pitches]
+    
+    melody_transition_matrix = np.zeros((12, 12))
+    for i in range(len(melody_pitch_classes) - 1):
+        from_pitch_class = melody_pitch_classes[i]
+        to_pitch_class = melody_pitch_classes[i + 1]
+        melody_transition_matrix[from_pitch_class, to_pitch_class] += 1
+
+    classical_transition_probabilities = _get_simonton_transition_matrix()
+
+    transition_probability_products = melody_transition_matrix * classical_transition_probabilities
+    total_weighted_probability = np.sum(transition_probability_products)
+    total_melody_transitions = len(melody_pitch_classes) - 1
+    
+    if total_melody_transitions == 0:
+        return 5.0
+    
+    average_transition_probability = total_weighted_probability / total_melody_transitions
+    inverted_probability = average_transition_probability * -1.0
+    
+    # Apply Simonton's scaling formula (0-10 scale, 10 = most original)
+    simonton_originality_score = (inverted_probability + 0.0530) * 188.68
+    
+    return float(simonton_originality_score)
+
+def complebm(melody: Melody, method: str = 'o') -> float:
+    """Calculate expectancy-based melodic complexity (Eerola & North, 2000).
+    Implementation based on MIDI toolbox "complebm.m"
+    
+    Calculates melodic complexity using an expectancy-based model that considers pitch patterns,
+    rhythmic features, or both. The complexity score is normalized against the Essen folksong
+    collection, where a score of 5 represents average complexity (standard deviation = 1).
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    method : str, optional
+        Complexity method: 'p' = pitch only, 'r' = rhythm only, 'o' = optimal combination
+        
+    Returns
+    -------
+    float
+        Complexity value calibrated to Essen collection (higher = more complex)
+    """
+    if not melody.pitches or len(melody.pitches) < 2:
+        return 5.0  # Return neutral complexity for edge cases
+
+    method = method.lower()
+
+    if method == 'p':
+        constant = -0.2407
+
+        melodic_intervals = pitch_interval(melody.pitches)
+        average_interval_component = float(np.mean(melodic_intervals)) * 0.3 if melodic_intervals else 0.0
+
+        pitch_class_distribution = pcdist1(melody.pitches, melody.starts, melody.ends)
+        pitch_class_entropy_component = shannon_entropy(list(pitch_class_distribution.values())) * 1.0 if pitch_class_distribution else 0.0
+
+        interval_distribution = ivdist1(melody.pitches, melody.starts, melody.ends)
+        interval_entropy_component = shannon_entropy(list(interval_distribution.values())) * 0.8 if interval_distribution else 0.0
+
+        melodic_attraction_values = melodic_attraction(melody.pitches)
+        duration_accent_values = duration_accent(melody.starts, melody.ends)
+
+        # Align arrays to same length
+        min_length = min(len(melodic_attraction_values), len(duration_accent_values))
+        if min_length > 0:
+            tonality_duration_products = [a * d for a, d in zip(melodic_attraction_values[:min_length], duration_accent_values[:min_length])]
+            tonality_component = float(np.mean(tonality_duration_products)) * -1.0
+        else:
+            tonality_component = 0.0
+
+        # Combine components using Essen-calibrated formula
+        pitch_complexity = (constant + average_interval_component + pitch_class_entropy_component + interval_entropy_component + tonality_component) / 0.9040
+        pitch_complexity = pitch_complexity + 5
+
+    elif method == 'r':
+        constant = -0.7841
+
+        note_durations = get_durations(melody.starts, melody.ends)
+        duration_entropy_component = shannon_entropy(note_durations) * 0.7 if note_durations else 0.0
+
+        note_density_component = note_density(melody.starts, melody.ends) * 0.2
+
+        positive_durations = [d for d in note_durations if d > 0]
+        if positive_durations:
+            log_durations = [math.log(d) for d in positive_durations]
+            rhythmic_variability_component = float(np.std(log_durations, ddof=1)) * 0.5
+        else:
+            rhythmic_variability_component = 0.0
+
+        metric_accent_features = get_metric_accent_features(melody)
+        meter_accent_component = float(metric_accent_features.get("meter_accent", 0)) * 0.5
+
+        # Combine components using Essen-calibrated formula
+        rhythm_complexity = (constant + duration_entropy_component + note_density_component + rhythmic_variability_component + meter_accent_component) / 0.3637
+        rhythm_complexity = rhythm_complexity + 5
+
+    elif method == 'o':
+        constant = -1.9025
+
+        melodic_intervals = pitch_interval(melody.pitches)
+        average_interval_component = float(np.mean(melodic_intervals)) * 0.2 if melodic_intervals else 0.0
+
+        pitch_class_distribution = pcdist1(melody.pitches, melody.starts, melody.ends)
+        pitch_class_entropy_component = shannon_entropy(list(pitch_class_distribution.values())) * 1.5 if pitch_class_distribution else 0.0
+
+        interval_distribution = ivdist1(melody.pitches, melody.starts, melody.ends)
+        interval_entropy_component = shannon_entropy(list(interval_distribution.values())) * 1.3 if interval_distribution else 0.0
+
+        melodic_attraction_values = melodic_attraction(melody.pitches)
+        duration_accent_values = duration_accent(melody.starts, melody.ends)
+
+        min_length = min(len(melodic_attraction_values), len(duration_accent_values))
+        if min_length > 0:
+            tonality_duration_products = [a * d for a, d in zip(melodic_attraction_values[:min_length], duration_accent_values[:min_length])]
+            tonality_component = float(np.mean(tonality_duration_products)) * -1.0
+        else:
+            tonality_component = 0.0
+
+        note_durations = get_durations(melody.starts, melody.ends)
+        duration_entropy_component = shannon_entropy(note_durations) * 0.5 if note_durations else 0.0
+
+        note_density_component = note_density(melody.starts, melody.ends) * 0.4
+
+        positive_durations = [d for d in note_durations if d > 0]
+        if positive_durations:
+            log_durations = [math.log(d) for d in positive_durations]
+            rhythmic_variability_component = float(np.std(log_durations, ddof=1)) * 0.9
+        else:
+            rhythmic_variability_component = 0.0
+
+        metric_accent_features = get_metric_accent_features(melody)
+        meter_accent_component = float(metric_accent_features.get("meter_accent", 0)) * 0.8
+
+        # Combine all components using Essen-calibrated formula
+        optimal_complexity = (constant + average_interval_component + pitch_class_entropy_component + interval_entropy_component + tonality_component + duration_entropy_component + note_density_component + rhythmic_variability_component + meter_accent_component) / 1.5034
+        optimal_complexity = optimal_complexity + 5
+
+    else:
+        raise ValueError("Method must be 'p' (pitch), 'r' (rhythm), or 'o' (optimal)")
+    
+    if method == 'p':
+        return float(pitch_complexity)
+    elif method == 'r':
+        return float(rhythm_complexity)
+    else:
+        return float(optimal_complexity)
+
+
 def get_complexity_features(melody: Melody) -> Dict:
     """Compute all complexity features for a melody.
     
@@ -3107,10 +3514,15 @@ def get_complexity_features(melody: Melody) -> Dict:
     complexity_features["gradus"] = gradus(melody.pitches)
     complexity_features["mean_mobility"] = mean_mobility(melody.pitches)
     complexity_features["mobility_std"] = mobility_std(melody.pitches)
-    
-    # Add Narmour implication-realization features
+
     narmour_features = get_narmour_features(melody)
     complexity_features.update(narmour_features)
+    
+    complexity_features["complebm_pitch"] = complebm(melody, 'p')
+    complexity_features["complebm_rhythm"] = complebm(melody, 'r')
+    complexity_features["complebm_optimal"] = complebm(melody, 'o')
+    
+    complexity_features["compltrans"] = compltrans(melody)
     
     return complexity_features
 
@@ -3346,6 +3758,8 @@ def get_pitch_features(melody: Melody) -> Dict:
     )
     pitch_features["mean_tessitura"] = mean_tessitura(melody.pitches)
     pitch_features["tessitura_std"] = tessitura_std(melody.pitches)
+    pitch_features["mean_melodic_attraction"] = mean_melodic_attraction(melody.pitches)
+    pitch_features["melodic_attraction_std"] = melodic_attraction_std(melody.pitches)
 
     return pitch_features
 
@@ -3446,6 +3860,55 @@ def get_contour_features(melody: Melody) -> Dict:
     return contour_features
 
 
+def get_metric_accent_features(melody: Melody) -> Dict:
+    """Compute metric hierarchy and meter accent features for a melody.
+    
+    Based on MIDI toolbox metric hierarchy and meteraccent analysis. 
+    Calculates the strength of each note position within the known or estimated meter,
+    and computes phenomenal accent synchrony.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    Dict
+        Dictionary containing:
+        - metric_hierarchy: List of hierarchy values for each note
+        - meter_accent: Phenomenal accent synchrony measure (from MIDI toolbox meteraccent.m)
+    """
+    metric_features = {}
+
+    hierarchy_values = metric_hierarchy(
+        melody.starts, melody.ends, 
+        time_signature=melody.meter, tempo=melody.tempo, pitches=melody.pitches
+    )
+    metric_features["metric_hierarchy"] = hierarchy_values
+
+    if hierarchy_values:
+        melodic_accents = melodic_accent(melody.pitches)
+        durational_accents = duration_accent(melody.starts, melody.ends)
+
+        min_length = min(len(hierarchy_values), len(melodic_accents), len(durational_accents))
+        if min_length > 0:
+            accent_products = [
+                h * m * d for h, m, d in zip(
+                    hierarchy_values[:min_length],
+                    melodic_accents[:min_length], 
+                    durational_accents[:min_length]
+                )
+            ]
+            metric_features["meter_accent"] = int(round(-1.0 * float(np.mean(accent_products))))
+        else:
+            metric_features["meter_accent"] = 0
+    else:
+        metric_features["meter_accent"] = 0
+    
+    return metric_features
+
+
 def get_duration_features(melody: Melody) -> Dict:
     """Compute all duration-based features for a melody.
 
@@ -3508,11 +3971,12 @@ def get_duration_features(melody: Melody) -> Dict:
     duration_features["onset_autocorr_peak"] = onset_autocorr_peak(
         melody.starts, melody.ends
     )
-    # Add meter and metric stability features
     duration_features["meter_numerator"] = melody.meter[0]
-    duration_features["meter_denominator"] = melody.meter[1] 
+    duration_features["meter_denominator"] = melody.meter[1]
     duration_features["metric_stability"] = melody.metric_stability
-    
+
+    duration_features.update(get_metric_accent_features(melody))
+
     return duration_features
 
 
