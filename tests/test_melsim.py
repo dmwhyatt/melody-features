@@ -157,7 +157,7 @@ class TestMidiFileLoading:
     def test_load_midi_file_invalid(self):
         """Test loading an invalid MIDI file."""
         with tempfile.NamedTemporaryFile(suffix='.mid', delete=False) as temp_file:
-            temp_file.write(b"not a midi file", encoding="utf-8")
+            temp_file.write(b"not a midi file")
             temp_path = temp_file.name
 
         try:
