@@ -642,9 +642,23 @@ def most_common_pitch(pitches: list[int]) -> int:
     """
     return int(mode(pitches))
 
+def number_of_unique_pitch_classes(pitches: list[int]) -> int:
+    """Count number of unique pitch classes.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
 
-def number_of_common_pitches(pitches: list[int]) -> int:
-    """Count pitch classes that appear in at least 9% of notes.
+    Returns
+    -------
+    int
+        Number of unique pitch classes
+    """
+    return int(len(set([pitch % 12 for pitch in pitches])))
+
+def number_of_common_pitches_classes(pitches: list[int]) -> int:
+    """Count pitch classes that appear in at least 20% of notes.
 
     Parameters
     ----------
@@ -657,11 +671,11 @@ def number_of_common_pitches(pitches: list[int]) -> int:
         Number of significant pitch classes
     """
     pcs = [pitch % 12 for pitch in pitches]
-    significant_pcs = nine_percent_significant_values(pcs)
+    significant_pcs = nine_percent_significant_values(pcs, threshold=0.2)
     return int(len(significant_pcs))
 
 
-def number_of_pitches(pitches: list[int]) -> int:
+def number_of_unique_pitches(pitches: list[int]) -> int:
     """Count number of unique pitches.
 
     Parameters
@@ -676,6 +690,22 @@ def number_of_pitches(pitches: list[int]) -> int:
     """
     return int(len(set(pitches)))
 
+def number_of_common_pitches(pitches: list[int]) -> int:
+    """Count unique pitches that appear in at least 9% of notes.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    int
+        Number of unique pitches that appear in at least 9% of notes
+    """
+    pcs = [pitch % 12 for pitch in pitches]
+    significant_pcs = nine_percent_significant_values(pcs)
+    return int(len(set(significant_pcs)))
 
 def tessitura(pitches: list[int]) -> list[float]:
     """Calculate melodic tessitura for each note based on von Hippel (2000).
@@ -1383,6 +1413,38 @@ def get_interpolation_contour_features(
         ic.direction_changes,
         ic.class_label,
     )
+
+
+def get_comb_contour_matrix(pitches: list[int]) -> list[list[int]]:
+    """Calculate the Marvin & Laprade (1987) comb contour matrix.
+    Implementation based on MIDI toolbox "combcontour.m"
+    For a melody with n notes, returns an n x n binary matrix C where
+    C[i][j] = 1 if pitch of note j is higher than pitch of note i (p[j] > p[i])
+    for i >= j (lower triangle including diagonal), and 0 otherwise.
+    This follows the MIDI Toolbox definition (combcontour.m), which fills the
+    lower-triangular part column-wise via c(k:a,k) = p(k) > p(k:a).
+
+    Parameters
+    ----------
+    pitches : List[int]
+        Sequence of MIDI pitches
+
+    Returns
+    -------
+    List[List[int]]
+        n x n binary matrix (as a list of lists)
+    """
+    num_notes = len(pitches)
+    if num_notes == 0:
+        return []
+
+    matrix: list[list[int]] = [[0 for _ in range(num_notes)] for _ in range(num_notes)]
+    for col_index in range(num_notes):
+        pitch_at_col = pitches[col_index]
+        for row_index in range(col_index, num_notes):
+            matrix[row_index][col_index] = 1 if pitch_at_col > pitches[row_index] else 0
+
+    return matrix
 
 def get_polynomial_contour_features(
     melody: Melody
@@ -3741,7 +3803,10 @@ def get_pitch_features(melody: Melody) -> Dict:
     pitch_features["basic_pitch_histogram"] = basic_pitch_histogram(melody.pitches)
     pitch_features["mean_pitch"] = mean_pitch(melody.pitches)
     pitch_features["most_common_pitch"] = most_common_pitch(melody.pitches)
-    pitch_features["number_of_pitches"] = number_of_pitches(melody.pitches)
+    pitch_features["number_of_unique_pitch_classes"] = number_of_unique_pitch_classes(melody.pitches)
+    pitch_features["number_of_unique_pitches"] = number_of_unique_pitches(melody.pitches)
+    pitch_features["number_of_common_pitches"] = number_of_common_pitches(melody.pitches)
+    pitch_features["number_of_common_pitches_classes"] = number_of_common_pitches_classes(melody.pitches)
     pitch_features["melodic_pitch_variety"] = melodic_pitch_variety(melody.pitches)
     pitch_features["dominant_spread"] = dominant_spread(melody.pitches)
     pitch_features["folded_fifths_pitch_class_histogram"] = (
@@ -3855,6 +3920,7 @@ def get_contour_features(melody: Melody) -> Dict:
     contour_features["interpolation_contour_class_label"] = interpolation_contour[4]
     contour_features["polynomial_contour_coefficients"] = get_polynomial_contour_features(melody)
     contour_features["huron_contour"] = get_huron_contour_features(melody)
+    contour_features["comb_contour_matrix"] = get_comb_contour_matrix(melody.pitches)
     contour_features["mean_melodic_accent"] = mean_melodic_accent(melody.pitches)
     contour_features["melodic_accent_std"] = melodic_accent_std(melody.pitches)
     return contour_features
@@ -4251,18 +4317,18 @@ def process_melody(args):
 
         # Add pre-computed IDyOM features if available for this melody's ID
         melody_id_str = str(melody_data["melody_num"])
-        
+
         # Handle IDyOM results dictionary (multiple configurations)
         idyom_features = {}
         if idyom_results_dict:
             for idyom_name, idyom_results in idyom_results_dict.items():
                 if idyom_results and melody_id_str in idyom_results:
                     idyom_features.update(idyom_results[melody_id_str])
-        
+
         if idyom_features:
             melody_features["idyom_features"] = idyom_features
         else:
-            # Add default IDyOM values if not found
+            # Add obvious flag if IDyOM values if not found
             melody_features["idyom_features"] = {"mean_information_content": -1}
 
     timings["total"] = time.time() - start_total
