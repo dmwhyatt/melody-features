@@ -1,4 +1,4 @@
-name: Tests
+name: Coverage
 
 on:
   push:
@@ -7,12 +7,12 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  test:
+  coverage:
     runs-on: ubuntu-latest
     
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.11"]
     
     steps:
     - uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
     
     - name: Run tests with coverage
       run: |
-        python -m pytest tests/ --cov=src/melody_features --cov-report=term-missing --cov-report=html --cov-report=xml
+        python -m pytest tests/ --cov=src/melody_features --cov-report=term-missing --cov-report=html --cov-report=xml --cov-fail-under=10
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -49,3 +49,11 @@ jobs:
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: true
+        verbose: true
+    
+    - name: Upload coverage artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-report
+        path: htmlcov/
+        retention-days: 30

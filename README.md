@@ -6,6 +6,8 @@
 
 [![Tests](https://github.com/dmwhyatt/melody-features/workflows/Tests/badge.svg)](https://github.com/dmwhyatt/melody-features/actions)
 
+[![Coverage](https://codecov.io/gh/dmwhyatt/melody-features/branch/main/graph/badge.svg)](https://codecov.io/gh/dmwhyatt/melody-features)
+
 ## Overview
 This is a Python package designed to facilitate the use of many different melody analyis tools. 
 
