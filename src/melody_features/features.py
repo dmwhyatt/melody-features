@@ -2789,7 +2789,7 @@ def melodic_attraction(pitches: list[int]) -> list[float]:
     # Get tonic pitch class for transposition to C
     key_distances = get_key_distances()
     tonic_pc = key_distances[key_name]
-    
+
     transposed_pcs = [(pc - tonic_pc) % 12 for pc in pitch_classes]
     
     # Anchoring weights for each pitch class (C=0, C#=1, ..., B=11)
@@ -3045,286 +3045,130 @@ def get_ngram_document_frequency(ngram: tuple, corpus_stats: dict) -> int:
     # Look up the count directly
     return doc_freqs.get(ngram_str, {}).get("count", 0)
 
+class InverseEntropyWeighting:
+    """Calculate local weights for n-grams using an inverse-entropy measure.
 
-def entropy_based_local_weight(ngram_counts: dict) -> list[float]:
-    """Calculate local weights for n-grams using entropy-based weighting.
-    
-    Local weight is defined as log2(frequency + 1) following FANTASTIC implementation.
-    
-    Parameters
-    ----------
-    ngram_counts : dict
-        Dictionary mapping n-grams to their frequencies
-        
-    Returns
-    -------
-    list[float]
-        List of local weights for each n-gram
+    Inverse-entropy weighting is implemented following the specification in 
+    FANTASTIC and the Handbook of Latent Semantic Analysis (Landauer et al., 2007).
+    It provides several quantifiers of the importance of an n-gram (here: m-type)
+    based on its relative frequency in a given passage (here: melody)
+    and its relative frequency in that passage as compared to the reference corpus.
+
+    This class contains functions to compute the local weight of an m-type,
+    the global weight of an m-type, and the combined weight of an m-type.
     """
-    if not ngram_counts:
-        return []
-        
-    local_weights = []
-    for tf in ngram_counts.values():
-        local_weight = np.log2(tf + 1)
-        local_weights.append(local_weight)
-    
-    return local_weights
+    def __init__(self, ngram_counts: dict, corpus_stats: dict):
+        self.ngram_counts = ngram_counts
+        self.corpus_stats = corpus_stats
 
+    @property
+    def local_weights(self) -> list[float]:
+        """Calculate local weights for n-grams using an inverse-entropy measure.
+        The local weight of an m-type is defined as 
+        `loc.w(τ) = log2(f(τ) + 1)` where `f(τ)` is the frequency of a 
+        given m-type in the melody. As such, the local weight can take any real value 
+        greater than zero. High values mean that the m-type provides a lot of information
+        about the melody, while low values mean that the m-type provides little information.
 
-def entropy_based_global_weight(ngram_counts: dict, corpus_stats: dict) -> list[float]:
-    """Calculate global weights for n-grams using entropy-based weighting.
+        Parameters
+        ----------
+        ngram_counts : dict
+            Dictionary containing n-gram counts
+
+        Returns
+        -------
+        list[float]
+            List of local weights, x >= 0 for all x in list
+        """
+        if not self.ngram_counts:
+            return []
+
+        local_weights = []
+        for tf in self.ngram_counts.values():
+            local_weight = np.log2(tf + 1)
+            local_weights.append(local_weight)
+
+        return local_weights
     
-    Global weight is based on the entropy of the ratio Pc(τ) = fc(τ) / fC(τ),
-    where fc(τ) is local frequency and fC(τ) is corpus frequency.
-    Formula: glob.w = 1 + Σ Pc(τ) · log2(Pc(τ)) / log2(|C|)
-    
-    Parameters
-    ----------
-    ngram_counts : dict
-        Dictionary mapping n-grams to their frequencies
-    corpus_stats : dict
-        Dictionary containing corpus statistics including document_frequencies
-        
-    Returns
-    -------
-    list[float]
-        List of global weights for each n-gram
-    """
-    if not ngram_counts or not corpus_stats:
-        return []
-        
-    doc_freqs = corpus_stats.get("document_frequencies", {})
-    total_docs = len(doc_freqs) if doc_freqs else 1
-    
-    global_weights = []
-    for ngram, tf in ngram_counts.items():
-        ngram_str = str(ngram)
-        df = doc_freqs.get(ngram_str, {}).get("count", 0)
-        
-        if df > 0 and total_docs > 0:
-            # Pc(τ) = fc(τ) / fC(τ) - ratio of local freq to corpus freq
-            pc_ratio = tf / df if df > 0 else 0.0
-            
-            # Global weight calculation based on entropy
-            if pc_ratio > 0:
-                entropy_term = pc_ratio * np.log2(pc_ratio)
-                global_weight = 1 + entropy_term / np.log2(total_docs)
+    @property
+    def global_weights(self) -> list[float]:
+        """Calculate global weights for n-grams using an inverse-entropy measure.
+        First, a ratio between the frequency of an m-type in the melody and the frequency
+        of the same m-type in the corpus is calculated:
+        `Pc(τ) = fc(τ)/fC(τ)` where `fc(τ)` is the frequency of a given m-type in the melody,
+        and `fC(τ)` is the frequency of the same m-type in the corpus.
+        This ratio is then used to calculate the global weight of an m-type: 
+        `glob.w = 1 + Σ Pc(τ) · log2(Pc(τ)) / log2(|C|)` where `|C|` is the number of 
+        documents in the corpus.
+        Global weights take a value from 0 to 1. A high value corresponds to a less informative m-type,
+        while a low value corresponds to a more informative m-type, with regard to its position in the melody.
+
+        Parameters
+        ----------
+        ngram_counts : dict
+            Dictionary containing n-gram counts
+        corpus_stats : dict
+            Dictionary containing corpus statistics
+
+        Returns
+        -------
+        list[float]
+            List of global weights, 0 <= x <= 1 for all x in list
+        """
+        if not self.ngram_counts or not self.corpus_stats:
+            return []
+
+        doc_freqs = self.corpus_stats.get("document_frequencies", {})
+        total_docs = len(doc_freqs) if doc_freqs else 1
+
+        global_weights = []
+        for ngram, tf in self.ngram_counts.items():
+            ngram_str = str(ngram)
+            df = doc_freqs.get(ngram_str, {}).get("count", 0)
+
+            if df > 0 and total_docs > 0:
+                pc_ratio = tf / df if df > 0 else 0.0
+
+                if pc_ratio > 0:
+                    entropy_term = pc_ratio * np.log2(pc_ratio)
+                    global_weight = 1 + entropy_term / np.log2(total_docs)
+                else:
+                    global_weight = 1.0
             else:
                 global_weight = 1.0
-        else:
-            global_weight = 1.0
-            
-        global_weights.append(global_weight)
-    
-    return global_weights
 
+            global_weights.append(global_weight)
 
-def entropy_based_combined_weight(ngram_counts: dict, corpus_stats: dict) -> list[float]:
-    """Calculate combined local-global weights for n-grams.
-    
-    Combined weight is the product of local and global weights:
-    glob.loc.w(τ) = loc.w(τ) · glob.w(τ)
-    
-    Parameters
-    ----------
-    ngram_counts : dict
-        Dictionary mapping n-grams to their frequencies
-    corpus_stats : dict
-        Dictionary containing corpus statistics including document_frequencies
-        
-    Returns
-    -------
-    list[float]
-        List of combined weights for each n-gram
-    """
-    if not ngram_counts:
-        return []
-        
-    local_weights = entropy_based_local_weight(ngram_counts)
-    global_weights = entropy_based_global_weight(ngram_counts, corpus_stats)
-    
-    if len(local_weights) != len(global_weights):
-        return []
-        
-    combined_weights = []
-    for local_w, global_w in zip(local_weights, global_weights):
-        combined_weights.append(local_w * global_w)
-    
-    return combined_weights
+        return global_weights
 
+    @property
+    def combined_weights(self) -> list[float]:
+        """Calculate combined local-global weights for n-grams.
+        The combined weight of an m-type is the product of the local and global weights.
+        It summarises the relationship between distinctiveness of an m-type compared to the corpus
+        and its frequency in the melody. A high combined weight indicates that the m-type is both
+        distinctive and frequent in the melody, while a low combined weight indicates that the m-type
+        is either not distinctive or not frequent in the melody.
 
-def mean_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate mean of combined local-global entropy weights for a melody.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-    corpus_stats : dict
-        Dictionary containing corpus statistics
-    phrase_gap : float
-        Gap threshold for phrase segmentation
-    max_ngram_order : int
-        Maximum n-gram order to consider
-        
-    Returns
-    -------
-    float
-        Mean of combined local-global weights
-    """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-    
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-    
-    all_combined_weights = []
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-            
-        if ngram_counts:
-            combined_weights = entropy_based_combined_weight(ngram_counts, corpus_stats)
-            all_combined_weights.extend(combined_weights)
-    
-    return float(np.mean(all_combined_weights) if all_combined_weights else 0.0)
+        Parameters
+        ----------
+        ngram_counts : dict
+            Dictionary containing n-gram counts
+        corpus_stats : dict
+            Dictionary containing corpus statistics
 
+        Returns
+        -------
+        list[float]
+            List of combined weights, x >= 0 for all x in list
+        """
+        if not self.ngram_counts or not self.corpus_stats:
+            return []
+    
+        if len(self.local_weights) != len(self.global_weights):
+            return []
 
-def std_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate standard deviation of combined local-global entropy weights for a melody.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-    corpus_stats : dict
-        Dictionary containing corpus statistics
-    phrase_gap : float
-        Gap threshold for phrase segmentation
-    max_ngram_order : int
-        Maximum n-gram order to consider
-        
-    Returns
-    -------
-    float
-        Standard deviation of combined local-global weights
-    """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-    
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-    
-    all_combined_weights = []
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-            
-        if ngram_counts:
-            combined_weights = entropy_based_combined_weight(ngram_counts, corpus_stats)
-            all_combined_weights.extend(combined_weights)
-    
-    return float(np.std(all_combined_weights, ddof=1) if len(all_combined_weights) > 1 else 0.0)
-
-
-def mean_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate mean of global entropy weights for a melody.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-    corpus_stats : dict
-        Dictionary containing corpus statistics
-    phrase_gap : float
-        Gap threshold for phrase segmentation
-    max_ngram_order : int
-        Maximum n-gram order to consider
-        
-    Returns
-    -------
-    float
-        Mean of global weights
-    """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-    
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-    
-    all_global_weights = []
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-            
-        if ngram_counts:
-            global_weights = entropy_based_global_weight(ngram_counts, corpus_stats)
-            all_global_weights.extend(global_weights)
-    
-    return float(np.mean(all_global_weights) if all_global_weights else 0.0)
-
-
-def std_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate standard deviation of global entropy weights for a melody.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-    corpus_stats : dict
-        Dictionary containing corpus statistics
-    phrase_gap : float
-        Gap threshold for phrase segmentation
-    max_ngram_order : int
-        Maximum n-gram order to consider
-        
-    Returns
-    -------
-    float
-        Standard deviation of global weights
-    """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-    
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-    
-    all_global_weights = []
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-            
-        if ngram_counts:
-            global_weights = entropy_based_global_weight(ngram_counts, corpus_stats)
-            all_global_weights.extend(global_weights)
-    
-    return float(np.std(all_global_weights, ddof=1) if len(all_global_weights) > 1 else 0.0)
-
+        return [l * g for l, g in zip(self.local_weights, self.global_weights)]
 
 def _get_simonton_transition_matrix() -> np.ndarray:
     """Get Simonton's pitch class transition probabilities from 15,618 classical themes.
@@ -3605,13 +3449,9 @@ def get_corpus_features(
     Dict
         Dictionary of corpus-based feature values
     """
-    # Pre-compute tokenization and n-gram counts once
     tokenizer = FantasticTokenizer()
-
-    # Segment the melody first
     segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
 
-    # Get tokens for each segment
     all_tokens = []
     for segment in segments:
         segment_tokens = tokenizer.tokenize_melody(
@@ -3619,15 +3459,11 @@ def get_corpus_features(
         )
         all_tokens.extend(segment_tokens)
 
-    # Get document frequencies from corpus stats upfront
     doc_freqs = corpus_stats.get("document_frequencies", {})
     total_docs = len(doc_freqs)
 
-    # Pre-compute n-gram counts and document frequencies for all n-gram lengths
     ngram_data = []
-
     for n in range(1, max_ngram_order):
-        # Count n-grams in the combined tokens
         ngram_counts = {}
         for i in range(len(all_tokens) - n + 1):
             ngram = tuple(all_tokens[i : i + n])
@@ -3669,7 +3505,7 @@ def get_corpus_features(
 
         if len(all_tf) >= 2:
             try:
-                # Check for constant arrays (no variance) to avoid correlation warnings
+                # Check for no variance to avoid correlation problems
                 tf_variance = np.var(all_tf)
                 df_variance = np.var(all_df)
                 
@@ -3730,36 +3566,20 @@ def get_corpus_features(
     features["min_log_df"] = float(np.log1p(min_df) if min_df < float("inf") else 0.0)
     features["mean_log_df"] = float(total_log_df / df_count if df_count > 0 else 0.0)
 
-    # Entropy-based weighting features optimized using pre-computed ngram_data
-    all_combined_weights = []
-    all_global_weights = []
-    
+    # Entropy-based weighting features
     if ngram_data and total_docs > 0:
-        log_total_docs = np.log2(total_docs)
-        
+        all_ngram_counts = {}
         for data in ngram_data:
             for ngram, tf in zip(data["ngrams"], data["tf_values"]):
-                # Local weight = log2(frequency + 1)
-                local_weight = np.log2(tf + 1)
-                
-                # Global weight computation
-                ngram_str = str(ngram)
-                df = doc_freqs.get(ngram_str, {}).get("count", 0)
-                
-                if df > 0:
-                    pc_ratio = tf / df
-                    if pc_ratio > 0:
-                        entropy_term = pc_ratio * np.log2(pc_ratio)
-                        global_weight = 1 + entropy_term / log_total_docs
-                    else:
-                        global_weight = 1.0
-                else:
-                    global_weight = 1.0
-                    
-                combined_weight = local_weight * global_weight
-                all_combined_weights.append(combined_weight)
-                all_global_weights.append(global_weight)
-    
+                all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
+
+        weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
+        all_combined_weights = weights.combined_weights
+        all_global_weights = weights.global_weights
+    else:
+        all_combined_weights = []
+        all_global_weights = []
+
     # Calculate statistics
     if all_combined_weights:
         features["mean_global_local_weight"] = float(np.mean(all_combined_weights))
@@ -3767,7 +3587,7 @@ def get_corpus_features(
     else:
         features["mean_global_local_weight"] = 0.0
         features["std_global_local_weight"] = 0.0
-        
+
     if all_global_weights:
         features["mean_global_weight"] = float(np.mean(all_global_weights))
         features["std_global_weight"] = float(np.std(all_global_weights, ddof=1) if len(all_global_weights) > 1 else 0.0)
