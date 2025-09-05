@@ -503,7 +503,7 @@ def pitch_entropy(pitches: list[int]) -> float:
 
 @midi_toolbox
 @pitch_feature
-def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> float:
+def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
     """Calculate duration-weighted distribution of pitch classes.
 
     Parameters
@@ -517,7 +517,7 @@ def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> float
 
     Returns
     -------
-    float
+    dict
         Duration-weighted distribution proportion of pitch classes
     """
     if not pitches or not starts or not ends:
@@ -748,7 +748,7 @@ def _consecutive_fifths(pitch_classes: list[int]) -> list[int]:
 
 @jsymbolic
 @pitch_feature
-def dominant_spread(pitches: list[int]) -> float:
+def dominant_spread(pitches: list[int]) -> int:
     """Find longest sequence of pitch classes separated by perfect 5ths that each appear >9% of the time.
 
     Parameters
@@ -758,7 +758,7 @@ def dominant_spread(pitches: list[int]) -> float:
 
     Returns
     -------
-    float
+    int
         Length of longest sequence of significant pitch classes separated by perfect 5ths
     """
     pcs = [pitch % 12 for pitch in pitches]
@@ -1478,6 +1478,7 @@ def _get_durations(starts: list[float], ends: list[float], tempo: float = 120.0)
     except (TypeError, ValueError):
         return []
 
+
 @midi_toolbox
 @interval_feature
 def ivdist1(pitches: list[int], starts: list[float], ends: list[float], tempo: float = 120.0) -> dict:
@@ -1640,6 +1641,60 @@ def interval_direction(pitches: list[int]) -> tuple[float, float]:
     std_dev = math.sqrt(variance)
 
     return float(mean), float(std_dev)
+
+@jsymbolic
+@interval_feature
+def average_length_of_melodic_arcs(pitches: list[int]) -> float:
+    """Calculate average number of notes that separate peaks and troughs in melodic arcs.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Average number of notes that separate peaks and troughs in melodic arcs
+    """
+    if not pitches:
+        return 0.0
+
+    intervals = pitch_interval(pitches)
+
+    total_intervening_intervals = 0
+    number_arcs = 0
+    direction = 0
+
+    for interval in intervals:
+        if direction == -1:
+            if interval < 0:
+                total_intervening_intervals += 1
+            elif interval > 0:
+                total_intervening_intervals += 1
+                number_arcs += 1
+                direction = 1
+
+        elif direction == 1:
+            if interval > 0:
+                total_intervening_intervals += 1
+            elif interval < 0:
+                total_intervening_intervals += 1
+                number_arcs += 1
+                direction = -1
+
+        else:
+            if interval > 0:
+                direction = 1
+                total_intervening_intervals += 1
+            elif interval < 0:
+                direction = -1
+                total_intervening_intervals += 1
+
+    if number_arcs == 0:
+        return 0.0
+
+    return float(total_intervening_intervals) / float(number_arcs)
 
 @jsymbolic
 @interval_feature
@@ -1971,7 +2026,7 @@ def direction_of_melodic_motion(pitches: list[int]) -> float:
         return 0.0
 
     return float(ups) / float(ups + downs)
-    
+
 @jsymbolic
 @interval_feature
 def number_of_common_melodic_intervals(pitches: list[int]) -> int:
@@ -2022,6 +2077,40 @@ def prevalence_of_most_common_melodic_interval(pitches: list[int]) -> float:
 
     return float(max(interval_counts.values()) / len(absolute_intervals))
 
+@jsymbolic
+@interval_feature
+def relative_prevalence_of_most_common_melodic_intervals(pitches: list[int]) -> float:
+    """Calculate ratio of the frequency of the second most common interval to the frequency of the most common interval.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Ratio of second most common interval frequency to most common interval frequency.
+        Returns 0.0 if fewer than 2 intervals or only one unique interval.
+    """
+    intervals = pitch_interval(pitches)
+    absolute_intervals = [abs(iv) for iv in intervals]
+    
+    if len(absolute_intervals) < 2:
+        return 0.0
+        
+    interval_counts = {}
+    for interval in absolute_intervals:
+        interval_counts[interval] = interval_counts.get(interval, 0) + 1
+        
+    if len(interval_counts) < 2:
+        return 0.0
+        
+    sorted_intervals = sorted(interval_counts.items(), key=lambda x: x[1], reverse=True)
+    most_common_freq = sorted_intervals[0][1] / len(absolute_intervals)
+    second_most_freq = sorted_intervals[1][1] / len(absolute_intervals)
+    
+    return float(second_most_freq / most_common_freq)
 
 # Dynamic Feature Collection Functions
 def _get_features_by_type(feature_type: str) -> dict:
@@ -2100,166 +2189,6 @@ def get_pitch_features(melody: Melody) -> Dict:
             features[name] = None
     
     return features
-
-
-def get_duration_features_dynamic(melody: Melody) -> Dict:
-    """Dynamically collect all duration features for a melody.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    Dict
-        Dictionary of duration feature values
-    """
-    features = {}
-    duration_functions = _get_features_by_type(FeatureType.DURATION)
-    
-    for name, func in duration_functions.items():
-        try:
-            # Get function signature to determine parameters
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            
-            # Call function with appropriate parameters
-            if 'starts' in params and 'ends' in params:
-                result = func(melody.starts, melody.ends)
-            elif 'starts' in params:
-                result = func(melody.starts)
-            elif 'ends' in params:
-                result = func(melody.ends)
-            else:
-                # Try with melody object
-                result = func(melody)
-            
-            features[name] = result
-        except Exception as e:
-            print(f"Warning: Could not compute {name}: {e}")
-            features[name] = None
-    
-    return features
-
-
-def get_interval_features_dynamic(melody: Melody) -> Dict:
-    """Dynamically collect all interval features for a melody.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    Dict
-        Dictionary of interval feature values
-    """
-    features = {}
-    interval_functions = _get_features_by_type(FeatureType.INTERVAL)
-    
-    for name, func in interval_functions.items():
-        try:
-            # Get function signature to determine parameters
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            
-            # Call function with appropriate parameters
-            if 'pitches' in params:
-                result = func(melody.pitches)
-            elif 'starts' in params and 'ends' in params:
-                result = func(melody.starts, melody.ends)
-            else:
-                # Try with melody object
-                result = func(melody)
-            
-            features[name] = result
-        except Exception as e:
-            print(f"Warning: Could not compute {name}: {e}")
-            features[name] = None
-    
-    return features
-
-
-def get_contour_features_dynamic(melody: Melody) -> Dict:
-    """Dynamically collect all contour features for a melody.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    Dict
-        Dictionary of contour feature values
-    """
-    features = {}
-    contour_functions = _get_features_by_type(FeatureType.CONTOUR)
-    
-    for name, func in contour_functions.items():
-        try:
-            # Get function signature to determine parameters
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            
-            # Call function with appropriate parameters
-            if 'pitches' in params:
-                result = func(melody.pitches)
-            elif 'starts' in params and 'ends' in params:
-                result = func(melody.starts, melody.ends)
-            else:
-                # Try with melody object
-                result = func(melody)
-            
-            features[name] = result
-        except Exception as e:
-            print(f"Warning: Could not compute {name}: {e}")
-            features[name] = None
-    
-    return features
-
-
-def get_complexity_features_dynamic(melody: Melody) -> Dict:
-    """Dynamically collect all complexity features for a melody.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    Dict
-        Dictionary of complexity feature values
-    """
-    features = {}
-    complexity_functions = _get_features_by_type(FeatureType.COMPLEXITY)
-    
-    for name, func in complexity_functions.items():
-        try:
-            # Get function signature to determine parameters
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            
-            # Call function with appropriate parameters
-            if 'pitches' in params:
-                result = func(melody.pitches)
-            elif 'starts' in params and 'ends' in params:
-                result = func(melody.starts, melody.ends)
-            else:
-                # Try with melody object
-                result = func(melody)
-            
-            features[name] = result
-        except Exception as e:
-            print(f"Warning: Could not compute {name}: {e}")
-            features[name] = None
-    
-    return features
-
-
 
 
 # Contour Features
@@ -2392,6 +2321,7 @@ def get_huron_contour_features(melody: Melody) -> str:
 
 # Duration Features
 @fantastic
+@jsymbolic
 @duration_feature
 def _get_tempo(melody: Melody) -> float:
     """Access tempo of melody.
@@ -2408,6 +2338,69 @@ def _get_tempo(melody: Melody) -> float:
 
     """
     return melody.tempo
+
+# Alias - but don't return again with get_all_features()
+inital_tempo = _get_tempo
+
+@jsymbolic
+@duration_feature
+def mean_tempo(melody: Melody) -> float:
+    """Calculate mean tempo of melody.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Mean tempo of melody in bpm
+    """
+    if not melody.tempo_changes:
+        return melody.tempo
+
+    # Calculate weighted average tempo based on duration each tempo is active
+    # Get total duration from last note end time
+    total_duration = max(melody.ends) if melody.ends else 0
+    if total_duration == 0:
+        return melody.tempo
+
+    weighted_sum = 0.0
+    last_time = 0.0
+    last_tempo = melody.tempo
+
+    # Add up (tempo * duration) for each tempo section
+    for time, tempo in melody.tempo_changes:
+        duration = time - last_time
+        weighted_sum += last_tempo * duration
+        last_time = time
+        last_tempo = tempo
+        
+    # Add final section
+    final_duration = total_duration - last_time
+    weighted_sum += last_tempo * final_duration
+    
+    return float(weighted_sum / total_duration)
+
+@jsymbolic
+@duration_feature
+def tempo_variability(melody: Melody) -> float:
+    """Calculate variability of tempo of melody.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Tempo variability of melody
+    """
+    if not melody.tempo_changes or len(melody.tempo_changes) < 2:
+        return 0.0
+    return float(np.std([tempo for time, tempo in melody.tempo_changes], ddof=1))
 
 @fantastic
 @duration_feature
@@ -2500,6 +2493,28 @@ def duration_standard_deviation(starts: list[float], ends: list[float], tempo: f
         return 0.0
     return float(np.std(durations, ddof=1))
 
+@jsymbolic
+@duration_feature
+def variability_of_note_durations(starts: list[float], ends: list[float]) -> float:
+    """Calculate standard deviation of note durations in seconds.
+
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+
+    Returns
+    -------
+    float
+        Standard deviation of note durations
+    """
+    durations = [end - start for start, end in zip(starts, ends)]
+    if not durations:
+        return 0.0
+    return float(np.std(durations, ddof=1))
+
 @fantastic
 @jsymbolic
 @duration_feature
@@ -2588,9 +2603,10 @@ def number_of_durations(starts: list[float], ends: list[float], tempo: float = 1
     return int(len(set(durations)))
 
 @fantastic
+@jsymbolic
 @duration_feature
 def global_duration(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Calculate total duration from first note start to last note end.
+    """Calculate total duration in secondsfrom first note start to last note end.
 
     Parameters
     ----------
@@ -2608,10 +2624,16 @@ def global_duration(starts: list[float], ends: list[float], tempo: float = 120.0
         return 0.0
     return float(ends[-1] - starts[0])
 
+# Alias - but don't return again with get_all_features()
+# our implementation of duration_in_seconds is not exactly the same as jSymbolic's
+# due to differences in how we handle the MIDI, but it should be within a 2% tolerance
+duration_in_seconds = global_duration
+
 @fantastic
+@jsymbolic
 @duration_feature
 def note_density(starts: list[float], ends: list[float]) -> float:
-    """Calculate average number of notes per unit time.
+    """Calculate average number of notes per second.
 
     Parameters
     ----------
@@ -2632,10 +2654,168 @@ def note_density(starts: list[float], ends: list[float]) -> float:
         return 0.0
     return float(len(starts) / total_duration)
 
+@jsymbolic
+@duration_feature
+def note_density_variability(starts: list[float], ends: list[float]) -> float:
+    """Calculate variability of note density using 5-second windows.
+    
+    Divides the melody into 5-second windows and calculates the standard deviation
+    of note density across these windows.
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+        
+    Returns
+    -------
+    float
+        Standard deviation of note density using 5-second windows
+    """
+    if not starts or not ends or len(starts) < 2:
+        return 0.0
+
+    window_size = 5.0
+    total_duration = ends[-1] - starts[0]
+
+    # If total duration is less than window size, return 0
+    if total_duration < window_size:
+        return 0.0
+
+    num_windows = int(total_duration / window_size)
+    window_densities = []
+
+    for i in range(num_windows):
+        window_start = starts[0] + (i * window_size)
+        window_end = window_start + window_size
+
+        notes_in_window = sum(1 for start in starts if window_start <= start < window_end)
+
+        window_density = notes_in_window / window_size
+        window_densities.append(window_density)
+
+    if len(window_densities) < 2:
+        return 0.0
+    return float(np.std(window_densities, ddof=1))
+
+@jsymbolic
+@duration_feature
+def note_density_per_quarter_note(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Calculate average number of notes per quarter note.
+    
+    Finds the average number of note onsets per unit of time corresponding to an
+    idealized quarter note duration based on the tempo.
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+    tempo : float
+        Tempo in BPM (beats per minute), default 120.0
+        
+    Returns
+    -------
+    float
+        Average number of notes per quarter note duration
+    """
+    if not starts or len(starts) < 2:
+        return 0.0
+        
+    # Calculate quarter note duration in seconds based on tempo
+    quarter_note_duration = 60.0 / tempo
+    
+    # Calculate total duration in quarter notes
+    total_duration = (ends[-1] - starts[0]) / quarter_note_duration
+    
+    if total_duration == 0:
+        return 0.0
+        
+    # Return average number of notes per quarter note duration
+    return float(len(starts) / total_duration)
+
+@jsymbolic
+@duration_feature
+def note_density_per_quarter_note_variability(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Calculate variability of note density per quarter note.
+    
+    Divides the melody into 8-quarter-note windows and calculates the standard deviation
+    of note density across these windows.
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+    tempo : float
+        Tempo in BPM (beats per minute), default 120.0
+        
+    Returns
+    -------
+    float
+        Standard deviation of note density across windows
+    """
+    if not starts or not ends:
+        return 0.0
+        
+    # Calculate window size in seconds (8 quarter notes)
+    quarter_note_duration = 60.0 / tempo
+    window_size = 8.0 * quarter_note_duration
+    
+    # Get total duration
+    total_duration = ends[-1] - starts[0]
+    
+    # Create windows
+    window_densities = []
+    window_start = starts[0]
+    while window_start < ends[-1]:
+        window_end = min(window_start + window_size, ends[-1])
+        
+        # Count notes in this window
+        notes_in_window = sum(1 for i in range(len(starts)) 
+                            if starts[i] >= window_start and starts[i] < window_end)
+        
+        # Calculate density for this window
+        if notes_in_window > 0:
+            window_density = notes_in_window / 8.0  # Divide by window size in quarter notes
+            window_densities.append(window_density)
+            
+        window_start += window_size
+    
+    # Calculate standard deviation of window densities
+    if len(window_densities) < 2:
+        return 0.0
+        
+    return float(np.std(window_densities, ddof=1))
 @idyom
 @duration_feature
-def ioi(starts: list[float]) -> tuple[float, float]:
-    """Calculate mean and standard deviation of inter-onset intervals.
+def ioi(starts: list[float]) -> list[float]:
+    """Calculate the time between consecutive onsets (inter-onset interval).
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+
+    Returns
+    -------
+    list[float]
+        List of time intervals between consecutive onsets
+    """
+    intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
+    if not intervals:
+        return []
+    return intervals
+
+@idyom
+@jsymbolic
+@duration_feature
+def ioi_mean(starts: list[float]) -> float:
+    """Calculate mean of inter-onset intervals.
 
     Parameters
     ----------
@@ -2644,13 +2824,39 @@ def ioi(starts: list[float]) -> tuple[float, float]:
 
     Returns
     -------
-    tuple[float, float]
-        Mean and standard deviation of inter-onset intervals
+    float
+        Mean of inter-onset intervals
     """
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
     if not intervals:
-        return 0.0, 0.0
-    return float(np.mean(intervals)), float(np.std(intervals, ddof=1))
+        return 0.0
+    return float(np.mean(intervals))
+
+average_time_between_attacks = ioi_mean
+
+@idyom
+@jsymbolic
+@duration_feature
+def ioi_standard_deviation(starts: list[float]) -> float:
+    """Calculate standard deviation of inter-onset intervals.
+
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+
+    Returns
+    -------
+    float
+        Standard deviation of inter-onset intervals
+    """
+    intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
+    if not intervals:
+        return 0.0
+    return float(np.std(intervals, ddof=1))
+
+variability_of_time_between_attacks = ioi_standard_deviation
+
 
 @idyom
 @duration_feature
@@ -2697,42 +2903,6 @@ def ioi_range(starts: list[float]) -> float:
     """
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
     return max(intervals) - min(intervals)
-
-@novel
-@duration_feature
-def ioi_mean(starts: list[float]) -> float:
-    """Calculate mean of inter-onset intervals.
-
-    Parameters
-    ----------
-    starts : list[float]
-        List of note start times
-
-    Returns
-    -------
-    float
-        Mean of inter-onset intervals
-    """
-    intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
-    return float(np.mean(intervals))
-
-@novel
-@duration_feature
-def ioi_standard_deviation(starts: list[float]) -> float:
-    """Calculate standard deviation of inter-onset intervals.
-
-    Parameters
-    ----------
-    starts : list[float]
-        List of note start times
-
-    Returns
-    -------
-    float
-        Standard deviation of inter-onset intervals
-    """
-    intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
-    return float(np.std(intervals, ddof=1))
 
 @novel
 @duration_feature
@@ -2799,6 +2969,41 @@ def ioi_histogram(starts: list[float]) -> dict:
     num_intervals = len(set(intervals))
     return histogram_bins(intervals, num_intervals)
 
+@jsymbolic
+@duration_feature
+def minimum_note_duration(starts: list[float], ends: list[float]) -> float:
+    """Calculate minimum note duration in seconds.
+
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+
+    Returns
+    -------
+    float
+        Minimum note duration in seconds
+    """
+    return min([end - start for start, end in zip(starts, ends)])
+
+@jsymbolic
+@duration_feature
+def maximum_note_duration(starts: list[float], ends: list[float]) -> float:
+    """Calculate maximum note duration in seconds.
+
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+
+    Returns
+    -------
+    float
+        Maximum note duration in seconds
+    """
+    return max([end - start for start, end in zip(starts, ends)])
 
 @fantastic
 @duration_feature

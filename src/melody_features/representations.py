@@ -38,6 +38,9 @@ class Melody:
             self._tempo = midi_data["tempo"]
         else:
             self._tempo = 100.00  # Default fallback tempo
+            
+        # Store tempo changes if available
+        self._tempo_changes = midi_data.get("tempo_changes", [(0.0, self._tempo)])
 
     @property
     def pitches(self) -> list[int]:
@@ -108,6 +111,16 @@ class Melody:
             float: Tempo of the melody in beats per minute
         """
         return self._tempo
+    
+    @property
+    def tempo_changes(self) -> list[tuple[float, float]]:
+        """Get tempo changes from the melody.
+
+        Returns:
+            list[tuple[float, float]]: List of (time_in_seconds, tempo_in_bpm) tuples
+        """
+        return self._tempo_changes
+    
 
     @property
     def meter(self) -> tuple[int, int]:

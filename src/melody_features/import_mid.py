@@ -66,6 +66,7 @@ def import_midi(midi_file: str) -> dict:
 
         # Extract tempo information
         tempo = extract_tempo_from_midi(midi_data)
+        tempo_changes = extract_tempo_changes_from_midi(midi_data)
         
         # Extract time signature information (with meter estimation fallback)
         time_sig_info = extract_time_signatures_from_midi(midi_data, starts, ends, pitches)
@@ -77,6 +78,7 @@ def import_midi(midi_file: str) -> dict:
             "starts": starts,
             "ends": ends,
             "tempo": tempo,
+            "tempo_changes": tempo_changes,
             "time_signature_info": time_sig_info,
         }
 
@@ -217,3 +219,46 @@ def extract_tempo_from_midi(midi_data: pretty_midi.PrettyMIDI) -> float:
     # Default fallback tempo
     logger.debug("Using default tempo: 100.0 BPM")
     return 100.0
+
+
+def extract_tempo_changes_from_midi(midi_data: pretty_midi.PrettyMIDI) -> list[tuple[float, float]]:
+    """Extract all tempo changes from a MIDI file.
+
+    Parameters
+    ----------
+    midi_data : pretty_midi.PrettyMIDI
+        Parsed MIDI data object
+
+    Returns
+    -------
+    list[tuple[float, float]]
+        List of (time_in_seconds, tempo_in_bpm) tuples representing tempo changes
+    """
+    logger = logging.getLogger("melody_features")
+    
+    try:
+        tempo_changes = midi_data.get_tempo_changes()
+        
+        if len(tempo_changes[0]) > 0:
+            # Convert from ticks to seconds
+            tempo_times_ticks = tempo_changes[0]
+            tempo_values_bpm = tempo_changes[1]
+            
+            # Convert tick times to seconds
+            tempo_times_seconds = []
+            for tick_time in tempo_times_ticks:
+                seconds = midi_data.tick_to_time(tick_time)
+                tempo_times_seconds.append(seconds)
+            
+            tempo_changes_list = list(zip(tempo_times_seconds, tempo_values_bpm))
+            logger.debug(f"Extracted {len(tempo_changes_list)} tempo changes from MIDI")
+            return tempo_changes_list
+        else:
+            single_tempo = extract_tempo_from_midi(midi_data)
+            return [(0.0, single_tempo)]
+            
+    except Exception as e:
+        logger.warning(f"Could not extract tempo changes from MIDI: {str(e)}")
+        # Fallback to single tempo
+        single_tempo = extract_tempo_from_midi(midi_data)
+        return [(0.0, single_tempo)]

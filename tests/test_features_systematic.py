@@ -10,8 +10,11 @@ import pytest
 import tempfile
 import os
 import numpy as np
+import inspect
+from typing import get_type_hints, get_origin, get_args
 
 from melody_features.features import get_all_features, Config, IDyOMConfig, FantasticConfig
+from melody_features.feature_decorators import FeatureType
 
 
 def create_test_midi_file(pitches, starts, ends, tempo=120):
@@ -44,134 +47,91 @@ def create_test_midi_file(pitches, starts, ends, tempo=120):
     return mid
 
 
-# Define expected types for each feature category based on function signatures
-EXPECTED_FEATURE_TYPES = {
-    'pitch_features': dict,
-    'interval_features': dict,
-    'contour_features': dict,
-    'duration_features': dict,
-    'tonality_features': dict,
-    'melodic_movement_features': dict,
-    'mtype_features': dict,
-    'complexity_features': dict,
-}
+def _discover_feature_functions():
+    """Dynamically discover all feature functions and their expected return types."""
+    import sys
+    import melody_features.features as features_module
+    
+    feature_functions = {}
+    
+    for name, obj in inspect.getmembers(features_module):
+        if (inspect.isfunction(obj) and 
+            hasattr(obj, '_feature_types') and 
+            obj._feature_types):
+            
+            # Get return type annotation
+            sig = inspect.signature(obj)
+            return_annotation = sig.return_annotation
+            
+            # Convert type annotation to expected types
+            expected_types = _convert_annotation_to_types(return_annotation)
+            
+            feature_functions[name] = {
+                'function': obj,
+                'expected_types': expected_types,
+                'feature_types': obj._feature_types
+            }
+    
+    return feature_functions
 
-# Define specific feature type expectations based on actual feature names from output
-SPECIFIC_FEATURE_TYPES = {
-    'pitch_features.pitch_range': (int, float, np.integer, np.floating),
-    'pitch_features.pitch_standard_deviation': (float, np.floating),
-    'pitch_features.pitch_entropy': (float, np.floating),
-    'pitch_features.mean_pitch': (float, np.floating),
-    'pitch_features.most_common_pitch': (int, np.integer),
-    'pitch_features.number_of_pitches': (int, np.integer),
-    'pitch_features.melodic_pitch_variety': (float, np.floating),
-    'pitch_features.dominant_spread': (int, float, np.integer, np.floating),  # Can be int
-    'pitch_features.mean_tessitura': (float, np.floating),
-    'pitch_features.tessitura_std': (float, np.floating),
-    'pitch_features.pcdist1': dict,
-    'pitch_features.basic_pitch_histogram': dict,
-    'pitch_features.folded_fifths_pitch_class_histogram': dict,
-    'pitch_features.pitch_class_kurtosis_after_folding': (float, np.floating),
-    'pitch_features.pitch_class_skewness_after_folding': (float, np.floating),
-    'pitch_features.pitch_class_variability_after_folding': (float, np.floating),
+
+def _convert_annotation_to_types(annotation):
+    """Convert type annotation to tuple of expected types for validation."""
+    if annotation == inspect.Parameter.empty:
+        return (int, float, dict, list, str, np.integer, np.floating, np.ndarray)
     
-    'interval_features.mean_absolute_interval': (float, np.floating),
-    'interval_features.modal_interval': (int, np.integer),
-    'interval_features.interval_entropy': (float, np.floating),
-    'interval_features.ivdist1': dict,
-    'interval_features.ivdirdist1': dict,
-    'interval_features.ivsizedist1': dict,
-    'interval_features.melodic_large_intervals': (float, np.floating),
-    'interval_features.absolute_interval_range': (int, float, np.integer, np.floating),
-    'interval_features.interval_direction_mean': (float, np.floating),
-    'interval_features.interval_direction_sd': (float, np.floating),
-    'interval_features.melodic_interval_histogram': dict,
-    'interval_features.pitch_interval': list,
-    'interval_features.number_of_common_melodic_intervals': (int, np.integer),
-    'interval_features.prevalence_of_most_common_melodic_interval': (float, np.floating),
-    'interval_features.variable_melodic_intervals': (int, np.integer),
-    'interval_features.distance_between_most_prevalent_melodic_intervals': (int, float, np.integer, np.floating),
-    'interval_features.average_interval_span_by_melodic_arcs': (float, np.floating),
+    # Handle Union types
+    if get_origin(annotation) is type(None) or get_origin(annotation) is type(None):
+        # Handle Optional types
+        args = get_args(annotation)
+        if args:
+            return _convert_annotation_to_types(args[0])
     
-    'duration_features.tempo': (float, np.floating),
-    'duration_features.mean_duration': (float, np.floating),
-    'duration_features.length': (int, float, np.integer, np.floating),
-    'duration_features.npvi': (float, np.floating),
-    'duration_features.meter_numerator': (int, np.integer),
-    'duration_features.meter_denominator': (int, np.integer),
-    'duration_features.metric_stability': (float, np.floating),
-    'duration_features.duration_entropy': (float, np.floating),
-    'duration_features.duration_standard_deviation': (float, np.floating),
-    'duration_features.duration_range': (float, np.floating),
-    'duration_features.modal_duration': (float, np.floating),
-    'duration_features.number_of_durations': (int, np.integer),
-    'duration_features.note_density': (float, np.floating),
-    'duration_features.global_duration': (float, np.floating),
-    'duration_features.mean_duration_accent': (float, np.floating),
-    'duration_features.duration_accent_std': (float, np.floating),
-    'duration_features.onset_autocorr_peak': (float, np.floating),
-    'duration_features.ioi_mean': (float, np.floating),
-    'duration_features.ioi_std': (float, np.floating),
-    'duration_features.ioi_range': (float, np.floating),
-    'duration_features.ioi_ratio_mean': (float, np.floating),
-    'duration_features.ioi_ratio_std': (float, np.floating),
-    'duration_features.ioi_contour_mean': (float, np.floating),
-    'duration_features.ioi_contour_std': (float, np.floating),
-    'duration_features.duration_histogram': dict,
-    'duration_features.ioi_histogram': dict,
-    'duration_features.equal_duration_transitions': (float, np.floating),
-    'duration_features.dotted_duration_transitions': (float, np.floating),
-    'duration_features.half_duration_transitions': (float, np.floating),
+    # Handle basic types with numpy equivalents
+    if annotation == int:
+        return (int, np.integer, np.int64, np.int32, np.int16, np.int8)
+    elif annotation == float:
+        return (float, np.floating, np.float64, np.float32, np.float16)
+    elif annotation == str:
+        return (str,)
+    elif annotation == dict:
+        return (dict,)
+    elif annotation == list:
+        return (list, np.ndarray)
+    elif annotation == bool:
+        return (bool, np.bool_)
     
-    'tonality_features.tonalness': (float, np.floating),
-    'tonality_features.referent': (int, np.integer),
-    'tonality_features.inscale': (int, np.integer),
-    'tonality_features.mode': (int, np.integer),
-    'tonality_features.tonal_clarity': (float, np.floating),
-    'tonality_features.tonal_spike': (float, np.floating),
-    'tonality_features.tonal_entropy': (float, np.floating),
-    'tonality_features.temperley_likelihood': (float, np.floating),
-    'tonality_features.longest_conjunct_scalar_passage': (int, np.integer),
-    'tonality_features.longest_monotonic_conjunct_scalar_passage': (int, np.integer),
-    'tonality_features.proportion_conjunct_scalar': (float, np.floating),
-    'tonality_features.proportion_scalar': (float, np.floating),
-    'tonality_features.tonalness_histogram': dict,
+    # Handle generic types like list[float], dict[str, int], etc.
+    if hasattr(annotation, '__origin__'):
+        origin = annotation.__origin__
+        if origin is list:
+            return (list, np.ndarray)
+        elif origin is dict:
+            return (dict,)
+        elif origin is tuple:
+            return (tuple,)
     
-    'melodic_movement_features.stepwise_motion': (float, np.floating),
-    'melodic_movement_features.repeated_notes': (float, np.floating),
-    'melodic_movement_features.chromatic_motion': (float, np.floating),
-    'melodic_movement_features.amount_of_arpeggiation': (float, np.floating),
-    'melodic_movement_features.melodic_embellishment': (float, np.floating),
+    # Handle numpy types
+    if hasattr(np, annotation.__name__):
+        return (annotation,)
     
-    'complexity_features.gradus': (int, np.integer),
-    'complexity_features.registral_direction': (int, float, np.integer, np.floating),
-    'complexity_features.proximity': (int, float, np.integer, np.floating),
-    'complexity_features.closure': (int, float, np.integer, np.floating),
-    'complexity_features.registral_return': (int, float, np.integer, np.floating),
-    'complexity_features.intervallic_difference': (int, float, np.integer, np.floating),
-    'complexity_features.mean_mobility': (float, np.floating),
-    'complexity_features.mobility_std': (float, np.floating),
-    
-    'contour_features.huron_contour': str,
-    'contour_features.interpolation_contour_mean_gradient': (float, np.floating),
-    'contour_features.interpolation_contour_gradient_std': (float, np.floating),
-    'contour_features.interpolation_contour_direction_changes': (int, np.integer),
-    'contour_features.interpolation_contour_global_direction': (float, np.floating),
-    'contour_features.interpolation_contour_class_label': str,
-    'contour_features.polynomial_contour_coefficients': list,
-    'contour_features.step_contour_global_variation': (float, np.floating),
-    'contour_features.step_contour_global_direction': (float, np.floating),
-    'contour_features.step_contour_local_variation': (float, np.floating),
-    'contour_features.mean_melodic_accent': (float, np.floating),
-    'contour_features.melodic_accent_std': (float, np.floating),
-    
-    'mtype_features.yules_k': (float, np.floating),
-    'mtype_features.simpsons_d': (float, np.floating),
-    'mtype_features.sichels_s': (float, np.floating),
-    'mtype_features.honores_h': (float, np.floating),
-    'mtype_features.mean_entropy': (float, np.floating),
-    'mtype_features.mean_productivity': (float, np.floating),
-}
+    # Default fallback - be more permissive
+    return (int, float, dict, list, str, np.integer, np.floating, np.ndarray, 
+            np.int64, np.int32, np.int16, np.int8, np.float64, np.float32, np.float16)
+
+
+def _get_feature_category_mapping():
+    """Get mapping from feature types to category names."""
+    return {
+        FeatureType.PITCH: 'pitch_features',
+        FeatureType.INTERVAL: 'interval_features', 
+        FeatureType.CONTOUR: 'contour_features',
+        FeatureType.DURATION: 'duration_features',
+        FeatureType.TONALITY: 'tonality_features',
+        FeatureType.MTYPE: 'mtype_features',
+        FeatureType.COMPLEXITY: 'complexity_features',
+        FeatureType.CORPUS: 'corpus_features',
+    }
 
 # Some features are actually allowed to be NaN
 NAN_ALLOWED_FEATURES = {
@@ -187,6 +147,7 @@ NAN_ALLOWED_FEATURES = {
     'interval_features.standard_deviation_absolute_interval',
     'duration_features.ioi_standard_deviation',
     'interval_features.minor_major_third_ratio',
+    'duration_features.variability_of_time_between_attacks',
 }
 
 PROPORTION_FEATURES = {
@@ -224,6 +185,10 @@ class TestFeatureTypeValidation:
             fantastic=FantasticConfig(max_ngram_order=3, phrase_gap=1.5),
             corpus=None
         )
+        
+        # Dynamically discover all feature functions
+        self.feature_functions = _discover_feature_functions()
+        self.category_mapping = _get_feature_category_mapping()
     
     def test_normal_melody_feature_types(self):
         """Test all feature types with a normal melody."""
@@ -324,23 +289,22 @@ class TestFeatureTypeValidation:
     
     def _validate_feature_categories(self, row):
         """Validate that feature categories match their expected types."""
-        for category, expected_type in EXPECTED_FEATURE_TYPES.items():
-            category_features = {col: row[col] for col in row.index if col.startswith(f"{category}.")}
-            
-            if not category_features:
-                continue
-            
-            if expected_type == dict:
-                for feature_name, value in category_features.items():
-                    # Skip None check for features that are allowed to be None
-                    if feature_name in NAN_ALLOWED_FEATURES:
-                        continue
-                    assert value is not None, f"Feature {feature_name} should not be None"
-            elif expected_type == str:
-                main_feature = f"{category}.{category.replace('_features', '')}"
-                if main_feature in row.index:
-                    value = row[main_feature]
-                    assert isinstance(value, str), f"Feature {main_feature} should be string, got {type(value)}"
+        # Group features by category
+        category_features = {}
+        for col in row.index:
+            if '.' in col and not col.startswith('idyom'):
+                category = col.split('.')[0]
+                if category not in category_features:
+                    category_features[category] = {}
+                category_features[category][col] = row[col]
+        
+        # Validate each category
+        for category, features in category_features.items():
+            for feature_name, value in features.items():
+                # Skip None check for features that are allowed to be None
+                if feature_name in NAN_ALLOWED_FEATURES:
+                    continue
+                assert value is not None, f"Feature {feature_name} should not be None"
     
     def _validate_specific_feature_types(self, row, test_case_name, allow_more_nans=False):
         """Validate specific features against their expected types."""
@@ -352,13 +316,31 @@ class TestFeatureTypeValidation:
                 
             value = row[col]
             
+            # Get expected types from function signature if available
+            feature_name = col.split('.')[-1] if '.' in col else col
+            expected_types = None
+            
+            if feature_name in self.feature_functions:
+                expected_types = self.feature_functions[feature_name]['expected_types']
+            
             # Skip None check for features that are allowed to be None
             if col not in NAN_ALLOWED_FEATURES:
                 assert value is not None, f"Feature {col} should not be None in {test_case_name}"
                 
-                valid_types = (int, float, dict, list, str, np.integer, np.floating, np.ndarray)
-                assert isinstance(value, valid_types), \
-                    f"Feature {col} has invalid type: {type(value)} in {test_case_name}"
+                # Use expected types from function signature, or fallback to general types
+                if expected_types:
+                    # For numeric types, be more flexible - allow int/float cross-compatibility
+                    if any(issubclass(t, (int, float, np.integer, np.floating)) for t in expected_types):
+                        # If expecting numeric, allow any numeric type
+                        if not isinstance(value, (int, float, np.integer, np.floating)):
+                            assert False, f"Feature {col} has invalid type: {type(value)} in {test_case_name}, expected numeric type"
+                    else:
+                        assert isinstance(value, expected_types), \
+                            f"Feature {col} has invalid type: {type(value)} in {test_case_name}, expected {expected_types}"
+                else:
+                    valid_types = (int, float, dict, list, str, np.integer, np.floating, np.ndarray)
+                    assert isinstance(value, valid_types), \
+                        f"Feature {col} has invalid type: {type(value)} in {test_case_name}"
             
             # Check for NaN/Inf in numeric features
             if isinstance(value, (int, float, np.integer, np.floating)):
@@ -434,6 +416,17 @@ def test_feature_completeness():
         
         df = get_all_features(temp_path, config=config, skip_idyom=True)
         
+        # Dynamically discover expected categories from feature functions
+        feature_functions = _discover_feature_functions()
+        category_mapping = _get_feature_category_mapping()
+        
+        # Get expected categories from discovered feature functions
+        expected_categories = set()
+        for func_info in feature_functions.values():
+            for feature_type in func_info['feature_types']:
+                if feature_type in category_mapping:
+                    expected_categories.add(category_mapping[feature_type])
+        
         # Check that we have all expected feature categories
         feature_categories = set()
         for col in df.columns:
@@ -441,17 +434,13 @@ def test_feature_completeness():
                 category = col.split('.')[0]
                 feature_categories.add(category)
         
-        expected_categories = {
-            'pitch_features', 'interval_features', 'contour_features',
-            'duration_features', 'tonality_features', 'melodic_movement_features',
-            'mtype_features', 'complexity_features'
-        }
-        
         missing_categories = expected_categories - feature_categories
         assert not missing_categories, f"Missing feature categories: {missing_categories}"
         
+        # Check that we have a reasonable number of features
         feature_count = len([col for col in df.columns if '.' in col and not col.startswith('idyom')])
-        assert feature_count >= 80, f"Expected at least 80 features, got {feature_count}"
+        expected_min_features = len(feature_functions) // 2  # At least half of discovered functions should be present
+        assert feature_count >= expected_min_features, f"Expected at least {expected_min_features} features, got {feature_count}"
         
     finally:
         if os.path.exists(temp_path):
