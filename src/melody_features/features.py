@@ -447,6 +447,7 @@ def pitch_range(pitches: list[int]) -> int:
 
 
 @fantastic
+@jsymbolic
 @pitch_feature
 def pitch_standard_deviation(pitches: list[int]) -> float:
     """Calculate the standard deviation of pitch values.
@@ -462,6 +463,26 @@ def pitch_standard_deviation(pitches: list[int]) -> float:
         Standard deviation of pitches
     """
     return float(standard_deviation(pitches))
+
+# Alias
+pitch_variability = pitch_standard_deviation
+
+@jsymbolic
+@pitch_feature
+def pitch_class_variability(pitches: list[int]) -> float:
+    """Calculate the standard deviation of pitch class values.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Standard deviation of pitch class values
+    """
+    return float(standard_deviation([pitch % 12 for pitch in pitches]))
 
 @fantastic
 @pitch_feature
@@ -516,6 +537,81 @@ def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> float
         return 0.0
 
     return distribution_proportions(weighted_pitch_classes)
+
+@jsymbolic
+@pitch_feature
+def first_pitch(pitches: list[int]) -> int:
+    """Find the first pitch in the melody.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+    
+    Returns
+    -------
+    int
+        First pitch in the melody
+    """
+    if not pitches:
+        return 0
+    return int(pitches[0])
+
+@jsymbolic
+@pitch_feature
+def fisrt_pitch_class(pitches: list[int]) -> int:
+    """Find the first pitch class in the melody.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+    
+    Returns
+    -------
+    int - between 0 and 11
+        First pitch class in the melody
+    """
+    if not pitches:
+        return 0
+    return int(pitches[0] % 12)
+
+@jsymbolic
+@pitch_feature
+def last_pitch(pitches: list[int]) -> int:
+    """Find the last pitch in the melody.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+    
+    Returns
+    -------
+    int
+        Last pitch in the melody
+    """
+    if not pitches:
+        return 0
+    return int(pitches[-1])
+
+@jsymbolic
+@pitch_feature
+def last_pitch_class(pitches: list[int]) -> int:
+    """Find the last pitch class in the melody.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+    
+    Returns
+    -------
+    int - between 0 and 11
+    """
+    if not pitches:
+        return 0
+    return int(pitches[-1] % 12)
 
 @jsymbolic
 @pitch_feature
@@ -714,6 +810,23 @@ def mean_pitch(pitches: list[int]) -> int:
     return int(np.mean(pitches))
 
 @jsymbolic
+@pitch_feature
+def mean_pitch_class(pitches: list[int]) -> float:
+    """Calculate mean pitch class value.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Mean pitch class value, so between 0 and 11
+    """
+    return float(np.mean([pitch % 12 for pitch in pitches]))
+
+@jsymbolic
 def most_common_pitch(pitches: list[int]) -> int:
     """Find most frequently occurring pitch.
 
@@ -728,6 +841,25 @@ def most_common_pitch(pitches: list[int]) -> int:
         Most common pitch value
     """
     return int(mode(pitches))
+
+@jsymbolic
+@pitch_feature
+def most_common_pitch_class(pitches: list[int]) -> int:
+    """Find most frequently occurring pitch class.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    int
+        Most common pitch class value
+    """
+    if not pitches:
+        return 0
+    return int(mode([pitch % 12 for pitch in pitches]))
 
 @jsymbolic
 @pitch_feature
@@ -909,6 +1041,159 @@ def prevalence_of_most_common_pitch(pitches: list[int]) -> float:
 
 @jsymbolic
 @pitch_feature
+def prevalence_of_most_common_pitch_class(pitches: list[int]) -> float:
+    """Calculate proportion of most common pitch class with regards to the
+    number of notes in the whole melody.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Proportion of most common pitch class
+    """
+    if not pitches:
+        return 0.0
+    pcs = [pitch % 12 for pitch in pitches]
+    return float(pcs.count(most_common_pitch_class(pcs)) / len(pcs))
+
+@jsymbolic
+@pitch_feature
+def relative_prevalence_of_top_pitches(pitches: list[int]) -> float:
+    """Calculate ratio of the frequency of the second most common pitch to the frequency of the most common pitch.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Ratio of second most common pitch frequency to most common pitch frequency
+    """
+    if len(pitches) < 2:
+        return 0.0
+
+    pitch_counts = {}
+    for pitch in pitches:
+        pitch_counts[pitch] = pitch_counts.get(pitch, 0) + 1
+
+    if len(pitch_counts) < 2:
+        return 0.0
+
+    sorted_pitches = sorted(pitch_counts.items(), key=lambda x: x[1], reverse=True)
+    most_common_freq = sorted_pitches[0][1] / len(pitches)
+    second_most_freq = sorted_pitches[1][1] / len(pitches)
+
+    return float(second_most_freq / most_common_freq)
+
+@jsymbolic
+@pitch_feature
+def relative_prevalence_of_top_pitch_classes(pitches: list[int]) -> float:
+    """Calculate ratio of the frequency of the second most common pitch class to the frequency of the most common pitch class.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Ratio of second most common pitch class frequency to most common pitch class frequency
+    """
+    if len(pitches) < 2:
+        return 0.0
+
+    pcs = [pitch % 12 for pitch in pitches]
+    if len(pcs) < 2:
+        return 0.0
+
+    pc_counts = {}
+    for pc in pcs:
+        pc_counts[pc] = pc_counts.get(pc, 0) + 1
+
+    if len(pc_counts) < 2:
+        return 0.0
+
+    sorted_pcs = sorted(pc_counts.items(), key=lambda x: x[1], reverse=True)
+    most_common_freq = sorted_pcs[0][1] / len(pcs)
+    second_most_freq = sorted_pcs[1][1] / len(pcs)
+
+    return float(second_most_freq / most_common_freq)
+
+@jsymbolic
+@pitch_feature
+def interval_between_most_prevalent_pitches(pitches: list[int]) -> int:
+    """Calculate the number of semitones between the most prevalent pitches.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    int
+        Number of semitones between the most prevalent pitches
+    """
+    if not pitches:
+        return 0
+
+    pitch_counts = {}
+    for pitch in pitches:
+        pitch_counts[pitch] = pitch_counts.get(pitch, 0) + 1
+
+    if len(pitch_counts) < 2:
+        return 0
+
+    sorted_pitches = sorted(pitch_counts.items(), key=lambda x: x[1], reverse=True)
+    most_common_pitch = sorted_pitches[0][0]
+    second_most_common_pitch = sorted_pitches[1][0]
+
+    return int(abs(most_common_pitch - second_most_common_pitch))
+
+@jsymbolic
+@pitch_feature
+def interval_between_most_prevalent_pitch_classes(pitches: list[int]) -> int:
+    """Calculate the number of semitones between the most prevalent pitch classes.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    int
+        Number of semitones between the most prevalent pitch classes
+    """
+    if not pitches:
+        return 0
+
+    pcs = [pitch % 12 for pitch in pitches]
+    if len(pcs) < 2:
+        return 0
+
+    pc_counts = {}
+    for pc in pcs:
+        pc_counts[pc] = pc_counts.get(pc, 0) + 1
+
+    if len(pc_counts) < 2:
+        return 0
+
+    sorted_pcs = sorted(pc_counts.items(), key=lambda x: x[1], reverse=True)
+    most_common_pc = sorted_pcs[0][0]
+    second_most_common_pc = sorted_pcs[1][0]
+
+    return int(abs(most_common_pc - second_most_common_pc))
+
+@jsymbolic
+@pitch_feature
 def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
     """Create histogram of pitch classes arranged in circle of fifths.
 
@@ -995,6 +1280,56 @@ def pitch_class_variability_after_folding(pitches: list[int]) -> float:
         return 0.0
     return float(standard_deviation(list(histogram.keys())))
 
+@jsymbolic
+@pitch_feature
+def importance_of_bass_register(pitches: list[int]) -> float:
+    """The proportion of MIDI pitch numbers that are between 0 and 54. 
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Proportion of MIDI pitch numbers that are between 0 and 54
+    """
+    return float(sum(1 for pitch in pitches if 0 <= pitch <= 54) / len(pitches))
+
+@jsymbolic
+@pitch_feature
+def importance_of_middle_register(pitches: list[int]) -> float:
+    """The proportion of MIDI pitch numbers that are between 55 and 72. 
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Proportion of MIDI pitch numbers that are between 55 and 72
+    """
+    return float(sum(1 for pitch in pitches if 55 <= pitch <= 72) / len(pitches))
+
+@jsymbolic
+@pitch_feature
+def importance_of_high_register(pitches: list[int]) -> float:
+    """The proportion of MIDI pitch numbers that are between 73 and 127. 
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Proportion of MIDI pitch numbers that are between 73 and 127
+    """
+    return float(sum(1 for pitch in pitches if 73 <= pitch <= 127) / len(pitches))
 
 # Interval Features
 
@@ -1434,31 +1769,209 @@ def melodic_large_intervals(pitches: list[int]) -> float:
     large_intervals = sum(1 for interval in intervals if abs(interval) >= 13)
     return float(large_intervals / len(intervals) if intervals else 0.0)
 
-@jsymbolic
-@interval_feature
-def variable_melodic_intervals(pitches: list[int], interval_level: int) -> float:
+
+def variable_melodic_intervals(pitches: list[int], interval_level: int | list[int]) -> float:
     """Calculate proportion of intervals >= specified size.
 
     Parameters
     ----------
     pitches : list[int]
         List of MIDI pitch values
-    interval_level : int
+    interval_level : int | list[int]
         Minimum interval size in semitones
 
     Returns
     -------
     float
-        Proportion of intervals >= interval_level, or -1.0 if no intervals
+        Proportion of intervals == interval_level, or -1.0 if no intervals
     """
     intervals = pitch_interval(pitches)
     if not intervals:
         return -1.0
-    large_intervals = sum(
-        1 for interval in intervals if abs(interval) >= interval_level
-    )
-    return float(large_intervals / len(intervals) if intervals else 0.0)
+    if isinstance(interval_level, int):
+        target_intervals = sum(
+            1 for interval in intervals if abs(interval) == interval_level
+        )
+        return float(target_intervals / len(intervals) if intervals else 0.0)
+    else:
+        target_intervals = sum(
+            1 for interval in intervals if abs(interval) in interval_level
+        )
+        return float(target_intervals / len(intervals) if intervals else 0.0)
 
+@jsymbolic
+@interval_feature
+def melodic_thirds(pitches: list[int]) -> float:
+    """Calculate proportion of intervals that are thirds (3 or 4 semitones).
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Proportion of intervals that are thirds (3 or 4 semitones)
+    """
+    
+    return variable_melodic_intervals(pitches, [3, 4])
+
+@jsymbolic
+@interval_feature
+def melodic_perfect_fourths(pitches: list[int]) -> float:
+    """Calculate proportion of intervals that are perfect fourths (5 semitones).
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Proportion of intervals that are perfect fourths (5 semitones)
+    """
+    return variable_melodic_intervals(pitches, 5)
+
+@jsymbolic
+@interval_feature
+def melodic_tritones(pitches: list[int]) -> float:
+    """Calculate proportion of intervals that are tritones (6 semitones).
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Proportion of intervals that are tritones (6 semitones)
+    """
+    return variable_melodic_intervals(pitches, 6)
+
+@jsymbolic
+@interval_feature
+def melodic_perfect_fifths(pitches: list[int]) -> float:
+    """Calculate proportion of intervals that are perfect fifths (7 semitones).
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Proportion of intervals that are perfect fifths (7 semitones)
+    """
+    return variable_melodic_intervals(pitches, 7)
+
+@jsymbolic
+@interval_feature
+def melodic_sixths(pitches: list[int]) -> float:
+    """Calculate proportion of intervals that are sixths (8 or 9 semitones).
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Proportion of intervals that are sixths (8 or 9 semitones)
+    """
+    return variable_melodic_intervals(pitches, [8, 9])
+
+@jsymbolic
+@interval_feature
+def melodic_sevenths(pitches: list[int]) -> float:
+    """Calculate proportion of intervals that are sevenths (10 or 11 semitones).
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Proportion of intervals that are sevenths (10 or 11 semitones)
+    """
+    return variable_melodic_intervals(pitches, [10, 11])
+
+@jsymbolic
+@interval_feature
+def melodic_octaves(pitches: list[int]) -> int:
+    """Calculate proportion of intervals that are octaves (12 semitones).
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Proportion of intervals that are octaves (12 semitones)
+    """
+    return variable_melodic_intervals(pitches, 12)
+
+@jsymbolic
+@interval_feature
+def minor_major_third_ratio(pitches: list[int]) -> float:
+    """Calculate ratio of minor thirds to major thirds.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Ratio of minor thirds to major thirds
+    """
+    return variable_melodic_intervals(pitches, 3) / variable_melodic_intervals(pitches, 4)
+
+@jsymbolic
+@interval_feature
+def direction_of_melodic_motion(pitches: list[int]) -> float:
+    """Calculate the proportion of upward melodic motion.
+    
+    This matches jSymbolic's implementation which calculates the fraction
+    of melodic intervals that are ascending in pitch.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    float
+        Proportion of upward melodic motion (0.0 to 1.0), or -1.0 if no intervals
+    """
+    intervals = pitch_interval(pitches)
+    if not intervals:
+        return -1.0
+
+    ups = 0
+    downs = 0
+
+    for interval in intervals:
+        if interval > 0:
+            ups += 1
+        elif interval < 0:
+            downs += 1
+
+    if (ups + downs) == 0:
+        return 0.0
+
+    return float(ups) / float(ups + downs)
+    
 @jsymbolic
 @interval_feature
 def number_of_common_melodic_intervals(pitches: list[int]) -> int:
