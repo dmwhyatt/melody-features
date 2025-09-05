@@ -1770,7 +1770,7 @@ def melodic_large_intervals(pitches: list[int]) -> float:
     return float(large_intervals / len(intervals) if intervals else 0.0)
 
 
-def variable_melodic_intervals(pitches: list[int], interval_level: int | list[int]) -> float:
+def variable_melodic_intervals(pitches: list[int], interval_level: Union[int, list[int]]) -> float:
     """Calculate proportion of intervals >= specified size.
 
     Parameters
