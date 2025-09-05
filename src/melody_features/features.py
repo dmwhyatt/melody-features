@@ -559,7 +559,7 @@ def first_pitch(pitches: list[int]) -> int:
 
 @jsymbolic
 @pitch_feature
-def fisrt_pitch_class(pitches: list[int]) -> int:
+def first_pitch_class(pitches: list[int]) -> int:
     """Find the first pitch class in the melody.
     
     Parameters
@@ -1987,9 +1987,15 @@ def minor_major_third_ratio(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Ratio of minor thirds to major thirds
+        Ratio of minor thirds to major thirds, or 0.0 if no major thirds exist
     """
-    return variable_melodic_intervals(pitches, 3) / variable_melodic_intervals(pitches, 4)
+    minor_thirds = variable_melodic_intervals(pitches, 3)
+    major_thirds = variable_melodic_intervals(pitches, 4)
+    
+    if major_thirds == 0:
+        return 0.0
+    
+    return minor_thirds / major_thirds
 
 @jsymbolic
 @interval_feature
