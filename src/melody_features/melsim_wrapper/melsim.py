@@ -580,7 +580,7 @@ def _load_melody(file):
 
 
 def get_similarity_from_midi(
-    midi_path1: Union[str, Path],
+    midi_path1: Union[str, Path, List[Union[str, Path]]],
     midi_path2: Union[str, Path] = None,
     method: Union[str, List[str]] = "Jaccard",
     transformation: Union[str, List[str]] = "pitch",
@@ -592,6 +592,9 @@ def get_similarity_from_midi(
 
     If midi_path1 is a directory, performs pairwise comparisons between all MIDI files
     in the directory, ignoring midi_path2.
+    
+    If midi_path1 is a list of file paths, performs pairwise comparisons between all files
+    in the list, ignoring midi_path2.
 
     You can provide a single method and transformation, or a list of methods and transformations.
     If you provide a list of methods and transformations, the function will return a dictionary
@@ -599,8 +602,8 @@ def get_similarity_from_midi(
 
     Parameters
     ----------
-    midi_path1 : Union[str, Path]
-        Path to first MIDI file or directory containing MIDI files
+    midi_path1 : Union[str, Path, List[Union[str, Path]]]
+        Path to first MIDI file, directory containing MIDI files, or list of MIDI file paths
     midi_path2 : Union[str, Path], optional
         Path to second MIDI file. Ignored if midi_path1 is a directory
     method : Union[str, List[str]], default="Jaccard"
@@ -622,23 +625,37 @@ def get_similarity_from_midi(
         If comparing all files in a directory, returns dictionary mapping tuples of
         (file1, file2, method, transformation) to their similarity values
     """
+    # Initialize logger
+    logger = logging.getLogger("melody_features")
+    
     # Convert single method/transformation to lists
     methods = [method] if isinstance(method, str) else method
     transformations = (
         [transformation] if isinstance(transformation, str) else transformation
     )
 
-    midi_path1 = Path(midi_path1)
+    # Handle case where midi_path1 is a list of files
+    if isinstance(midi_path1, list):
+        midi_files = [Path(f) for f in midi_path1]
+    else:
+        midi_path1 = Path(midi_path1)
+        
+        # If midi_path1 is a directory, do pairwise comparisons
+        if midi_path1.is_dir():
+            midi_files = list(midi_path1.glob("*.mid"))
+        else:
+            # Single file case - check if we have midi_path2 for comparison
+            if midi_path2 is None:
+                raise ValueError("midi_path2 is required when midi_path1 is a single file")
+            # Single file comparison - skip to the end of function
+            midi_files = None
 
-    # If midi_path1 is a directory, do pairwise comparisons
-    if midi_path1.is_dir():
-        midi_files = list(midi_path1.glob("*.mid"))
-
+    # If we have multiple files (list or directory), do pairwise comparisons
+    if midi_files is not None:
         if not midi_files:
             raise ValueError(f"No MIDI files found in {midi_path1}")
 
         # Load all melodies in parallel with progress bar
-        logger = logging.getLogger("melody_features")
         logger.info("Loading melodies...")
         n_cores = n_cores or cpu_count()
 
@@ -650,11 +667,17 @@ def get_similarity_from_midi(
                     desc="Loading MIDI files",
                 )
             )
+            
+            # Filter out any failed melody loads and create dictionary
+            melody_data = {}
+            for result in results:
+                if result is not None:
+                    name, data = result
+                    if name is not None:
+                        melody_data[name] = data
 
-        melody_data = {name: data for name, data in results if data is not None}
-
-        if len(melody_data) < 2:
-            raise ValueError("Need at least 2 valid MIDI files for comparison")
+            if len(melody_data) < 2:
+                raise ValueError("Need at least 2 valid MIDI files for comparison")
 
         # Prepare arguments for parallel processing
         logger.info("Computing similarities...")
@@ -705,23 +728,23 @@ def get_similarity_from_midi(
             logger.info(f"Results saved to {output_file}")
 
         return similarities
+    else:
+        # For single file comparison, only use first method and transformation
+        if len(methods) > 1 or len(transformations) > 1:
+            logger.warning(
+                "Multiple methods/transformations provided for two-file pairwise comparison. Using first method and transformation."
+            )
 
-    # For single file comparison, only use first method and transformation
-    if len(methods) > 1 or len(transformations) > 1:
-        logger.warning(
-            "Multiple methods/transformations provided for two-file pairwise comparison. Using first method and transformation."
+        # Load MIDI files
+        melody1_pitches, melody1_starts, melody1_ends = load_midi_file(midi_path1)
+        melody2_pitches, melody2_starts, melody2_ends = load_midi_file(midi_path2)
+
+        # Calculate similarity
+        return _compute_similarity(
+            (
+                (melody1_pitches, melody1_starts, melody1_ends),
+                (melody2_pitches, melody2_starts, melody2_ends),
+                methods[0],
+                transformations[0],
+            )
         )
-
-    # Load MIDI files
-    melody1_pitches, melody1_starts, melody1_ends = load_midi_file(midi_path1)
-    melody2_pitches, melody2_starts, melody2_ends = load_midi_file(midi_path2)
-
-    # Calculate similarity
-    return _compute_similarity(
-        (
-            (melody1_pitches, melody1_starts, melody1_ends),
-            (melody2_pitches, melody2_starts, melody2_ends),
-            methods[0],
-            transformations[0],
-        )
-    )
