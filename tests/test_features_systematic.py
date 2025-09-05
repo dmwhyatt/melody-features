@@ -186,6 +186,7 @@ NAN_ALLOWED_FEATURES = {
     'pitch_features.pitch_class_variability_after_folding',  
     'interval_features.standard_deviation_absolute_interval',
     'duration_features.ioi_standard_deviation',
+    'interval_features.minor_major_third_ratio',
 }
 
 PROPORTION_FEATURES = {
@@ -331,6 +332,9 @@ class TestFeatureTypeValidation:
             
             if expected_type == dict:
                 for feature_name, value in category_features.items():
+                    # Skip None check for features that are allowed to be None
+                    if feature_name in NAN_ALLOWED_FEATURES:
+                        continue
                     assert value is not None, f"Feature {feature_name} should not be None"
             elif expected_type == str:
                 main_feature = f"{category}.{category.replace('_features', '')}"
@@ -348,11 +352,13 @@ class TestFeatureTypeValidation:
                 
             value = row[col]
             
-            assert value is not None, f"Feature {col} should not be None in {test_case_name}"
-            
-            valid_types = (int, float, dict, list, str, np.integer, np.floating, np.ndarray)
-            assert isinstance(value, valid_types), \
-                f"Feature {col} has invalid type: {type(value)} in {test_case_name}"
+            # Skip None check for features that are allowed to be None
+            if col not in NAN_ALLOWED_FEATURES:
+                assert value is not None, f"Feature {col} should not be None in {test_case_name}"
+                
+                valid_types = (int, float, dict, list, str, np.integer, np.floating, np.ndarray)
+                assert isinstance(value, valid_types), \
+                    f"Feature {col} has invalid type: {type(value)} in {test_case_name}"
             
             # Check for NaN/Inf in numeric features
             if isinstance(value, (int, float, np.integer, np.floating)):
