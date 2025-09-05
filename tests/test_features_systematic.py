@@ -184,6 +184,8 @@ NAN_ALLOWED_FEATURES = {
     'pitch_features.pitch_class_kurtosis_after_folding',  
     'pitch_features.pitch_class_skewness_after_folding',  
     'pitch_features.pitch_class_variability_after_folding',  
+    'interval_features.standard_deviation_absolute_interval',
+    'duration_features.ioi_standard_deviation',
 }
 
 PROPORTION_FEATURES = {

@@ -50,11 +50,17 @@ class Melody:
         for note in self._midi_sequence:
             # Find pitch value between 'pitch=' and the next comma or closing parenthesis
             pitch_start = note.find("pitch=") + 6
+            # Look for comma after pitch, but not the comma that ends the note
             pitch_end = note.find(",", pitch_start)
             if pitch_end == -1:  # Handle the last note which ends with ')'
                 pitch_end = note.find(")", pitch_start)
+            elif note[pitch_end + 1:pitch_end + 2] == ")":  # If comma is followed by ), it's the end of note
+                pitch_end = note.find(")", pitch_start)
             if pitch_end != -1:  # Only process if we found a valid pitch
-                pitch = int(note[pitch_start:pitch_end])
+                pitch_str = note[pitch_start:pitch_end]
+                # Clean up any trailing characters
+                pitch_str = pitch_str.rstrip(",)")
+                pitch = int(pitch_str)
                 pitches.append(pitch)
         return pitches
 
