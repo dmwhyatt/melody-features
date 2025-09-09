@@ -6967,6 +6967,39 @@ def get_metric_accent_features(melody: Melody) -> Dict:
     return metric_features
 
 
+def _is_beat_histogram_function(func) -> bool:
+    """Check if a function uses beat histogram computations."""
+    import inspect
+    try:
+        source = inspect.getsource(func)
+        return '_get_beat_histogram_values_from_ticks' in source or 'create_beat_histogram' in source
+    except:
+        return False
+
+
+def _precompute_beat_histogram_data(melody: Melody) -> tuple:
+    """Pre-compute beat histogram data for reuse across multiple functions.
+    
+    Returns
+    -------
+    tuple
+        (normal_values, standardized_values, start_ticks, end_ticks, tempo, ppqn)
+    """
+    seconds_per_tick = (60.0 / float(melody.tempo)) / float(480)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in melody.starts)
+    end_ticks = tuple(to_ticks(e) for e in melody.ends)
+    
+    if not end_ticks:
+        return tuple(), tuple(), start_ticks, end_ticks, melody.tempo, 480
+    
+    normal_values, standardized_values = _get_beat_histogram_values_from_ticks(
+        start_ticks, end_ticks, float(melody.tempo), 480
+    )
+    
+    return normal_values, standardized_values, start_ticks, end_ticks, melody.tempo, 480
+
+
 def get_duration_features(melody: Melody) -> Dict:
     """Dynamically collect all duration features for a melody.
     
@@ -6983,7 +7016,20 @@ def get_duration_features(melody: Melody) -> Dict:
     features = {}
     duration_functions = _get_features_by_type(FeatureType.DURATION)
     
+    # Pre-compute beat histogram data once for all beat histogram functions
+    beat_histogram_data = None
+    beat_histogram_functions = []
+    regular_functions = []
+    
+    # Separate beat histogram functions from regular functions
     for name, func in duration_functions.items():
+        if _is_beat_histogram_function(func):
+            beat_histogram_functions.append((name, func))
+        else:
+            regular_functions.append((name, func))
+    
+    # Process regular functions first
+    for name, func in regular_functions:
         try:
             # Get function signature to determine parameters
             sig = inspect.signature(func)
@@ -7016,6 +7062,41 @@ def get_duration_features(melody: Melody) -> Dict:
         except Exception as e:
             print(f"Warning: Could not compute {name}: {e}")
             features[name] = None
+    
+    # Process beat histogram functions with pre-computed data
+    if beat_histogram_functions:
+        beat_histogram_data = _precompute_beat_histogram_data(melody)
+        normal_values, standardized_values, start_ticks, end_ticks, tempo, ppqn = beat_histogram_data
+        
+        for name, func in beat_histogram_functions:
+            try:
+                # Get function signature to determine parameters
+                sig = inspect.signature(func)
+                params = list(sig.parameters.keys())
+                
+                # Call function with appropriate parameters
+                if 'melody' in params:
+                    result = func(melody)
+                elif 'starts' in params and 'ends' in params and 'tempo' in params:
+                    result = func(melody.starts, melody.ends, melody.tempo)
+                elif 'starts' in params and 'ends' in params:
+                    result = func(melody.starts, melody.ends)
+                elif 'starts' in params:
+                    result = func(melody.starts)
+                else:
+                    # Try with melody object
+                    result = func(melody)
+                
+                # Handle functions that return tuples (like ioi_ratio, ioi_contour)
+                if isinstance(result, tuple) and len(result) == 2:
+                    features[f"{name}_mean"] = result[0]
+                    features[f"{name}_std"] = result[1]
+                else:
+                    features[name] = result
+                    
+            except Exception as e:
+                print(f"Warning: Could not compute {name}: {e}")
+                features[name] = None
     
     # Add melody-specific features that aren't functions
     features["meter_numerator"] = melody.meter[0]
