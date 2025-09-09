@@ -11,3 +11,7 @@ notebooks/.ipynb_checkpoints
 notebooks/output*
 temp.py
 essen_corpus_features.csv
+test_corpus_corpus_stats.json
+.coverage*
+coverage.xml
+htmlcov/

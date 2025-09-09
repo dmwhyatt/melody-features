@@ -94,3 +94,47 @@ def mode(values) -> float:
     if values.size == 0:
         return 0.0
     return float(scipy.stats.mode(values, keepdims=False)[0])
+
+
+def time_to_ticks(time_seconds: float, tempo: float = 120.0, ppqn: int = 480) -> int:
+    """Convert time in seconds to MIDI ticks.
+    
+    This is the standard tick conversion used throughout the codebase for
+    tempo-aware timing calculations.
+    
+    Parameters
+    ----------
+    time_seconds : float
+        Time in seconds to convert
+    tempo : float, default=120.0
+        Tempo in beats per minute
+    ppqn : int, default=480
+        Pulses per quarter note (MIDI resolution)
+        
+    Returns
+    -------
+    int
+        Time converted to MIDI ticks
+    """
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    return int(round(float(time_seconds) / seconds_per_tick))
+
+
+def times_to_ticks(times: list[float], tempo: float = 120.0, ppqn: int = 480) -> list[int]:
+    """Convert a list of times in seconds to MIDI ticks.
+    
+    Parameters
+    ----------
+    times : list[float]
+        List of times in seconds to convert
+    tempo : float, default=120.0
+        Tempo in beats per minute
+    ppqn : int, default=480
+        Pulses per quarter note (MIDI resolution)
+        
+    Returns
+    -------
+    list[int]
+        List of times converted to MIDI ticks
+    """
+    return [time_to_ticks(t, tempo, ppqn) for t in times]

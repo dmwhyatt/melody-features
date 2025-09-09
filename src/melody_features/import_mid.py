@@ -64,12 +64,14 @@ def import_midi(midi_file: str) -> dict:
             ]
         )
 
-        # Extract tempo information
         tempo = extract_tempo_from_midi(midi_data)
         tempo_changes = extract_tempo_changes_from_midi(midi_data)
         
-        # Extract time signature information (with meter estimation fallback)
         time_sig_info = extract_time_signatures_from_midi(midi_data, starts, ends, pitches)
+
+        import mido
+        mid = mido.MidiFile(midi_file)
+        total_duration = mid.length
 
         return {
             "ID": os.path.basename(midi_file),
@@ -80,6 +82,7 @@ def import_midi(midi_file: str) -> dict:
             "tempo": tempo,
             "tempo_changes": tempo_changes,
             "time_signature_info": time_sig_info,
+            "total_duration": total_duration,
         }
 
     except (KeySignatureError, ValueError, IOError) as e:

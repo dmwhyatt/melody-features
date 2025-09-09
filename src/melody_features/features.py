@@ -6,8 +6,6 @@ Features are the product of an input list and at least one algorithm.
 __author__ = "David Whyatt"
 
 import warnings
-
-# Suppress warnings from external libraries before any other imports
 from importlib import resources
 
 from .feature_decorators import (
@@ -45,6 +43,8 @@ import mido
 import numpy as np
 import pandas as pd
 import scipy
+from functools import lru_cache
+import time
 from natsort import natsorted
 from tqdm import tqdm
 
@@ -57,7 +57,7 @@ from melody_features.algorithms import (
     longest_conjunct_scalar_passage,
     longest_monotonic_conjunct_scalar_passage,
     melodic_embellishment_proportion,
-    nine_percent_significant_values,
+    n_percent_significant_values,
     proportion_conjunct_scalar,
     proportion_scalar,
     rank_values,
@@ -86,6 +86,15 @@ from melody_features.narmour import (
 from melody_features.ngram_counter import NGramCounter
 from melody_features.polynomial_contour import PolynomialContour
 from melody_features.representations import Melody
+from melody_features.feature_histogram import (
+    PitchHistogram,
+    PitchClassHistogram,
+    DurationHistogram,
+    RhythmicValueHistogram,
+    create_rhythmic_value_histogram,
+    create_beat_histogram,
+    create_melodic_interval_histogram,
+)
 from melody_features.stats import (
     mode,
     range_func,
@@ -297,11 +306,9 @@ class IDyOMConfig:
 
     def __post_init__(self):
         """Validate the configuration after initialization."""
-        # Validate viewpoints
         _validate_viewpoints(self.target_viewpoints, "target_viewpoints")
         _validate_viewpoints(self.source_viewpoints, "source_viewpoints")
 
-        # Validate ppm_order
         if not isinstance(self.ppm_order, int):
             raise ValueError(
                 f"ppm_order must be an integer, got {type(self.ppm_order)}"
@@ -309,14 +316,12 @@ class IDyOMConfig:
         if self.ppm_order < 0:
             raise ValueError(f"ppm_order must be non-negative, got {self.ppm_order}")
 
-        # Validate models
         valid_models = {":stm", ":ltm", ":both"}
         if not isinstance(self.models, str):
             raise ValueError(f"models must be a string, got {type(self.models)}")
         if self.models not in valid_models:
             raise ValueError(f"models must be one of {valid_models}, got {self.models}")
 
-        # Validate corpus path if provided
         if self.corpus is not None:
             if not isinstance(self.corpus, (str, os.PathLike)):
                 raise ValueError(
@@ -346,7 +351,6 @@ class FantasticConfig:
 
     def __post_init__(self):
         """Validate the configuration after initialization."""
-        # Validate max_ngram_order
         if not isinstance(self.max_ngram_order, int):
             raise ValueError(
                 f"max_ngram_order must be an integer, got {type(self.max_ngram_order)}"
@@ -356,7 +360,6 @@ class FantasticConfig:
                 f"max_ngram_order must be at least 1, got {self.max_ngram_order}"
             )
 
-        # Validate phrase_gap
         if not isinstance(self.phrase_gap, (int, float)):
             raise ValueError(
                 f"phrase_gap must be a number, got {type(self.phrase_gap)}"
@@ -364,7 +367,6 @@ class FantasticConfig:
         if self.phrase_gap <= 0:
             raise ValueError(f"phrase_gap must be positive, got {self.phrase_gap}")
 
-        # Validate corpus path if provided
         if self.corpus is not None:
             if not isinstance(self.corpus, (str, os.PathLike)):
                 raise ValueError(
@@ -394,7 +396,6 @@ class Config:
 
     def __post_init__(self):
         """Validate the configuration after initialization."""
-        # Validate corpus path if provided
         if self.corpus is not None:
             if not isinstance(self.corpus, (str, os.PathLike)):
                 raise ValueError(
@@ -403,7 +404,6 @@ class Config:
             if not Path(self.corpus).exists():
                 raise ValueError(f"corpus path does not exist: {self.corpus}")
 
-        # Validate idyom dictionary
         if not isinstance(self.idyom, dict):
             raise ValueError(f"idyom must be a dictionary, got {type(self.idyom)}")
         if not self.idyom:
@@ -419,14 +419,11 @@ class Config:
                     f"idyom dictionary values must be IDyOMConfig objects, got {type(config)}"
                 )
 
-        # Validate fantastic config
         if not isinstance(self.fantastic, FantasticConfig):
             raise ValueError(
                 f"fantastic must be a FantasticConfig object, got {type(self.fantastic)}"
             )
 
-
-# Pitch Features
 @fantastic
 @jsymbolic
 @pitch_feature
@@ -462,7 +459,9 @@ def pitch_standard_deviation(pitches: list[int]) -> float:
     float
         Standard deviation of pitches
     """
-    return float(standard_deviation(pitches))
+    if not pitches or len(pitches) < 2:
+        return 0.0
+    return float(np.std(pitches, ddof=1))
 
 # Alias
 pitch_variability = pitch_standard_deviation
@@ -482,7 +481,38 @@ def pitch_class_variability(pitches: list[int]) -> float:
     float
         Standard deviation of pitch class values
     """
-    return float(standard_deviation([pitch % 12 for pitch in pitches]))
+    if not pitches or len(pitches) < 2:
+        return 0.0
+    pcs = [int(p % 12) for p in pitches]
+    return float(np.std(pcs, ddof=1))
+
+@jsymbolic
+@pitch_feature
+def pitch_class_variability_after_folding(pitches: list[int]) -> float:
+    """Calculate standard deviation of pitch classes after folding by perfect fifths.
+    
+    Folds pitch classes by perfect fifths (multiply by 7 mod 12) and calculates their standard deviation.
+    Provides a measure of how close the pitch classes are as a whole from the mean pitch class from a 
+    dominant-tonic perspective.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Standard deviation of folded pitch class values
+    """
+    if not pitches:
+        return 0.0
+    
+    if not pitches or len(pitches) < 2:
+        return 0.0
+    folded_pcs = [int((7 * (p % 12)) % 12) for p in pitches]
+    return float(np.std(folded_pcs, ddof=1))
+
 
 @fantastic
 @pitch_feature
@@ -527,10 +557,9 @@ def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
     # Create weighted list by repeating each pitch class according to its duration
     weighted_pitch_classes = []
     for pitch, duration in zip(pitches, durations):
-        # Convert pitch to pitch class (0-11)
         pitch_class = pitch % 12
         # Convert duration to integer number of repetitions (e.g. duration 2.5 -> 25 repetitions)
-        repetitions = max(1, int(duration * 10))  # Ensure at least 1 repetition
+        repetitions = max(1, int(duration * 10))  # Ensures at least 1 repetition
         weighted_pitch_classes.extend([pitch_class] * repetitions)
 
     if not weighted_pitch_classes:
@@ -632,17 +661,19 @@ def basic_pitch_histogram(pitches: list[int]) -> dict:
         return {}
 
     # Use number of unique pitches as number of bins, with minimum of 1
+    # we return this instead of the full PitchHistogram object to reduce simplify the output
+    # as the PitchHistogram object would return 128 bins (0-127) regardless of how any different pitches are present
     num_midi_notes = max(1, len(set(pitches)))
     return histogram_bins(pitches, num_midi_notes)
 
 @jsymbolic
 @pitch_feature
-def melodic_pitch_variety(pitches: list[int], starts: list[float]) -> float:
+def melodic_pitch_variety(pitches: list[int], starts: list[float], tempo: float = 120.0, ppqn: int = 480) -> float:
     """Calculate average number of notes before a pitch is repeated.
     
-    This matches jSymbolic's implementation which counts ticks (not individual notes)
-    and treats simultaneous notes as one note for counting purposes. We should never
-    have any simultaneous notes in our melodies - the monophonic check should catch this.
+    This matches jSymbolic's implementation which counts ticks instead of individual notes for counting purposes.
+    The original jSymbolic implementation uses a tick-based approach where each tick represents a time unit,
+    and we count how many different pitches occur between repetitions.
 
     Parameters
     ----------
@@ -650,6 +681,10 @@ def melodic_pitch_variety(pitches: list[int], starts: list[float]) -> float:
         List of MIDI pitch values
     starts : list[float]
         List of note start times
+    tempo : float, default=120.0
+        Tempo in beats per minute
+    ppqn : int, default=480
+        Pulses per quarter note (MIDI resolution)
 
     Returns
     -------
@@ -659,23 +694,29 @@ def melodic_pitch_variety(pitches: list[int], starts: list[float]) -> float:
     if not pitches or len(pitches) < 2:
         return 0.0
 
+    from .stats import time_to_ticks
+    
+    note_sequence = sorted(zip(starts, pitches))
+    starts_ordered, pitches_ordered = zip(*note_sequence)
+    
+    # Convert to ticks
     tick_pitch_map = {}
-    for i, (start, pitch) in enumerate(zip(starts, pitches)):
-        tick = int(round(start * 10000))
+    for start, pitch in zip(starts_ordered, pitches_ordered):
+        tick = time_to_ticks(start, tempo, ppqn)
         if tick not in tick_pitch_map:
             tick_pitch_map[tick] = []
-        tick_pitch_map[tick].append((i, pitch))
+        tick_pitch_map[tick].append(pitch)
 
     sorted_ticks = sorted(tick_pitch_map.keys())
-
-    number_of_repeated_notes_found = 0.0
-    summed_notes_before_repetition = 0.0
+    
+    repeated_notes_count = 0
+    total_notes_before_repetition = 0
     max_notes_that_can_go_by = 16
 
     for tick_idx, tick in enumerate(sorted_ticks):
         notes_at_tick = tick_pitch_map[tick]
 
-        for note_idx, pitch in notes_at_tick:
+        for pitch in notes_at_tick:
             found_repeated_pitch = False
             notes_gone_by_with_different_pitch = 0
             last_tick_examined = tick
@@ -692,27 +733,27 @@ def melodic_pitch_variety(pitches: list[int], starts: list[float]) -> float:
 
                 future_notes = tick_pitch_map[future_tick]
 
-                for future_note_idx, future_pitch in future_notes:
+                for future_pitch in future_notes:
                     if future_pitch == pitch and not found_repeated_pitch and notes_gone_by_with_different_pitch <= max_notes_that_can_go_by:
                         found_repeated_pitch = True
-                        number_of_repeated_notes_found += 1
-                        summed_notes_before_repetition += notes_gone_by_with_different_pitch
+                        repeated_notes_count += 1
+                        total_notes_before_repetition += notes_gone_by_with_different_pitch
                         break
 
-    if number_of_repeated_notes_found == 0:
+    if repeated_notes_count == 0:
         return 0.0
-    
-    return float(summed_notes_before_repetition / number_of_repeated_notes_found)
+
+    return float(total_notes_before_repetition / repeated_notes_count)
 
 
 def _consecutive_fifths(pitch_classes: list[int]) -> list[int]:
     """Find longest sequence of pitch classes separated by perfect fifths.
-    
+
     Parameters
     ----------
     pitch_classes : list[int]
         List of pitch classes (0-11)
-        
+
     Returns
     -------
     list[int]
@@ -720,27 +761,24 @@ def _consecutive_fifths(pitch_classes: list[int]) -> list[int]:
     """
     if not pitch_classes:
         return []
-    
-    # Circle of fifths order: C, G, D, A, E, B, F#, C#, G#, D#, A#, F
+
     circle_of_fifths_order = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5]
     
-    longest_sequence = [pitch_classes[0]]  # Start with first pitch class
+    longest_sequence = [pitch_classes[0]]
     current_sequence = [pitch_classes[0]]
     
     for i in range(1, len(pitch_classes)):
         pc = pitch_classes[i]
         last_pc = current_sequence[-1]
         
-        # Check if current PC is a fifth away from the last PC
+        # Check if current PC is a fifth away from the last PC with wraparound
         if (circle_of_fifths_order.index(pc) - circle_of_fifths_order.index(last_pc)) % 12 == 1:
             current_sequence.append(pc)
         else:
-            # Sequence broken, check if it's the longest so far
             if len(current_sequence) > len(longest_sequence):
                 longest_sequence = current_sequence[:]
-            current_sequence = [pc]  # Start new sequence
-    
-    # Check final sequence
+            current_sequence = [pc]
+
     if len(current_sequence) > len(longest_sequence):
         longest_sequence = current_sequence[:]
     
@@ -784,7 +822,6 @@ def dominant_spread(pitches: list[int]) -> int:
         if pc in significant_pcs:
             test_sequence.append(pc)
 
-    # If we have significant pitch classes, repeat the sequence to catch wrap-around
     if test_sequence:
         test_sequence = test_sequence * 2
 
@@ -894,7 +931,7 @@ def number_of_common_pitches_classes(pitches: list[int]) -> int:
         Number of significant pitch classes
     """
     pcs = [pitch % 12 for pitch in pitches]
-    significant_pcs = nine_percent_significant_values(pcs, threshold=0.2)
+    significant_pcs = n_percent_significant_values(pcs, threshold=0.2)
     return int(len(significant_pcs))
 
 @jsymbolic
@@ -930,7 +967,7 @@ def number_of_common_pitches(pitches: list[int]) -> int:
         Number of unique pitches that appear in at least 9% of notes
     """
 
-    significant_pitches = nine_percent_significant_values(pitches)
+    significant_pitches = n_percent_significant_values(pitches, threshold=0.09)
     return int(len(set(significant_pitches)))
 
 @midi_toolbox
@@ -939,9 +976,10 @@ def tessitura(pitches: list[int]) -> list[float]:
     """Calculate melodic tessitura for each note based on von Hippel (2000).
     Implementation based on MIDI toolbox "tessitura.m"
     
-    Tessitura is based on deviation from median pitch height. The median range 
+    Tessitura is based on standard deviation from median pitch height. The median range 
     of the melody tends to be favoured and thus more expected. Tessitura predicts 
-    whether listeners expect tones close to median pitch height.
+    whether listeners expect tones close to median pitch height. Higher tessitura values
+    correspond to melodies that have a wider range of pitches.
     
     Parameters
     ----------
@@ -959,23 +997,18 @@ def tessitura(pitches: list[int]) -> list[float]:
     tessitura_values = [0.0]
     
     for i in range(2, len(pitches) + 1):
-        # Calculate median of previous pitches (notes 1 to i-1)
         median_prev = np.median(pitches[:i-1])
         
-        # Calculate standard deviation of previous pitches
         if i == 2:
-            # For second note, std of single value is 0, so tessitura is 0
             tessitura_values.append(0.0)
             continue
             
         std_prev = np.std(pitches[:i-1], ddof=1)
         
-        # Avoid division by zero
         if std_prev == 0:
             tessitura_values.append(0.0)
         else:
-            # Calculate tessitura: (current_pitch - median) / std_deviation
-            current_pitch = pitches[i-1]  # Current note
+            current_pitch = pitches[i-1]
             tessitura_val = (current_pitch - median_prev) / std_prev
             tessitura_values.append(abs(tessitura_val))
     
@@ -1095,7 +1128,7 @@ def relative_prevalence_of_top_pitches(pitches: list[int]) -> float:
 @pitch_feature
 def relative_prevalence_of_top_pitch_classes(pitches: list[int]) -> float:
     """Calculate ratio of the frequency of the second most common pitch class to the frequency of the most common pitch class.
-    
+
     Parameters
     ----------
     pitches : list[int]
@@ -1144,18 +1177,19 @@ def interval_between_most_prevalent_pitches(pitches: list[int]) -> int:
     if not pitches:
         return 0
 
-    pitch_counts = {}
-    for pitch in pitches:
-        pitch_counts[pitch] = pitch_counts.get(pitch, 0) + 1
-
-    if len(pitch_counts) < 2:
+    pitch_hist = PitchHistogram(pitches)
+    histogram = pitch_hist.histogram
+    if not histogram or sum(1 for v in histogram.values() if v > 0) < 2:
         return 0
 
-    sorted_pitches = sorted(pitch_counts.items(), key=lambda x: x[1], reverse=True)
-    most_common_pitch = sorted_pitches[0][0]
-    second_most_common_pitch = sorted_pitches[1][0]
+    max_index = max(histogram, key=lambda k: histogram[k])
+    tmp = dict(histogram)
+    tmp.pop(max_index, None)
+    if not tmp:
+        return 0
+    second_max_index = max(tmp, key=lambda k: tmp[k])
 
-    return int(abs(most_common_pitch - second_most_common_pitch))
+    return int(abs(int(max_index) - int(second_max_index)))
 
 @jsymbolic
 @pitch_feature
@@ -1175,22 +1209,20 @@ def interval_between_most_prevalent_pitch_classes(pitches: list[int]) -> int:
     if not pitches:
         return 0
 
-    pcs = [pitch % 12 for pitch in pitches]
-    if len(pcs) < 2:
+    pch = PitchClassHistogram(pitches)
+    histogram = pch.histogram
+    if not histogram or sum(1 for v in histogram.values() if v > 0) < 2:
         return 0
 
-    pc_counts = {}
-    for pc in pcs:
-        pc_counts[pc] = pc_counts.get(pc, 0) + 1
-
-    if len(pc_counts) < 2:
+    max_index = max(histogram, key=lambda k: histogram[k])
+    tmp = dict(histogram)
+    tmp.pop(max_index, None)
+    if not tmp:
         return 0
+    second_max_index = max(tmp, key=lambda k: tmp[k])
 
-    sorted_pcs = sorted(pc_counts.items(), key=lambda x: x[1], reverse=True)
-    most_common_pc = sorted_pcs[0][0]
-    second_most_common_pc = sorted_pcs[1][0]
-
-    return int(abs(most_common_pc - second_most_common_pc))
+    diff = abs(int(max_index) - int(second_max_index))
+    return int(diff)
 
 @jsymbolic
 @pitch_feature
@@ -1207,9 +1239,8 @@ def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
     dict
         Dictionary mapping pitch classes to counts, arranged by circle of fifths
     """
-    # Get pitch classes and count occurrences
+    # again, we don't use the histogram object for this one to simplify the output
     pcs = [pitch % 12 for pitch in pitches]
-    # Count occurrences of each pitch class
     unique = []
     counts = []
     for pc in set(pcs):
@@ -1217,10 +1248,11 @@ def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
         counts.append(pcs.count(pc))
     return circle_of_fifths(unique, counts)
 
+
 @jsymbolic
 @pitch_feature
-def pitch_class_kurtosis_after_folding(pitches: list[int]) -> float:
-    """Calculate kurtosis of folded fifths pitch class histogram.
+def pitch_class_skewness(pitches: list[int]) -> float:
+    """Calculate skewness of pitch class histogram.
 
     Parameters
     ----------
@@ -1230,13 +1262,34 @@ def pitch_class_kurtosis_after_folding(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Kurtosis of folded fifths histogram values, or 0 for empty input
+        Skewness of pitch class histogram values, or 0 for empty input
     """
-    pitches = [pitch % 12 for pitch in pitches]
-    histogram = folded_fifths_pitch_class_histogram(pitches)
-    if not histogram:
+    if not pitches:
         return 0.0
-    return float(kurtosis(list(histogram.keys())))
+    
+    histogram = PitchClassHistogram(pitches, folded=False)
+    return histogram.skewness
+
+@jsymbolic
+@pitch_feature
+def pitch_class_kurtosis(pitches: list[int]) -> float:
+    """Calculate kurtosis of pitch class histogram.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Kurtosis of pitch class histogram values, or 0 for empty input
+    """
+    if not pitches:
+        return 0.0
+    
+    histogram = PitchClassHistogram(pitches, folded=False)
+    return histogram.kurtosis
 
 @jsymbolic
 @pitch_feature
@@ -1253,16 +1306,16 @@ def pitch_class_skewness_after_folding(pitches: list[int]) -> float:
     float
         Skewness of folded fifths histogram values, or 0 for empty input
     """
-    pitches = [pitch % 12 for pitch in pitches]
-    histogram = folded_fifths_pitch_class_histogram(pitches)
-    if not histogram:
+    if not pitches:
         return 0.0
-    return float(skew(list(histogram.keys())))
+    
+    histogram = PitchClassHistogram(pitches, folded=True)
+    return histogram.skewness
 
 @jsymbolic
 @pitch_feature
-def pitch_class_variability_after_folding(pitches: list[int]) -> float:
-    """Calculate standard deviation of folded fifths pitch class histogram.
+def pitch_class_kurtosis_after_folding(pitches: list[int]) -> float:
+    """Calculate kurtosis of folded fifths pitch class histogram.
 
     Parameters
     ----------
@@ -1272,13 +1325,97 @@ def pitch_class_variability_after_folding(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Standard deviation of folded fifths histogram values, or 0 for empty input
+        Kurtosis of folded fifths histogram values, or 0 for empty input
     """
-    pitches = [pitch % 12 for pitch in pitches]
-    histogram = folded_fifths_pitch_class_histogram(pitches)
-    if not histogram:
+    if not pitches:
         return 0.0
-    return float(standard_deviation(list(histogram.keys())))
+    
+    histogram = PitchClassHistogram(pitches, folded=True)
+    return histogram.kurtosis
+
+@jsymbolic
+@pitch_feature
+def strong_tonal_centres(pitches: list[int]) -> float:
+    """Calculate number of isolated peaks in the fifths pitch histogram that each account for at least 9% of notes.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Number of strong tonal centres (peaks >= 9% in fifths histogram)
+    """
+    if not pitches:
+        return 0.0
+
+    fifths_histogram = PitchClassHistogram(pitches, folded=True)
+    fifths_hist = fifths_histogram.histogram
+
+    total_notes = sum(fifths_hist.values())
+    if total_notes == 0:
+        return 0.0
+
+    normalized_fifths = [fifths_hist[i] / total_notes for i in range(12)]
+
+    peaks = 0
+    for bin in range(12):
+        if normalized_fifths[bin] >= 0.09:
+            left = (bin - 1) % 12
+            right = (bin + 1) % 12
+
+            if (normalized_fifths[bin] > normalized_fifths[left] and 
+                normalized_fifths[bin] > normalized_fifths[right]):
+                peaks += 1
+
+    return float(peaks)
+
+
+@jsymbolic
+@pitch_feature
+def pitch_skewness(pitches: list[int]) -> float:
+    """Calculate skewness of the MIDI pitches using Pearson's median skewness coefficient.
+
+    This matches jSymbolic's PitchSkewnessFeature implementation which calculates
+    the median skewness of the raw pitch values.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Median skewness of pitch values, or 0 for empty input or when std dev is 0
+    """
+    if not pitches:
+        return 0.0
+    
+    histogram = PitchHistogram(pitches)
+    return histogram.skewness
+
+@jsymbolic
+@pitch_feature
+def pitch_kurtosis(pitches: list[int]) -> float:
+    """Calculate kurtosis of regular pitch histogram.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Kurtosis of regular pitch histogram values, or 0 for empty input
+    """
+    if not pitches:
+        return 0.0
+    histogram = PitchHistogram(pitches)
+    return histogram.kurtosis
 
 @jsymbolic
 @pitch_feature
@@ -1331,7 +1468,6 @@ def importance_of_high_register(pitches: list[int]) -> float:
     """
     return float(sum(1 for pitch in pitches if 73 <= pitch <= 127) / len(pitches))
 
-# Interval Features
 
 @simile
 @interval_feature
@@ -1470,9 +1606,7 @@ def _get_durations(starts: list[float], ends: list[float], tempo: float = 120.0)
     if not starts or not ends or len(starts) != len(ends):
         return []
     try:
-        # Calculate durations in seconds, then convert to quarter notes
         durations_seconds = [float(end - start) for start, end in zip(starts, ends)]
-        # Convert seconds to quarter notes: seconds * (tempo/60) = quarter notes
         durations_quarter_notes = [duration * (tempo / 60.0) for duration in durations_seconds]
         return durations_quarter_notes
     except (TypeError, ValueError):
@@ -1482,7 +1616,7 @@ def _get_durations(starts: list[float], ends: list[float], tempo: float = 120.0)
 @midi_toolbox
 @interval_feature
 def ivdist1(pitches: list[int], starts: list[float], ends: list[float], tempo: float = 120.0) -> dict:
-    """Calculate duration-weighted distribution of intervals.
+    """Calculate distribution of intervals, weighted by their durations.
 
     Parameters
     ----------
@@ -1511,7 +1645,7 @@ def ivdist1(pitches: list[int], starts: list[float], ends: list[float], tempo: f
 
     weighted_intervals = []
     for interval, duration in zip(intervals, durations[:-1]):
-        repetitions = max(1, int(duration * 10))  # Ensure at least 1 repetition
+        repetitions = max(1, int(duration * 10))
         weighted_intervals.extend([interval] * repetitions)
 
     if not weighted_intervals:
@@ -1719,7 +1853,7 @@ def average_interval_span_by_melodic_arcs(pitches: list[int]) -> float:
     interval_so_far = 0
 
     for interval in intervals:
-        if direction == -1:  # Arc is currently descending
+        if direction == -1:
             if interval < 0:
                 interval_so_far += abs(interval)
             elif interval > 0:
@@ -1728,7 +1862,7 @@ def average_interval_span_by_melodic_arcs(pitches: list[int]) -> float:
                 interval_so_far = abs(interval)
                 direction = 1
 
-        elif direction == 1:  # Arc is currently ascending
+        elif direction == 1:
             if interval > 0:
                 interval_so_far += abs(interval)
             elif interval < 0:
@@ -1737,7 +1871,7 @@ def average_interval_span_by_melodic_arcs(pitches: list[int]) -> float:
                 interval_so_far = abs(interval)
                 direction = -1
 
-        elif direction == 0:  # Arc is currently stationary
+        elif direction == 0:
             if interval > 0:
                 direction = 1
                 interval_so_far += abs(interval)
@@ -1756,6 +1890,9 @@ def average_interval_span_by_melodic_arcs(pitches: list[int]) -> float:
 @interval_feature
 def distance_between_most_prevalent_melodic_intervals(pitches: list[int]) -> float:
     """Calculate absolute difference between two most common interval sizes.
+    
+    This implementation follows jSymbolic's approach using the melodic interval histogram
+    to find the two most prevalent intervals and calculate their absolute difference.
 
     Parameters
     ----------
@@ -1771,18 +1908,29 @@ def distance_between_most_prevalent_melodic_intervals(pitches: list[int]) -> flo
         return 0.0
 
     intervals = pitch_interval(pitches)
-
-    interval_counts = {}
-    for interval in intervals:
-        interval_counts[interval] = interval_counts.get(interval, 0) + 1
-
-    if len(interval_counts) < 2:
+    
+    interval_hist = create_melodic_interval_histogram(intervals, use_absolute=True)
+    
+    histogram = interval_hist.histogram
+    
+    max_value = 0.0
+    max_index = 0
+    for interval, count in histogram.items():
+        if count > max_value:
+            max_value = count
+            max_index = interval
+    
+    second_max_value = 0.0
+    second_max_index = 0
+    for interval, count in histogram.items():
+        if count > second_max_value and interval != max_index:
+            second_max_value = count
+            second_max_index = interval
+    
+    if second_max_value == 0.0:
         return 0.0
-
-    sorted_intervals = sorted(interval_counts.items(), key=lambda x: x[1], reverse=True)
-    most_common = sorted_intervals[0][0]
-    second_most_common = sorted_intervals[1][0]
-    return float(abs(most_common - second_most_common))
+    
+    return float(abs(max_index - second_max_index))
 
 @jsymbolic
 @interval_feature
@@ -1991,16 +2139,16 @@ def minor_major_third_ratio(pitches: list[int]) -> float:
     """
     minor_thirds = variable_melodic_intervals(pitches, 3)
     major_thirds = variable_melodic_intervals(pitches, 4)
-    
+
     if major_thirds == 0:
         return 0.0
-    
+
     return minor_thirds / major_thirds
 
 @jsymbolic
 @interval_feature
 def direction_of_melodic_motion(pitches: list[int]) -> float:
-    """Calculate the proportion of upward melodic motion.
+    """Calculate the proportion of upward melodic motions.
     
     This matches jSymbolic's implementation which calculates the fraction
     of melodic intervals that are ascending in pitch.
@@ -2053,14 +2201,14 @@ def number_of_common_melodic_intervals(pitches: list[int]) -> int:
 
     intervals = pitch_interval(pitches)
     absolute_intervals = [abs(iv) for iv in intervals]
-    significant_intervals = nine_percent_significant_values(absolute_intervals)
+    significant_intervals = n_percent_significant_values(absolute_intervals, threshold=0.09)
 
     return int(len(significant_intervals))
 
 @jsymbolic
 @interval_feature
 def prevalence_of_most_common_melodic_interval(pitches: list[int]) -> float:
-    """Calculate proportion of most common interval.
+    """Calculate proportion of intervals that are the most common interval.
 
     Parameters
     ----------
@@ -2070,7 +2218,7 @@ def prevalence_of_most_common_melodic_interval(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Proportion of most common interval, or 0 if no intervals
+        Proportion of intervals that are the most common interval, or 0 if no intervals
     """
     intervals = pitch_interval(pitches)
     absolute_intervals = [abs(iv) for iv in intervals]
@@ -2118,7 +2266,6 @@ def relative_prevalence_of_most_common_melodic_intervals(pitches: list[int]) -> 
     
     return float(second_most_freq / most_common_freq)
 
-# Dynamic Feature Collection Functions
 def _get_features_by_type(feature_type: str) -> dict:
     """Get all features of a specific type.
     
@@ -2134,8 +2281,7 @@ def _get_features_by_type(feature_type: str) -> dict:
     """
     import inspect
     import sys
-    
-    # Get the current module
+
     current_module = sys.modules[__name__]
     
     features = {}
@@ -2166,15 +2312,16 @@ def get_pitch_features(melody: Melody) -> Dict:
     
     for name, func in pitch_functions.items():
         try:
-            # Get function signature to determine parameters
             sig = inspect.signature(func)
             params = list(sig.parameters.keys())
             
-            # Call function with appropriate parameters
             if 'pitches' in params and 'starts' in params and 'ends' in params:
                 result = func(melody.pitches, melody.starts, melody.ends)
             elif 'pitches' in params and 'starts' in params:
-                result = func(melody.pitches, melody.starts)
+                if 'tempo' in params and 'ppqn' in params:
+                    result = func(melody.pitches, melody.starts, melody.tempo, 480)
+                else:
+                    result = func(melody.pitches, melody.starts)
             elif 'pitches' in params:
                 result = func(melody.pitches)
             elif 'starts' in params and 'ends' in params:
@@ -2186,18 +2333,16 @@ def get_pitch_features(melody: Melody) -> Dict:
             elif 'melody' in params:
                 result = func(melody)
             else:
-                # Try with melody object as fallback
                 result = func(melody)
-            
+
             features[name] = result
         except Exception as e:
             print(f"Warning: Could not compute {name}: {e}")
             features[name] = None
-    
+
     return features
 
 
-# Contour Features
 @fantastic
 @contour_feature
 def get_step_contour_features(
@@ -2325,11 +2470,10 @@ def get_huron_contour_features(melody: Melody) -> str:
     hc = HuronContour(melody)
     return hc.huron_contour
 
-# Duration Features
 @fantastic
 @jsymbolic
 @duration_feature
-def _get_tempo(melody: Melody) -> float:
+def initial_tempo(melody: Melody) -> float:
     """Access tempo of melody.
 
     Parameters
@@ -2346,7 +2490,7 @@ def _get_tempo(melody: Melody) -> float:
     return melody.tempo
 
 # Alias - but don't return again with get_all_features()
-inital_tempo = _get_tempo
+_get_tempo = initial_tempo
 
 @jsymbolic
 @duration_feature
@@ -2366,8 +2510,6 @@ def mean_tempo(melody: Melody) -> float:
     if not melody.tempo_changes:
         return melody.tempo
 
-    # Calculate weighted average tempo based on duration each tempo is active
-    # Get total duration from last note end time
     total_duration = max(melody.ends) if melody.ends else 0
     if total_duration == 0:
         return melody.tempo
@@ -2376,14 +2518,12 @@ def mean_tempo(melody: Melody) -> float:
     last_time = 0.0
     last_tempo = melody.tempo
 
-    # Add up (tempo * duration) for each tempo section
     for time, tempo in melody.tempo_changes:
         duration = time - last_time
         weighted_sum += last_tempo * duration
         last_time = time
         last_tempo = tempo
-        
-    # Add final section
+
     final_duration = total_duration - last_time
     weighted_sum += last_tempo * final_duration
     
@@ -2588,7 +2728,7 @@ def length(starts: list[float]) -> float:
 
 @novel
 @duration_feature
-def number_of_durations(starts: list[float], ends: list[float], tempo: float = 120.0) -> int:
+def number_of_unique_durations(starts: list[float], ends: list[float], tempo: float = 120.0) -> int:
     """Count number of unique note durations.
 
     Parameters
@@ -2611,104 +2751,175 @@ def number_of_durations(starts: list[float], ends: list[float], tempo: float = 1
 @fantastic
 @jsymbolic
 @duration_feature
-def global_duration(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Calculate total duration in secondsfrom first note start to last note end.
+def global_duration(melody: Melody) -> float:
+    """Calculate total duration in seconds of the MIDI sequence.
+    
+    This matches jSymbolic's DurationInSecondsFeature implementation by using
+    the total MIDI sequence duration, including any leading or trailing silence.
 
     Parameters
     ----------
-    starts : list[float]
-        List of note start times
-    ends : list[float]
-        List of note end times
+    melody : Melody
+        Melody object containing MIDI data
 
     Returns
     -------
     float
-        Total duration of melody
+        Total duration of the MIDI sequence in seconds
     """
-    if not starts or not ends or len(starts) == 0 or len(ends) == 0:
-        return 0.0
-    return float(ends[-1] - starts[0])
+    return melody.total_duration
 
 # Alias - but don't return again with get_all_features()
-# our implementation of duration_in_seconds is not exactly the same as jSymbolic's
-# due to differences in how we handle the MIDI, but it should be within a 2% tolerance
 duration_in_seconds = global_duration
 
 @fantastic
 @jsymbolic
 @duration_feature
-def note_density(starts: list[float], ends: list[float]) -> float:
+def note_density(melody: Melody) -> float:
     """Calculate average number of notes per second.
 
     Parameters
     ----------
-    starts : list[float]
-        List of note start times
-    ends : list[float]
-        List of note end times
+    melody : Melody
+        Melody object containing MIDI data
 
     Returns
     -------
     float
         Note density (notes per unit time)
     """
-    if not starts or not ends or len(starts) == 0 or len(ends) == 0:
+    if not melody.starts or not melody.ends or len(melody.starts) == 0 or len(melody.ends) == 0:
         return 0.0
-    total_duration = global_duration(starts, ends)
+    total_duration = melody.total_duration
     if total_duration == 0:
         return 0.0
-    return float(len(starts) / total_duration)
+    return float(len(melody.starts) / total_duration)
 
 @jsymbolic
 @duration_feature
-def note_density_variability(starts: list[float], ends: list[float]) -> float:
+def note_density_variability(melody: Melody) -> float:
     """Calculate variability of note density using 5-second windows.
     
     Divides the melody into 5-second windows and calculates the standard deviation
-    of note density across these windows.
+    of note density across these windows. Uses tick-based windowing to match jSymbolic precisely.
     
     Parameters
     ----------
-    starts : list[float]
-        List of note start times
-    ends : list[float]
-        List of note end times
+    melody : Melody
+        Melody object containing MIDI data
         
     Returns
     -------
     float
         Standard deviation of note density using 5-second windows
     """
-    if not starts or not ends or len(starts) < 2:
+    # TODO: this, and its quarter note version, are the only features I have not been able to reproduce within a 1% tolerance of the original jSymbolic implementation
+    if not melody.starts or not melody.ends or len(melody.starts) < 2:
         return 0.0
 
-    window_size = 5.0
-    total_duration = ends[-1] - starts[0]
+    # Get MIDI sequence properties
+    ppqn = 480  # Standard MIDI PPQN
 
-    # If total duration is less than window size, return 0
-    if total_duration < window_size:
+    tempo_changes = melody.tempo_changes or [(0.0, melody.tempo)]
+    tempo_changes = sorted(tempo_changes, key=lambda x: float(x[0]))
+
+    seconds_per_tick_array: list[float] = []
+    current_time = 0.0
+    change_index = 0
+    current_bpm = float(tempo_changes[0][1])
+    current_spt = (60.0 / current_bpm) / float(ppqn)
+    next_change_time = float(tempo_changes[1][0]) if len(tempo_changes) > 1 else float('inf')
+
+    while current_time <= melody.total_duration:
+        seconds_per_tick_array.append(current_spt)
+        current_time += current_spt
+        while current_time >= next_change_time and change_index + 1 < len(tempo_changes):
+            change_index += 1
+            current_bpm = float(tempo_changes[change_index][1])
+            current_spt = (60.0 / current_bpm) / float(ppqn)
+            next_change_time = float(tempo_changes[change_index + 1][0]) if change_index + 1 < len(tempo_changes) else float('inf')
+
+    total_duration_ticks = len(seconds_per_tick_array) - 1
+    
+    window_start_ticks = []
+    window_end_ticks = []
+    
+    window_duration = 5.0
+    window_overlap_offset = 0.0
+    time_interval_to_next_tick = window_duration - window_overlap_offset
+    
+    this_tick = 0
+    total_seconds_accumulated_so_far = 0.0
+    
+    while total_seconds_accumulated_so_far <= melody.total_duration and this_tick < len(seconds_per_tick_array):
+        window_start_ticks.append(this_tick)
+        
+        seconds_accumulated_so_far = 0.0
+        found_next_tick = False
+        tick_of_next_beginning = 0
+        
+        while seconds_accumulated_so_far < window_duration and this_tick < len(seconds_per_tick_array):
+            if not found_next_tick and seconds_accumulated_so_far >= time_interval_to_next_tick:
+                tick_of_next_beginning = this_tick
+                found_next_tick = True
+            
+            seconds_accumulated_so_far += seconds_per_tick_array[this_tick]
+            this_tick += 1
+        
+        window_end_ticks.append(this_tick - 1)
+        
+        if found_next_tick:
+            this_tick = tick_of_next_beginning
+        
+        total_seconds_accumulated_so_far += seconds_accumulated_so_far - window_overlap_offset
+    
+    if len(window_start_ticks) < 2:
         return 0.0
+    
+    cumulative_seconds = [0.0]
+    for spt in seconds_per_tick_array:
+        cumulative_seconds.append(cumulative_seconds[-1] + spt)
 
-    num_windows = int(total_duration / window_size)
     window_densities = []
+    
+    for i in range(len(window_start_ticks)):
+        start_tick = window_start_ticks[i]
+        end_tick = window_end_ticks[i]
+        
+        window_start_seconds = cumulative_seconds[start_tick]
+        window_end_seconds = cumulative_seconds[end_tick + 1]
+        
+        window_duration_precise = window_end_seconds - window_start_seconds
+        
+        starts_in_window = sum(
+            1 for start in melody.starts if window_start_seconds <= start < window_end_seconds
+        )
 
-    for i in range(num_windows):
-        window_start = starts[0] + (i * window_size)
-        window_end = window_start + window_size
+        carried_into_window = 0
+        if i > 0 and melody.ends is not None and melody.starts is not None:
+            prev_start_tick = window_start_ticks[i - 1]
+            prev_start_seconds = cumulative_seconds[prev_start_tick]
+            for start, end in zip(melody.starts, melody.ends):
+                if prev_start_seconds <= start < window_start_seconds and end > window_start_seconds:
+                    carried_into_window += 1
 
-        notes_in_window = sum(1 for start in starts if window_start <= start < window_end)
-
-        window_density = notes_in_window / window_size
+        notes_in_window = starts_in_window + carried_into_window
+        
+        if window_duration_precise == 0:
+            window_density = 0.0
+        else:
+            window_density = float(notes_in_window) / window_duration_precise
+        
         window_densities.append(window_density)
-
+    
     if len(window_densities) < 2:
         return 0.0
-    return float(np.std(window_densities, ddof=1))
+    
+    return np.std(window_densities, ddof=1)
 
 @jsymbolic
 @duration_feature
-def note_density_per_quarter_note(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+def note_density_per_quarter_note(melody: Melody) -> float:
     """Calculate average number of notes per quarter note.
     
     Finds the average number of note onsets per unit of time corresponding to an
@@ -2716,87 +2927,81 @@ def note_density_per_quarter_note(starts: list[float], ends: list[float], tempo:
     
     Parameters
     ----------
-    starts : list[float]
-        List of note start times
-    ends : list[float]
-        List of note end times
-    tempo : float
-        Tempo in BPM (beats per minute), default 120.0
+    melody : Melody
+        Melody object containing MIDI data
         
     Returns
     -------
     float
         Average number of notes per quarter note duration
     """
-    if not starts or len(starts) < 2:
+    if not melody.starts or len(melody.starts) < 2:
         return 0.0
-        
-    # Calculate quarter note duration in seconds based on tempo
-    quarter_note_duration = 60.0 / tempo
-    
-    # Calculate total duration in quarter notes
-    total_duration = (ends[-1] - starts[0]) / quarter_note_duration
-    
-    if total_duration == 0:
+
+    quarter_note_duration = 60.0 / melody.tempo
+    total_duration_seconds = melody.total_duration
+    total_duration_quarter_notes = total_duration_seconds / quarter_note_duration
+
+    if total_duration_quarter_notes == 0:
         return 0.0
-        
-    # Return average number of notes per quarter note duration
-    return float(len(starts) / total_duration)
+
+    return float(len(melody.starts) / total_duration_quarter_notes)
 
 @jsymbolic
 @duration_feature
-def note_density_per_quarter_note_variability(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+def note_density_per_quarter_note_variability(melody: Melody) -> float:
     """Calculate variability of note density per quarter note.
     
     Divides the melody into 8-quarter-note windows and calculates the standard deviation
-    of note density across these windows.
+    of note density across these windows. Uses tick-based windowing to match jSymbolic.
     
     Parameters
     ----------
-    starts : list[float]
-        List of note start times
-    ends : list[float]
-        List of note end times
-    tempo : float
-        Tempo in BPM (beats per minute), default 120.0
+    melody : Melody
+        Melody object containing MIDI data
         
     Returns
     -------
     float
         Standard deviation of note density across windows
     """
-    if not starts or not ends:
+    if not melody.starts or not melody.ends:
         return 0.0
-        
-    # Calculate window size in seconds (8 quarter notes)
+
+    tempo = melody.tempo
+    ppqn = 480
+    
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    
     quarter_note_duration = 60.0 / tempo
-    window_size = 8.0 * quarter_note_duration
+    window_size_seconds = 8.0 * quarter_note_duration
+    window_size_ticks = to_ticks(window_size_seconds)
     
-    # Get total duration
-    total_duration = ends[-1] - starts[0]
+    total_duration_ticks = to_ticks(melody.total_duration)
     
-    # Create windows
+    if total_duration_ticks < window_size_ticks:
+        return 0.0
+    
     window_densities = []
-    window_start = starts[0]
-    while window_start < ends[-1]:
-        window_end = min(window_start + window_size, ends[-1])
-        
-        # Count notes in this window
-        notes_in_window = sum(1 for i in range(len(starts)) 
-                            if starts[i] >= window_start and starts[i] < window_end)
-        
-        # Calculate density for this window
-        if notes_in_window > 0:
-            window_density = notes_in_window / 8.0  # Divide by window size in quarter notes
-            window_densities.append(window_density)
-            
-        window_start += window_size
+    window_start_seconds = 0.0
     
-    # Calculate standard deviation of window densities
+    while window_start_seconds < melody.total_duration:
+        window_end_seconds = min(window_start_seconds + window_size_seconds, melody.total_duration)
+
+        notes_in_window = sum(1 for start in melody.starts if window_start_seconds <= start < window_end_seconds)
+        window_duration_seconds = window_end_seconds - window_start_seconds
+        window_duration_quarter_notes = window_duration_seconds / quarter_note_duration
+        if window_duration_quarter_notes > 0:
+            window_density = notes_in_window / window_duration_quarter_notes
+            window_densities.append(window_density)
+
+        window_start_seconds += window_size_seconds
+
     if len(window_densities) < 2:
         return 0.0
-        
-    return float(np.std(window_densities, ddof=1))
+    return np.std(window_densities, ddof=1)
+
 @idyom
 @duration_feature
 def ioi(starts: list[float]) -> list[float]:
@@ -2863,7 +3068,6 @@ def ioi_standard_deviation(starts: list[float]) -> float:
 
 variability_of_time_between_attacks = ioi_standard_deviation
 
-
 @idyom
 @duration_feature
 def ioi_ratio(starts: list[float]) -> tuple[float, float]:
@@ -2882,13 +3086,11 @@ def ioi_ratio(starts: list[float]) -> tuple[float, float]:
     if len(starts) < 2:
         return 0.0, 0.0
 
-    # Calculate intervals first
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
 
     if len(intervals) < 2:
         return 0.0, 0.0
 
-    # Calculate ratios between consecutive intervals
     ratios = [intervals[i] / intervals[i - 1] for i in range(1, len(intervals))]
     return float(np.mean(ratios)), float(np.std(ratios, ddof=1))
 
@@ -2950,11 +3152,1764 @@ def duration_histogram(starts: list[float], ends: list[float], tempo: float = 12
     dict
         Histogram of note durations
     """
+    # we use the simplified output once more
     durations = _get_durations(starts, ends, tempo)
     if not durations:
         return {}
     num_durations = max(1, len(set(durations)))
     return histogram_bins(durations, num_durations)
+
+
+@jsymbolic
+@duration_feature
+def range_of_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Range of rhythmic values located within the 12-bin PPQN-based histogram.
+
+    This mirrors jSymbolic's feature that computes the range (in bins)
+    of the rhythmic value histogram. Durations are converted to quarter
+    notes and mapped to 12 fixed rhythmic bins using midpoints. The
+    returned value is the difference between the highest and lowest
+    non-empty bins (0 if empty).
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Range in bins (int cast to float), 0 if no durations present
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rhythmic_value_histogram_object = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+
+    hist = rhythmic_value_histogram_object.histogram
+    lowest = None
+    highest = None
+    for i in range(12):
+        if hist.get(i, 0.0) > 0.0:
+            lowest = i
+            break
+    for i in range(11, -1, -1):
+        if hist.get(i, 0.0) > 0.0:
+            highest = i
+            break
+
+    if lowest is None or highest is None:
+        return 0.0
+
+    return float(highest - lowest)
+
+
+@jsymbolic
+@duration_feature
+def number_of_different_rhythmic_values_present(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Number of distinct rhythmic value bins that are present in the melody (non-zero).
+
+    Builds the 12-bin rhythmic value histogram (normalized) from durations
+    expressed in quarter notes and counts how many bins have non-zero mass.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Count of non-zero bins as a float (0.0 if no durations)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rhythmic_value_histogram_object = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rhythmic_value_histogram_object.histogram
+
+    count = 0
+    for i in range(12):
+        if hist.get(i, 0.0) > 0.0:
+            count += 1
+
+    return float(count)
+
+
+@jsymbolic
+@duration_feature
+def number_of_common_rhythmic_values_present(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Number of rhythmic value bins with normalized proportion >= 0.15.
+
+    Builds the normalized 12-bin rhythmic value histogram from durations in
+    quarter notes and counts how many bins meet or exceed the 0.15 threshold,
+    matching jSymbolic's definition of "common" rhythmic values.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Count of bins with mass >= 0.15 as a float (0.0 if no durations)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rhythmic_value_histogram_object = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rhythmic_value_histogram_object.histogram
+
+    count = 0
+    for i in range(12):
+        if hist.get(i, 0.0) >= 0.15:
+            count += 1
+
+    return float(count)
+
+
+@jsymbolic
+@duration_feature
+def prevalence_of_very_short_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Sum of the two shortest rhythmic bins (indexes 0 and 1).
+
+    Builds the normalized 12-bin rhythmic value histogram from durations in
+    quarter notes and returns the combined mass of bins 0 and 1, corresponding
+    to 32nd-or-less and 16th notes in the jSymbolic scheme.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Proportion in [0, 1] for bins 0 and 1 combined (0.0 if no durations)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rhythmic_value_histogram_object = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rhythmic_value_histogram_object.histogram
+
+    return float(hist.get(0, 0.0) + hist.get(1, 0.0))
+
+
+@jsymbolic
+@duration_feature
+def prevalence_of_short_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Sum of the three shortest rhythmic bins (indexes 0, 1, and 2).
+
+    Builds the normalized 12-bin rhythmic value histogram from durations in
+    quarter notes and returns the combined mass of bins 0, 1 and 2, corresponding
+    to 32nd-or-less, 16th, and 8th notes in the jSymbolic scheme.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Proportion in [0, 1] for bins 0, 1 and 2 combined (0.0 if no durations)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rhythmic_value_histogram_object = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rhythmic_value_histogram_object.histogram
+
+    return float(hist.get(0, 0.0) + hist.get(1, 0.0) + hist.get(2, 0.0))
+
+
+@jsymbolic
+@duration_feature
+def prevalence_of_medium_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Sum of rhythmic bins 2..6 (8th through half notes).
+
+    Uses the normalized 12-bin rhythmic value histogram from durations in
+    quarter notes and returns the combined mass of bins 2, 3, 4, 5 and 6,
+    matching the jSymbolic definition of medium rhythmic values.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Proportion in [0, 1] for bins 2..6 combined (0.0 if no durations)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rhythmic_value_histogram_object = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rhythmic_value_histogram_object.histogram
+
+    return float(
+        hist.get(2, 0.0)
+        + hist.get(3, 0.0)
+        + hist.get(4, 0.0)
+        + hist.get(5, 0.0)
+        + hist.get(6, 0.0)
+    )
+
+
+@jsymbolic
+@duration_feature
+def prevalence_of_long_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Sum of rhythmic bins 6..11 (half through dotted double whole or more).
+
+    Uses the normalized 12-bin rhythmic value histogram from durations in
+    quarter notes and returns the combined mass of bins 6, 7, 8, 9, 10 and 11,
+    matching the jSymbolic definition of long rhythmic values.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Proportion in [0, 1] for bins 6..11 combined (0.0 if no durations)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rhythmic_value_histogram_object = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rhythmic_value_histogram_object.histogram
+
+    return float(
+        hist.get(6, 0.0)
+        + hist.get(7, 0.0)
+        + hist.get(8, 0.0)
+        + hist.get(9, 0.0)
+        + hist.get(10, 0.0)
+        + hist.get(11, 0.0)
+    )
+
+
+@jsymbolic
+@duration_feature
+def prevalence_of_very_long_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Sum of rhythmic bins 9..11 (dotted whole through dotted double whole or more).
+
+    Uses the normalized 12-bin rhythmic value histogram from durations in
+    quarter notes and returns the combined mass of bins 9, 10 and 11,
+    matching the jSymbolic definition of very long rhythmic values.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Proportion in [0, 1] for bins 9..11 combined (0.0 if no durations)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rhythmic_value_histogram_object = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rhythmic_value_histogram_object.histogram
+
+    return float(
+        hist.get(9, 0.0)
+        + hist.get(10, 0.0)
+        + hist.get(11, 0.0)
+    )
+
+
+@jsymbolic
+@duration_feature
+def prevalence_of_dotted_notes(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Sum of dotted rhythmic bins: 3, 5, 7, 9, 11.
+
+    Uses the normalized 12-bin histogram and returns the combined mass
+    of the dotted bins, matching jSymbolic.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Proportion in [0, 1] for dotted bins combined (0.0 if no durations)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rhythmic_value_histogram_object = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rhythmic_value_histogram_object.histogram
+
+    return float(
+        hist.get(3, 0.0)
+        + hist.get(5, 0.0)
+        + hist.get(7, 0.0)
+        + hist.get(9, 0.0)
+        + hist.get(11, 0.0)
+    )
+
+
+@jsymbolic
+@duration_feature
+def shortest_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Shortest rhythmic value (in quarter notes) among non-empty bins. Returns 0.0 if empty.
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Shortest rhythmic value (in quarter notes) among non-empty bins (0.0 if empty)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rvh = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rvh.histogram
+    ideals = rvh.bin_values_quarter_notes()
+    for i in range(12):
+        if hist.get(i, 0.0) > 0.0:
+            return float(ideals[i])
+    return 0.0
+
+
+@jsymbolic
+@duration_feature
+def longest_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Longest rhythmic value (in quarter notes) among non-empty bins. Returns 0.0 if empty.
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Longest rhythmic value (in quarter notes) among non-empty bins (0.0 if empty)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rvh = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rvh.histogram
+    ideals = rvh.bin_values_quarter_notes()
+    for i in range(11, -1, -1):
+        if hist.get(i, 0.0) > 0.0:
+            return float(ideals[i])
+    return 0.0
+
+
+@jsymbolic
+@duration_feature
+def mean_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Mean rhythmic value (in quarter notes) using normalized histogram, weighted by the frequency of the rhythmic value.
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Weighted mean rhythmic value (in quarter notes) using normalized histogram (0.0 if empty)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rvh = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rvh.histogram
+    ideals = rvh.bin_values_quarter_notes()
+    weights = [hist.get(i, 0.0) for i in range(12)]
+    total = sum(weights)
+    if total == 0.0:
+        return 0.0
+    mean_val = sum(ideals[i] * w for i, w in enumerate(weights)) / total
+    return float(mean_val)
+
+
+@jsymbolic
+@duration_feature
+def most_common_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Modal rhythmic value (in quarter notes). Returns 0.0 if empty or all-zero.
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Modal rhythmic value (in quarter notes) (0.0 if empty or all-zero)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rvh = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rvh.histogram
+    ideals = rvh.bin_values_quarter_notes()
+    # Choose the smallest index in case of ties
+    max_val = -1.0
+    max_idx = 0
+    for i in range(12):
+        val = hist.get(i, 0.0)
+        if val > max_val:
+            max_val = val
+            max_idx = i
+    return float(ideals[max_idx]) if max_val > 0.0 else 0.0
+
+
+@jsymbolic
+@duration_feature
+def prevalence_of_most_common_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Proportion (0.0 - 1.0) of the modal rhythmic bin. Returns 0.0 if empty.
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Proportion (0.0 - 1.0) of the modal rhythmic bin (0.0 if empty)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rvh = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rvh.histogram
+    max_val = 0.0
+    for i in range(12):
+        max_val = max(max_val, hist.get(i, 0.0))
+    return float(max_val)
+
+
+@jsymbolic
+@duration_feature
+def relative_prevalence_of_most_common_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Ratio of the second-most-common rhythmic bin to the most common bin.
+
+    Uses the normalized 12-bin rhythmic value histogram. If the most common bin
+    has zero mass (i.e., histogram is empty), returns 0.0.
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Ratio of the second-most-common rhythmic bin to the most common bin (0.0 if empty)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rvh = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rvh.histogram
+
+    # Convert to ordered list for deterministic tie-breaking by smaller index
+    values = [hist.get(i, 0.0) for i in range(12)]
+    if not values:
+        return 0.0
+
+    most_idx = 0
+    for i in range(1, 12):
+        if values[i] > values[most_idx]:
+            most_idx = i
+    second_idx = None
+    for i in range(12):
+        if i == most_idx:
+            continue
+        if second_idx is None or values[i] > values[second_idx]:
+            second_idx = i
+
+    most_val = values[most_idx]
+    second_val = 0.0 if second_idx is None else values[second_idx]
+
+    if most_val == 0.0:
+        return 0.0
+    return float(second_val / most_val)
+
+
+@jsymbolic
+@duration_feature
+def difference_between_most_common_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Absolute difference in bins between most and second most common rhythmic values.
+
+    Uses the normalized 12-bin rhythmic value histogram to find the indices of
+    the largest and second-largest bins (breaking ties toward the smaller index),
+    then returns |i1 - i2| as a float. Returns 0.0 if histogram is empty.
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Absolute difference in bins between most and second most common rhythmic values (0.0 if empty)
+    """
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return 0.0
+
+    rvh = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    hist = rvh.histogram
+    values = [hist.get(i, 0.0) for i in range(12)]
+
+    most_idx = 0
+    for i in range(1, 12):
+        if values[i] > values[most_idx]:
+            most_idx = i
+
+    second_idx = None
+    for i in range(12):
+        if i == most_idx:
+            continue
+        if second_idx is None or values[i] > values[second_idx]:
+            second_idx = i
+
+    if values[most_idx] == 0.0 or second_idx is None:
+        return 0.0
+
+    return float(abs(most_idx - second_idx))
+
+def _rhythmic_run_lengths(starts: list[float], ends: list[float], tempo: float = 120.0) -> List[int]:
+    """Helper function to compute run lengths of identical rhythmic bins for a melody."""
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return []
+    rvh = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    bin_sequence: List[int] = [rvh.map_quarter_notes_to_bin_index(d) for d in durations_qn]
+    if not bin_sequence:
+        return []
+    run_lengths: List[int] = []
+    current_run = 1
+    for i in range(1, len(bin_sequence)):
+        if bin_sequence[i] == bin_sequence[i - 1]:
+            current_run += 1
+        else:
+            run_lengths.append(current_run)
+            current_run = 1
+    run_lengths.append(current_run)
+    return run_lengths
+
+@jsymbolic
+@duration_feature
+def mean_rhythmic_value_run_length(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Mean run length of identical rhythmic values across the melody. Run length is the number of consecutive 
+    notes with the same rhythmic value. Mimics jSymbolic behavior by quantizing each note's duration to the nearest
+    of 12 rhythmic bins (based on quarter-note durations) and then computing the mean length of consecutive runs of identical bins.
+
+    Returns 0.0 if there are fewer than 1 notes.
+    """
+    runs = _rhythmic_run_lengths(starts, ends, tempo)
+    if not runs:
+        return 0.0
+    return float(np.mean(runs))
+
+@jsymbolic
+@duration_feature
+def median_rhythmic_value_run_length(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Median run length of identical rhythmic values across the melody. Run length is the number of consecutive 
+    notes with the same rhythmic value."""
+    runs = _rhythmic_run_lengths(starts, ends, tempo)
+    if not runs:
+        return 0.0
+    return float(np.median(runs))
+
+
+@jsymbolic
+@duration_feature
+def variability_in_rhythmic_value_run_lengths(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Variability (standard deviation) of rhythmic value run lengths. Run length is the number of consecutive 
+    notes with the same rhythmic value."""
+    runs = _rhythmic_run_lengths(starts, ends, tempo)
+    if not runs or len(runs) == 1:
+        return 0.0
+    return float(np.std(runs, ddof=1))
+
+
+def _rhythmic_value_offsets(starts: list[float], ends: list[float], tempo: float = 120.0) -> List[float]:
+    """Helper function to compute absolute offsets (in quarter notes) from nearest ideal value for each note."""
+    durations_qn = _get_durations(starts, ends, tempo)
+    if not durations_qn:
+        return []
+    rvh = create_rhythmic_value_histogram(durations_qn, ppqn=1)
+    ideals = rvh.bin_values_quarter_notes()
+    offsets: List[float] = []
+    for d in durations_qn:
+        bin_idx = rvh.map_quarter_notes_to_bin_index(d)
+        ideal = ideals[bin_idx]
+        offsets.append(abs(float(d) - float(ideal)))
+    return offsets
+
+
+@jsymbolic
+@duration_feature
+def mean_rhythmic_value_offset(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Mean quantization offset from nearest ideal rhythmic value (in quarter notes).
+
+    For each note, map its duration (in quarter notes) to the nearest ideal
+    rhythmic value among the 12-bin scheme, then compute the absolute
+    difference between the actual duration and that ideal. Return the mean of
+    these offsets. Returns 0.0 if there are no durations.
+    """
+    offsets = _rhythmic_value_offsets(starts, ends, tempo)
+    if not offsets:
+        return 0.0
+    return float(np.mean(offsets))
+
+
+@jsymbolic
+@duration_feature
+def median_rhythmic_value_offset(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Median quantization offset from nearest ideal rhythmic value (in quarter notes)."""
+    offsets = _rhythmic_value_offsets(starts, ends, tempo)
+    if not offsets:
+        return 0.0
+    return float(np.median(offsets))
+
+
+@jsymbolic
+@duration_feature
+def variability_of_rhythmic_value_offsets(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
+    """Variability (standard deviation) of rhythmic value offsets (in quarter notes)."""
+    offsets = _rhythmic_value_offsets(starts, ends, tempo)
+    if not offsets or len(offsets) == 1:
+        return 0.0
+    return float(np.std(offsets, ddof=1))
+
+
+def _silent_run_lengths_qn(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+    min_qn_threshold: float = 0.1,
+) -> list[float]:
+    """Return list of complete rest lengths in quarter notes, filtered by threshold. By complete rest,
+    we mean that there is nothing sounding at all at any time during the rest.
+
+    Discretizes time to ticks (constant tempo), builds a per-tick pitched-activity mask,
+    adds a 1-quarter-note silent tail, collects silent run lengths, converts to quarter
+    notes, and filters out runs shorter than min_qn_threshold.
+    """
+    if not starts or not ends or len(starts) != len(ends):
+        return []
+
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+
+    start_ticks = [to_ticks(s) for s in starts]
+    end_ticks = [to_ticks(e) for e in ends]
+    if not end_ticks:
+        return []
+
+    duration_in_ticks = max(0, max(end_ticks))
+    if duration_in_ticks <= 0:
+        return []
+
+    total_ticks = duration_in_ticks + int(ppqn)
+
+    active = [False] * total_ticks
+    for s_tick, e_tick in zip(start_ticks, end_ticks):
+        if e_tick <= s_tick:
+            continue
+        a = max(0, min(total_ticks - 1, s_tick))
+        b = max(0, min(total_ticks, e_tick))
+        for t in range(a, b):
+            active[t] = True
+
+    runs_ticks: list[int] = []
+    current = 0
+    for t in range(total_ticks):
+        if not active[t]:
+            current += 1
+        else:
+            if current > 0:
+                runs_ticks.append(current)
+                current = 0
+    if current > 0:
+        runs_ticks.append(current)
+
+    if not runs_ticks:
+        return []
+
+    qn_per_tick = seconds_per_tick / (60.0 / float(tempo))
+    runs_qn = [(rl * qn_per_tick) for rl in runs_ticks]
+    return [rl for rl in runs_qn if rl >= float(min_qn_threshold)]
+
+
+@jsymbolic
+@duration_feature
+def complete_rests_fraction(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Fraction of total duration during which no pitched notes are sounding.
+
+    Tick-based approximation of jSymbolic's method using our melody representation.
+    We discretize time to ticks using tempo and PPQN, mark pitched activity per tick
+    from note ranges, and sum seconds-per-tick over ticks where no pitched notes sound.
+    """
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+
+    runs_qn = _silent_run_lengths_qn(starts, ends, tempo=tempo, ppqn=ppqn, min_qn_threshold=0.0)
+
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    end_ticks = [to_ticks(e) for e in ends]
+    if not end_ticks:
+        return 0.0
+    duration_in_ticks = max(0, max(end_ticks))
+    if duration_in_ticks <= 0:
+        return 0.0
+    total_ticks = duration_in_ticks + int(ppqn)
+    qn_per_tick = seconds_per_tick / (60.0 / float(tempo))
+    total_qn = total_ticks * qn_per_tick
+
+    rest_qn = sum(runs_qn) if runs_qn else 0.0
+    if total_qn <= 0.0:
+        return 0.0
+    return float(rest_qn / total_qn)
+
+
+@jsymbolic
+@duration_feature
+def longest_complete_rest(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Longest uninterrupted complete rest in quarter-note units (ignore < 0.1 QN).
+
+    Discretizes time to ticks (constant tempo), finds consecutive runs of silent ticks
+    (no pitched notes sounding), converts the longest run to quarter notes and returns it.
+    Rests shorter than 0.1 of a quarter note are returned as 0.0.
+    """
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+
+    runs_qn = _silent_run_lengths_qn(starts, ends, tempo=tempo, ppqn=ppqn, min_qn_threshold=0.1)
+    if not runs_qn:
+        return 0.0
+    return float(max(runs_qn))
+
+@jsymbolic
+@duration_feature
+def mean_complete_rest_duration(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Mean duration of complete rests in quarter-note units (ignore < 0.1 QN).
+
+    Uses tick discretization (constant tempo) to find all consecutive silent runs
+    where no pitched notes are sounding. Converts each run to quarter notes,
+    filters out rests shorter than 0.1 QN, and returns their mean.
+    """
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+
+    runs_qn = _silent_run_lengths_qn(starts, ends, tempo=tempo, ppqn=ppqn, min_qn_threshold=0.1)
+    if not runs_qn:
+        return 0.0
+    return float(np.mean(runs_qn))
+
+@jsymbolic
+@duration_feature
+def median_complete_rest_duration(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Median duration of complete rests in quarter-note units (ignore < 0.1 QN).
+
+    Same tick-discretized approach as mean_complete_rest_duration, but returns the
+    median of qualifying silent run lengths measured in quarter notes.
+    """
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+
+    runs_qn = _silent_run_lengths_qn(starts, ends, tempo=tempo, ppqn=ppqn, min_qn_threshold=0.1)
+    if not runs_qn:
+        return 0.0
+    return float(np.median(runs_qn))
+
+@jsymbolic
+@duration_feature
+def variability_of_complete_rest_durations(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Standard deviation of complete rest durations in quarter notes (ignore < 0.1 QN).
+
+    Matches the approach used in mean/median complete rest duration: discretize to ticks,
+    find silent runs, convert to quarter notes, filter out runs shorter than 0.1 QN, then
+    return the sample standard deviation (ddof=1) of the remaining runs. Returns 0.0 if
+    fewer than two qualifying rests.
+    """
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+
+    runs_qn = _silent_run_lengths_qn(starts, ends, tempo=tempo, ppqn=ppqn, min_qn_threshold=0.1)
+    if len(runs_qn) < 2:
+        return 0.0
+    return float(np.std(runs_qn, ddof=1))
+
+def _calculate_thresholded_peak_table(values: list[float]) -> list[list[float]]:
+    """Build jSymbolic-style thresholded peak table (n x 3) from a histogram array.
+
+    Columns thresholds:
+    - col 0: > 0.1
+    - col 1: > 0.01
+    - col 2: > 0.3 * max(hist)
+    Then suppress adjacent peaks keeping only the larger in any adjacent pair per column.
+    """
+    n = len(values)
+    if n == 0:
+        return []
+    table = [[0.0, 0.0, 0.0] for _ in range(n)]
+    highest = values[int(np.argmax(values))] if n > 0 else 0.0
+    for i in range(n):
+        v = float(values[i])
+        if v > 0.1:
+            table[i][0] = v
+        if v > 0.01:
+            table[i][1] = v
+        if highest > 0.0 and v > 0.3 * highest:
+            table[i][2] = v
+    for i in range(1, n):
+        for j in range(3):
+            if table[i][j] > 0.0 and table[i - 1][j] > 0.0:
+                if table[i][j] > table[i - 1][j]:
+                    table[i - 1][j] = 0.0
+                else:
+                    table[i][j] = 0.0
+    return table
+
+@lru_cache(maxsize=256)
+def _get_beat_histogram_values_from_ticks(
+    start_ticks: tuple[int, ...],
+    end_ticks: tuple[int, ...],
+    tempo: float,
+    ppqn: int,
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """LRU-cached beat histogram arrays (normal, standardized) from tick inputs.
+    This is cached to avoid recomputing the beat histogram for the same start and end ticks, or worse, the autocorrelation.
+    We've optimised the beat histogram computation to be more efficient, but caching still makes sense to me at this time."""
+    if not end_ticks:
+        return tuple(), tuple()
+    duration_in_ticks = max(0, max(end_ticks))
+    if duration_in_ticks <= 0:
+        return tuple(), tuple()
+    total_ticks = duration_in_ticks + int(ppqn)
+
+    rhythm_score: list[int] = [0] * (total_ticks + 1)
+    for tick in start_ticks:
+        if 0 <= tick < len(rhythm_score):
+            rhythm_score[tick] += 1
+
+    mean_ticks_per_second = float(ppqn) * (float(tempo) / 60.0)
+    bh = create_beat_histogram(
+        rhythm_score=rhythm_score,
+        mean_ticks_per_second=mean_ticks_per_second,
+        ppqn=ppqn,
+    )
+    return tuple(bh.beat_histogram), tuple(bh.beat_histogram_120_bpm_standardized)
+
+@lru_cache(maxsize=256)
+def _compute_beat_histogram_tables(
+    starts: tuple[float, ...], ends: tuple[float, ...], tempo: float, ppqn: int
+) -> tuple[tuple[tuple[float, ...], ...], tuple[tuple[float, ...], ...]]:
+    """Compute thresholded peak tables for normal and 120-BPM-standardized beat histograms."""
+    if not starts or not ends or len(starts) != len(ends):
+        return (), ()
+
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+
+    normal_vals, std_vals = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    normal_table = _calculate_thresholded_peak_table(list(normal_vals))
+    std_table = _calculate_thresholded_peak_table(list(std_vals))
+    return tuple(tuple(row) for row in normal_table), tuple(tuple(row) for row in std_table)
+
+def _count_strong_pulses(table: list[list[float]], column_index: int = 0) -> float:
+    """Count peaks in BPM bins 40..200 whose thresholded value in the given column > 0.001."""
+    if not table:
+        return 0.0
+    n = len(table)
+    min_bpm = 40
+    max_bpm = min(200, n - 1)
+    count = 0
+    for b in range(min_bpm, max_bpm + 1):
+        if table[b][column_index] > 0.001:
+            count += 1
+    return float(count)
+
+@jsymbolic
+@duration_feature
+def strongest_rhythmic_pulse(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Bin index (BPM) of the maximum beat histogram magnitude (normal histogram)."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+    values, _ = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values:
+        return 0.0
+
+    return float(int(np.argmax(values)))
+
+@jsymbolic
+@duration_feature
+def strongest_rhythmic_pulse_tempo_standardized(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Bin index (BPM) of the maximum in the 120-BPM standardized beat histogram."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+    _, values = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values:
+        return 0.0
+
+    return float(int(np.argmax(values)))
+
+@jsymbolic
+@duration_feature
+def second_strongest_rhythmic_pulse(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Bin index (BPM) of the second-highest magnitude in the beat histogram."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+    values, _ = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values or len(values) < 2:
+        return 0.0
+
+    max_idx = int(np.argmax(values))
+    max_val = values[max_idx]
+
+    values_list = list(values)
+    values_list[max_idx] = 0.0
+    second_max_idx = int(np.argmax(values_list))
+
+    return float(second_max_idx)
+
+@jsymbolic
+@duration_feature
+def second_strongest_rhythmic_pulse_tempo_standardized(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Bin index (BPM) of the second-highest magnitude in the 120-BPM standardized beat histogram."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+    _, values = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values or len(values) < 2:
+        return 0.0
+
+    max_idx = int(np.argmax(values))
+    max_val = values[max_idx]
+
+    values_list = list(values)
+    values_list[max_idx] = 0.0
+    second_max_idx = int(np.argmax(values_list))
+
+    return float(second_max_idx)
+
+@jsymbolic
+@duration_feature
+def harmonicity_of_two_strongest_rhythmic_pulses(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Ratio of higher to lower bin index of the two strongest rhythmic pulses (normal histogram)."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+    
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+
+    values, _ = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values:
+        return 0.0
+
+    normal_table, _ = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
+    if not normal_table:
+        return 0.0
+
+    # Find the bin with the highest magnitude from regular beat histogram
+    max_value = 0.0
+    max_idx = 1
+    for bin in range(len(values)):
+        if values[bin] > max_value:
+            max_value = values[bin]
+            max_idx = bin
+
+    # Find the bin with the second highest magnitude from thresholded table column 1
+    second_highest_bin_magnitude = 0.0
+    second_max_idx = 1
+    for bin in range(len(normal_table)):
+        if (len(normal_table[bin]) > 1 and 
+            normal_table[bin][1] > second_highest_bin_magnitude and 
+            bin != max_idx):
+            second_highest_bin_magnitude = normal_table[bin][1]
+            second_max_idx = bin
+
+    # Calculate the feature value
+    if second_max_idx == 0 or max_idx == 0:
+        value = 0.0
+    elif max_idx > second_max_idx:
+        value = float(max_idx) / float(second_max_idx)
+    else:
+        value = float(second_max_idx) / float(max_idx)
+    
+    return value
+
+@jsymbolic
+@duration_feature
+def harmonicity_of_two_strongest_rhythmic_pulses_tempo_standardized(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Ratio of higher to lower bin index of the two strongest rhythmic pulses (120-BPM standardized histogram)."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+    
+    _, values = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values:
+        return 0.0
+
+    _, std_table = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
+    if not std_table:
+        return 0.0
+    
+    # Find the bin with the highest magnitude from tempo standardized beat histogram
+    max_value = 0.0
+    max_idx = 1
+    for bin in range(len(values)):
+        if values[bin] > max_value:
+            max_value = values[bin]
+            max_idx = bin
+    
+    # Find the bin with the second highest magnitude from thresholded table column 1
+    second_highest_bin_magnitude = 0.0
+    second_max_idx = 1
+    for bin in range(len(std_table)):
+        if (len(std_table[bin]) > 1 and 
+            std_table[bin][1] > second_highest_bin_magnitude and 
+            bin != max_idx):
+            second_highest_bin_magnitude = std_table[bin][1]
+            second_max_idx = bin
+    
+    # Calculate the feature value
+    if second_max_idx == 0 or max_idx == 0:
+        value = 0.0
+    elif max_idx > second_max_idx:
+        value = float(max_idx) / float(second_max_idx)
+    else:
+        value = float(second_max_idx) / float(max_idx)
+    
+    return value
+
+@jsymbolic
+@duration_feature
+def strength_of_strongest_rhythmic_pulse(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Magnitude of the beat histogram bin with the highest magnitude."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+    values, _ = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values:
+        return 0.0
+    return float(max(values))
+
+@jsymbolic
+@duration_feature
+def strength_of_strongest_rhythmic_pulse_tempo_standardized(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Magnitude of the tempo-standardized beat histogram bin with the highest magnitude."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+    _, values = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values:
+        return 0.0
+    return float(max(values))
+
+@jsymbolic
+@duration_feature
+def strength_of_second_strongest_rhythmic_pulse(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Magnitude of the beat histogram bin with the second-highest magnitude."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+    values, _ = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values or len(values) < 2:
+        return 0.0
+    
+    # Find the two highest values
+    max_val = max(values)
+    values_list = list(values)
+    values_list[values_list.index(max_val)] = 0.0
+    second_max_val = max(values_list)
+    
+    return float(second_max_val)
+
+@jsymbolic
+@duration_feature
+def strength_of_second_strongest_rhythmic_pulse_tempo_standardized(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Magnitude of the tempo-standardized beat histogram bin with the second-highest magnitude."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+    _, values = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values or len(values) < 2:
+        return 0.0
+    
+    # Find the two highest values
+    max_val = max(values)
+    values_list = list(values)
+    values_list[values_list.index(max_val)] = 0.0
+    second_max_val = max(values_list)
+    
+    return float(second_max_val)
+
+@jsymbolic
+@duration_feature
+def strength_ratio_of_two_strongest_rhythmic_pulses(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Ratio of the magnitude of the strongest to second-strongest rhythmic pulse."""
+    strongest_strength = strength_of_strongest_rhythmic_pulse(starts, ends, tempo, ppqn)
+    second_strongest_strength = strength_of_second_strongest_rhythmic_pulse(starts, ends, tempo, ppqn)
+    
+    if second_strongest_strength == 0:
+        return 0.0
+    return float(strongest_strength) / float(second_strongest_strength)
+
+@jsymbolic
+@duration_feature
+def strength_ratio_of_two_strongest_rhythmic_pulses_tempo_standardized(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Ratio of the magnitude of the strongest to second-strongest rhythmic pulse (120-BPM standardized histogram)."""
+    strongest_strength = strength_of_strongest_rhythmic_pulse_tempo_standardized(starts, ends, tempo, ppqn)
+    second_strongest_strength = strength_of_second_strongest_rhythmic_pulse_tempo_standardized(starts, ends, tempo, ppqn)
+    
+    if second_strongest_strength == 0:
+        return 0.0
+    return float(strongest_strength) / float(second_strongest_strength)
+
+@jsymbolic
+@duration_feature
+def combined_strength_of_two_strongest_rhythmic_pulses(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Sum of the magnitudes of the two strongest rhythmic pulses."""
+    strongest_strength = strength_of_strongest_rhythmic_pulse(starts, ends, tempo, ppqn)
+    second_strongest_strength = strength_of_second_strongest_rhythmic_pulse(starts, ends, tempo, ppqn)
+    
+    return float(strongest_strength) + float(second_strongest_strength)
+
+@jsymbolic
+@duration_feature
+def combined_strength_of_two_strongest_rhythmic_pulses_tempo_standardized(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Sum of the magnitudes of the two strongest rhythmic pulses using tempo-standardized histogram."""
+    strongest_strength = strength_of_strongest_rhythmic_pulse_tempo_standardized(starts, ends, tempo, ppqn)
+    second_strongest_strength = strength_of_second_strongest_rhythmic_pulse_tempo_standardized(starts, ends, tempo, ppqn)
+    
+    return float(strongest_strength) + float(second_strongest_strength)
+
+@jsymbolic
+@duration_feature
+def rhythmic_variability(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Standard deviation of the beat histogram bin magnitudes, excluding first 40 bins."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+    values, _ = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values or len(values) <= 40:
+        return 0.0
+    
+    # Exclude the first 40 bins (BPM 0-39)
+    reduced_values = values[40:]
+    if len(reduced_values) < 2:
+        return 0.0
+    
+    return float(np.std(reduced_values, ddof=1))
+
+@jsymbolic
+@duration_feature
+def rhythmic_variability_tempo_standardized(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Standard deviation of the tempo-standardized beat histogram bin magnitudes, excluding first 40 bins."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+    _, values = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values or len(values) <= 40:
+        return 0.0
+    
+    # Exclude the first 40 bins (BPM 0-39)
+    reduced_values = values[40:]
+    if len(reduced_values) < 2:
+        return 0.0
+    
+    return float(np.std(reduced_values, ddof=1))
+
+@jsymbolic
+@duration_feature
+def rhythmic_looseness(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Average width of beat histogram peaks. Width is distance between points at 30% of peak height."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+
+    table, _ = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
+    if not table:
+        return 0.0
+
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+    values, _ = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values:
+        return 0.0
+    
+    # Find peaks with magnitude >= 30% of highest peak (column 2 in thresholded table)
+    peak_bins = []
+    for bin_idx in range(len(table)):
+        if table[bin_idx][2] > 0.001:
+            peak_bins.append(bin_idx)
+    
+    if not peak_bins:
+        return 0.0
+
+    widths = []
+    for peak_bin in peak_bins:
+        if peak_bin >= len(values):
+            continue
+
+        # 30% of this peak's height
+        limit_value = 0.3 * values[peak_bin]
+        
+        # Find left limit
+        left_index = 0
+        i = peak_bin
+        while i >= 0:
+            if values[i] < limit_value:
+                break
+            left_index = i
+            i -= 1
+        
+        # Find right limit
+        right_index = len(values) - 1
+        i = peak_bin
+        while i < len(values):
+            if values[i] < limit_value:
+                break
+            right_index = i
+            i += 1
+        
+        # Calculate width (in BPM bins)
+        width = float(right_index - left_index)
+        widths.append(width)
+
+    if not widths:
+        return 0.0
+
+    return float(np.mean(widths))
+
+@jsymbolic
+@duration_feature
+def rhythmic_looseness_tempo_standardized(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Average width of beat histogram peaks using tempo-standardized histogram. Width is distance between points at 30% of peak height."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+
+    _, table = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
+    if not table:
+        return 0.0
+    
+    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
+    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
+    start_ticks = tuple(to_ticks(s) for s in starts)
+    end_ticks = tuple(to_ticks(e) for e in ends)
+    if not end_ticks:
+        return 0.0
+    _, values = _get_beat_histogram_values_from_ticks(start_ticks, end_ticks, float(tempo), int(ppqn))
+    if not values:
+        return 0.0
+    
+    # Find peaks with magnitude >= 30% of highest peak (column 2 in thresholded table)
+    peak_bins = []
+    for bin_idx in range(len(table)):
+        if table[bin_idx][2] > 0.001:
+            peak_bins.append(bin_idx)
+    
+    if not peak_bins:
+        return 0.0
+    
+    widths = []
+    for peak_bin in peak_bins:
+        if peak_bin >= len(values):
+            continue
+            
+        # 30% of this peak's height
+        limit_value = 0.3 * values[peak_bin]
+        
+        # Find left limit
+        left_index = 0
+        i = peak_bin
+        while i >= 0:
+            if values[i] < limit_value:
+                break
+            left_index = i
+            i -= 1
+        
+        # Find right limit
+        right_index = len(values) - 1
+        i = peak_bin
+        while i < len(values):
+            if values[i] < limit_value:
+                break
+            right_index = i
+            i += 1
+        
+        # Calculate width (in BPM bins)
+        width = float(right_index - left_index)
+        widths.append(width)
+    
+    if not widths:
+        return 0.0
+    
+    return float(np.mean(widths))
+
+def _is_factor_or_multiple(bin_idx: int, highest_bin: int, multipliers: list[int]) -> bool:
+    """Check if bin_idx is a factor or multiple of highest_bin using given multipliers with +/-3 tolerance."""
+    for mult in multipliers:
+        # Check if bin_idx is a multiple of highest_bin * mult (within tolerance)
+        expected = highest_bin * mult
+        if abs(bin_idx - expected) <= 3:
+            return True
+        # Check if bin_idx is a factor of highest_bin (within tolerance)
+        if highest_bin % mult == 0:
+            expected = highest_bin // mult
+            if abs(bin_idx - expected) <= 3:
+                return True
+        # Also check if highest_bin is a multiple of bin_idx * mult (within tolerance)
+        expected = bin_idx * mult
+        if abs(highest_bin - expected) <= 3:
+            return True
+        # And if highest_bin is a factor of bin_idx (within tolerance)
+        if bin_idx % mult == 0:
+            expected = bin_idx // mult
+            if abs(highest_bin - expected) <= 3:
+                return True
+    return False
+
+@jsymbolic
+@duration_feature
+def polyrhythms(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Fraction of beat histogram peaks that are not integer multiples/factors of the highest peak."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+    
+    # Get thresholded peak table
+    table, _ = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
+    if not table:
+        return 0.0
+    
+    # Find peaks with magnitude >= 30% of highest peak (column 2 in thresholded table)
+    peak_bins = []
+    for bin_idx in range(len(table)):
+        if table[bin_idx][2] > 0.001:
+            peak_bins.append(bin_idx)
+    
+    if not peak_bins:
+        return 0.0
+    
+    # Find the highest peak
+    highest_index = 0
+    max_magnitude = 0.0
+    for peak_bin in peak_bins:
+        if table[peak_bin][2] > max_magnitude:
+            max_magnitude = table[peak_bin][2]
+            highest_index = peak_bin
+    
+    # Count peaks that are multiples/factors of the highest peak
+    multipliers = [1, 2, 3, 4, 6, 8]
+    hits = 0
+    
+    for peak_bin in peak_bins:
+        if _is_factor_or_multiple(peak_bin, highest_index, multipliers):
+            hits += 1
+
+    return float(hits) / float(len(peak_bins))
+
+@jsymbolic
+@duration_feature
+def polyrhythms_tempo_standardized(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Fraction of beat histogram peaks that are not integer multiples/factors of the highest peak using tempo-standardized histogram."""
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+
+    _, table = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
+    if not table:
+        return 0.0
+
+    # Find peaks with magnitude >= 30% of highest peak (column 2 in thresholded table)
+    peak_bins = []
+    for bin_idx in range(len(table)):
+        if table[bin_idx][2] > 0.001:
+            peak_bins.append(bin_idx)
+    
+    if not peak_bins:
+        return 0.0
+    
+    # Find the highest peak
+    highest_index = 0
+    max_magnitude = 0.0
+    for peak_bin in peak_bins:
+        if table[peak_bin][2] > max_magnitude:
+            max_magnitude = table[peak_bin][2]
+            highest_index = peak_bin
+    
+    # Count peaks that are multiples/factors of the highest peak
+    multipliers = [1, 2, 3, 4, 6, 8]
+    hits = 0
+    
+    for peak_bin in peak_bins:
+        if _is_factor_or_multiple(peak_bin, highest_index, multipliers):
+            hits += 1
+
+    return float(hits) / float(len(peak_bins))
+
+@jsymbolic
+@duration_feature
+def number_of_strong_rhythmic_pulses(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Count BPM bins with sufficiently strong pulses (> 0.001).
+    """
+    if not starts or not ends or len(starts) != len(ends):
+        return 0.0
+
+    # Use cached beat histogram tables
+    table, _ = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
+    return _count_strong_pulses(list(table), column_index=0)
+
+@jsymbolic
+@duration_feature
+def number_of_strong_rhythmic_pulses_tempo_standardized(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Count strong rhythmic pulses using the tempo-standardized beat histogram.
+    """
+    _, std_table = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
+    return _count_strong_pulses(list(std_table), column_index=0)
+
+@jsymbolic
+@duration_feature
+def number_of_moderate_rhythmic_pulses(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Number of beat histogram peaks with normalized magnitudes over 0.01."""
+    table, _ = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
+    return _count_strong_pulses(list(table), column_index=1)
+
+@jsymbolic
+@duration_feature
+def number_of_moderate_rhythmic_pulses_tempo_standardized(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Number of tempo-standardized beat histogram peaks with normalized magnitudes over 0.01."""
+    _, std_table = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
+    return _count_strong_pulses(list(std_table), column_index=1)
+
+@jsymbolic
+@duration_feature
+def number_of_relatively_strong_rhythmic_pulses(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Number of peaks at least 30% of the max magnitude."""
+    table, _ = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
+    return _count_strong_pulses(list(table), column_index=2)
+
+@jsymbolic
+@duration_feature
+def number_of_relatively_strong_rhythmic_pulses_tempo_standardized(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    ppqn: int = 480,
+) -> float:
+    """Number of tempo-standardized peaks at least 30% of the max magnitude."""
+    _, std_table = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
+    return _count_strong_pulses(list(std_table), column_index=2)
 
 @novel
 @duration_feature
@@ -3135,10 +5090,13 @@ def amount_of_staccato(starts: list[float], ends: list[float]) -> float:
     float
         Amount of staccato
     """
-    durations = _get_durations(starts, ends)
-    if not durations:
+    if not starts or not ends or len(starts) != len(ends):
         return 0.0
-    return float(sum(1 for duration in durations if duration < 0.1) / len(durations))
+    durations_seconds = [float(end - start) for start, end in zip(starts, ends)]
+    if not durations_seconds:
+        return 0.0
+    short_count = sum(1 for d in durations_seconds if d < 0.1)
+    return float(short_count / len(durations_seconds))
 
 @midi_toolbox
 @duration_feature
@@ -3698,12 +5656,9 @@ def chromatic_motion(pitches: list[int]) -> float:
 def melodic_embellishment(
     pitches: list[int], starts: list[float], ends: list[float]
 ) -> float:
-    """Calculate proportion of melodic embellishments (e.g. trills, turns, neighbor tones).
-
-    Melodic embellishments are identified by looking for notes with a duration 1/3rd of the
-    adjacent note's duration that move away from and return to a pitch level, or oscillate
-    between two pitches.
-
+    """Calculate proportion of melodic embellishments. Melodic embellishments are identified by notes 
+    that are surrounded on both sides by notes with durations at least 3 times longer than the central 
+    note, on the same channel.
 
     Parameters
     ----------
@@ -3717,10 +5672,26 @@ def melodic_embellishment(
     Returns
     -------
     float
-        Proportion of intervals that are embellishments (0.0-1.0).
-        Returns -1.0 if input is None, 0.0 if input is empty or has only one value.
+        Proportion of notes that are embellishments (0.0-1.0).
+        Returns -1.0 if input is None, 0.0 if input is empty.
     """
-    return melodic_embellishment_proportion(pitches, starts, ends)
+    if not pitches or not starts or not ends:
+        return -1.0
+    if len(pitches) != len(starts) or len(starts) != len(ends):
+        return -1.0
+    if len(pitches) == 0:
+        return 0.0
+
+    durations = [end - start for start, end in zip(starts, ends)]
+
+    embellishment_count = 0
+    for i in range(1, len(pitches) - 1):
+        # Check if surrounded by notes with duration >= 3x this note
+        if (durations[i-1] >= 3 * durations[i] and 
+            durations[i+1] >= 3 * durations[i]):
+            embellishment_count += 1
+
+    return float(embellishment_count) / len(pitches)
 
 @jsymbolic
 @complexity_feature
@@ -4554,7 +6525,7 @@ def complebm(melody: Melody, method: str = 'o') -> float:
         note_durations = _get_durations(melody.starts, melody.ends)
         duration_entropy_component = shannon_entropy(note_durations) * 0.7 if note_durations else 0.0
 
-        note_density_component = note_density(melody.starts, melody.ends) * 0.2
+        note_density_component = note_density(melody) * 0.2
 
         positive_durations = [d for d in note_durations if d > 0]
         if positive_durations:
@@ -4595,7 +6566,7 @@ def complebm(melody: Melody, method: str = 'o') -> float:
         note_durations = _get_durations(melody.starts, melody.ends)
         duration_entropy_component = shannon_entropy(note_durations) * 0.5 if note_durations else 0.0
 
-        note_density_component = note_density(melody.starts, melody.ends) * 0.4
+        note_density_component = note_density(melody) * 0.4
 
         positive_durations = [d for d in note_durations if d > 0]
         if positive_durations:
@@ -6385,6 +8356,10 @@ def _compute_features_by_source(melody: Melody, source: str) -> Dict:
                     args.append(melody.starts)
                 elif param == "ends":
                     args.append(melody.ends)
+                elif param == "tempo":
+                    args.append(melody.tempo)
+                elif param == "ppqn":
+                    args.append(480)
                 elif param == "phrase_gap":
                     args.append(1.5)
                 elif param == "max_ngram_order":

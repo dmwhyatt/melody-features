@@ -149,6 +149,17 @@ class Melody:
             return time_sig_info["metric_stability"]
         return 0.0  # Default to unstable if no information available
 
+    @property
+    def total_duration(self) -> float:
+        """Get the total duration of the MIDI sequence in seconds.
+        
+        Returns:
+            float: Total duration of the MIDI sequence in seconds, including any 
+                   leading or trailing silence. This matches jSymbolic's 
+                   DurationInSecondsFeature implementation.
+        """
+        return self._midi_data.get("total_duration", 0.0)
+
 
 def read_midijson(file_path: str) -> dict:
     with open(file_path, "r", encoding="utf-8") as file:

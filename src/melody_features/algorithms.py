@@ -68,7 +68,7 @@ def rank_values(values: list[float], descending: bool = False) -> list[float]:
 
     return ranks
 
-def nine_percent_significant_values(
+def n_percent_significant_values(
     values: list[float], threshold: float = 0.09
 ) -> list[float]:
     """Returns values that appear more than a given proportion of times in the input list.
@@ -94,11 +94,11 @@ def nine_percent_significant_values(
 
     Examples
     --------
-    >>> nine_percent_significant_values([1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])  # >9% threshold
+    >>> n_percent_significant_values([1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])  # >9% threshold
     [1.0]
-    >>> nine_percent_significant_values([1, 1, 2, 2, 3, 3], threshold=0.3)  # 30% threshold
+    >>> n_percent_significant_values([1, 1, 2, 2, 3, 3], threshold=0.3)  # 30% threshold
     [1.0, 2.0, 3.0]
-    >>> nine_percent_significant_values([])  # Empty input
+    >>> n_percent_significant_values([])  # Empty input
     []
     """
     if not values:
