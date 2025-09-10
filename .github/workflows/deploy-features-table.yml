@@ -72,7 +72,7 @@ jobs:
       uses: actions/upload-pages-artifact@v3
       with:
         path: '_site'
-        name: features-table-site
+        name: github-pages
         
     - name: Deploy to GitHub Pages
       id: deployment
