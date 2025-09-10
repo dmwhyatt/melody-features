@@ -10,6 +10,7 @@ build/
 notebooks/.ipynb_checkpoints
 notebooks/output*
 temp.py
+test.py
 essen_corpus_features.csv
 test_corpus_corpus_stats.json
 .coverage*
@@ -17,3 +18,4 @@ coverage.xml
 htmlcov/
 features_table.qmd
 features_table.html
+features_table_files/

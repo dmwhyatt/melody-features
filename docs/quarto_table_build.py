@@ -12,8 +12,8 @@ metadata, and emits a CSV or Markdown table with columns:
 - Notes
 
 Usage:
-  python -m melody_features.quarto_table_build --format csv --out /path/to/features_table.csv
-  python -m melody_features.quarto_table_build --format qmd --out /path/to/features_table.qmd
+  python docs/quarto_table_build.py --format csv --out /path/to/features_table.csv
+  python docs/quarto_table_build.py --format qmd --out /path/to/features_table.qmd
 """
 
 from __future__ import annotations
@@ -21,10 +21,17 @@ from __future__ import annotations
 import argparse
 import inspect
 import re
+import sys
 from dataclasses import dataclass
 from typing import Iterable, Optional
+from pathlib import Path
 
 import pandas as pd
+
+# Add src directory to path for imports
+script_dir = Path(__file__).parent
+src_dir = script_dir.parent / "src"
+sys.path.insert(0, str(src_dir))
 
 from melody_features import features as features_module
 from melody_features.step_contour import StepContour
