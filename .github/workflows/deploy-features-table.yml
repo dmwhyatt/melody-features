@@ -7,6 +7,7 @@ on:
       - 'src/melody_features/features.py'
       - 'docs/quarto_table_build.py'
       - 'features_table.qmd'
+      - '.github/workflows/deploy-features-table.yml'
   workflow_dispatch:
 
 permissions:
