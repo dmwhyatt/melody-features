@@ -22,6 +22,8 @@ dependencies = [
     "setuptools",
     "tenacity",
     "tqdm",
+    "PyYAML",
+    "jupyter",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
