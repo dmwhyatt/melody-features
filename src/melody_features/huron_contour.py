@@ -78,7 +78,7 @@ class HuronContour:
         return [first_pitch, float(mean_pitch), last_pitch]
 
     def get_contour_class(self, contour_points: list[float]) -> str:
-        """Classify a contour based on the relationship between three points.
+        """The classification of a contour based on the relationship between the first, mean, and last pitch of the melody.
         
         Parameters
         ----------

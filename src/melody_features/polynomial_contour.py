@@ -75,8 +75,7 @@ class PolynomialContour:
     def calculate_coefficients(
         self, onsets: list[float], pitches: list[int]
     ) -> list[float]:
-        """Calculate polynomial contour coefficients for the melody.
-        Main method for the PolynomialContour class.
+        """The first 3 non-constant coefficients of the polynomial contour.
 
         Parameters
         ----------

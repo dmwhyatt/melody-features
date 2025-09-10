@@ -252,8 +252,7 @@ class InterpolationContour:
 
     @property
     def global_direction(self) -> int:
-        """Calculate the global direction of the interpolation contour by taking
-        the sign of the sum of all contour values.
+        """The sign of the sum of all contour values.
 
         Returns
         -------
@@ -281,7 +280,7 @@ class InterpolationContour:
 
     @property
     def mean_gradient(self) -> float:
-        """Calculate the absolute mean gradient of the interpolation contour.
+        """The absolute mean gradient of the interpolation contour.
 
         Returns
         -------
@@ -304,7 +303,7 @@ class InterpolationContour:
 
     @property
     def gradient_std(self) -> float:
-        """Calculate the standard deviation of the interpolation contour gradients.
+        """The standard deviation of the interpolation contour gradients.
 
         Returns
         -------
@@ -335,7 +334,7 @@ class InterpolationContour:
 
     @property
     def direction_changes(self) -> float:
-        """Calculate the proportion of interpolated gradient values that consistute
+        """The proportion of interpolated gradient values that consistute
         a change in direction. For instance, a gradient value of
         -0.5 to 0.25 is a change in direction.
 

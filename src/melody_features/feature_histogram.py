@@ -450,19 +450,19 @@ class BeatHistogram:
         """
         series = np.array(series, dtype=np.float64)
         n = len(series)
-        
+
         if n == 0:
             return []
-        
+
         # Use FFT-based autocorrelation for better performance
         # This is mathematically equivalent to np.correlate but faster for long sequences
         fft_series = np.fft.fft(series, n=2*n)
         autocorr = np.fft.ifft(fft_series * np.conj(fft_series))
         autocorr = np.real(autocorr[:n])  # Take only positive lags
-        
+
         # Normalize by the total length
         autocorr = autocorr / n
-        
+
         return autocorr.tolist()
 
     @staticmethod

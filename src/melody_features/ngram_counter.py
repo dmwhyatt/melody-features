@@ -84,7 +84,9 @@ class NGramCounter:
 
     @property
     def yules_k(self) -> float:
-        """Calculate Yule's K measure of lexical richness."""
+        """Yule's K measure of lexical richness. This feature measures the rate
+        at which m-types are repeated in a sequence. Higher values indicate more
+        repetitive sequences."""
         try:
             if len(self.count_values) <= 1:
                 import warnings
@@ -111,7 +113,8 @@ class NGramCounter:
 
     @property
     def simpsons_d(self) -> float:
-        """Calculate Simpson's D measure of diversity."""
+        """Simpson's D measure of diversity. This feature measures the rate of m-type
+        repetition in a similar way to Yule's K."""
         try:
             if len(self.count_values) <= 1:
                 import warnings
@@ -135,7 +138,8 @@ class NGramCounter:
 
     @property
     def sichels_s(self) -> float:
-        """Calculate Sichel's S measure of vocabulary richness."""
+        """Sichel's S measure corresponds to the proportion of m-types that occur exactly twice in a sequence.
+        Higher values indicate a greater amount of m-types that occur exactly twice."""
         try:
             if len(self.count_values) <= 1:
                 import warnings
@@ -157,7 +161,8 @@ class NGramCounter:
 
     @property
     def honores_h(self) -> float:
-        """Calculate Honoré's H measure of vocabulary richness."""
+        """Honoré's H measure corresponds to the observation that the number of tokens occuring exactly once 
+        in a sequence is logarithmically related to the total number of tokens in the sequence."""
         try:
             if len(self.count_values) <= 1:
                 import warnings
@@ -181,7 +186,7 @@ class NGramCounter:
 
     @property
     def mean_entropy(self) -> float:
-        """Calculate mean entropy across n-gram lengths."""
+        """Calculate the zeroth-order base-2 entropy of m-types across all n-gram lengths."""
         try:
             if len(self.count_values) <= 1:
                 import warnings
@@ -205,7 +210,9 @@ class NGramCounter:
 
     @property
     def mean_productivity(self) -> float:
-        """Calculate mean productivity across n-gram lengths."""
+        """Mean productivity is defined as the mean of the number of types
+        occurring only once divided by the total number of tokens. The types occurring
+        only once in a sequence are known as hapax legomena."""
         try:
             if len(self.count_values) <= 1:
                 import warnings

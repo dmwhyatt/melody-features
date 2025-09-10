@@ -428,7 +428,7 @@ class Config:
 @jsymbolic
 @pitch_feature
 def pitch_range(pitches: list[int]) -> int:
-    """Calculate the range between the highest and lowest pitches.
+    """Subtract the lowest pitch number in the melody from the highest.
 
     Parameters
     ----------
@@ -447,7 +447,7 @@ def pitch_range(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def pitch_standard_deviation(pitches: list[int]) -> float:
-    """Calculate the standard deviation of pitch values.
+    """Standard deviation of all pitch numbers in the melody.
 
     Parameters
     ----------
@@ -469,7 +469,7 @@ pitch_variability = pitch_standard_deviation
 @jsymbolic
 @pitch_feature
 def pitch_class_variability(pitches: list[int]) -> float:
-    """Calculate the standard deviation of pitch class values.
+    """Standard deviation of all pitch classes in the melody.
     
     Parameters
     ----------
@@ -489,9 +489,7 @@ def pitch_class_variability(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def pitch_class_variability_after_folding(pitches: list[int]) -> float:
-    """Calculate standard deviation of pitch classes after folding by perfect fifths.
-    
-    Folds pitch classes by perfect fifths (multiply by 7 mod 12) and calculates their standard deviation.
+    """Standard deviation of all pitch classes after arranging the pitch classes by perfect fifths.
     Provides a measure of how close the pitch classes are as a whole from the mean pitch class from a 
     dominant-tonic perspective.
 
@@ -517,7 +515,7 @@ def pitch_class_variability_after_folding(pitches: list[int]) -> float:
 @fantastic
 @pitch_feature
 def pitch_entropy(pitches: list[int]) -> float:
-    """Calculate the Shannon entropy of pitch values.
+    """The zeroth-order base-2 entropy of the pitch distribution.
 
     Parameters
     ----------
@@ -534,7 +532,7 @@ def pitch_entropy(pitches: list[int]) -> float:
 @midi_toolbox
 @pitch_feature
 def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
-    """Calculate duration-weighted distribution of pitch classes.
+    """The distribution of pitch classes in the melody, weighted by the duration of the notes.
 
     Parameters
     ----------
@@ -570,7 +568,7 @@ def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
 @jsymbolic
 @pitch_feature
 def first_pitch(pitches: list[int]) -> int:
-    """Find the first pitch in the melody.
+    """The first pitch number in the melody.
     
     Parameters
     ----------
@@ -589,7 +587,7 @@ def first_pitch(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def first_pitch_class(pitches: list[int]) -> int:
-    """Find the first pitch class in the melody.
+    """The first pitch class in the melody.
     
     Parameters
     ----------
@@ -608,7 +606,7 @@ def first_pitch_class(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def last_pitch(pitches: list[int]) -> int:
-    """Find the last pitch in the melody.
+    """The last pitch number in the melody.
     
     Parameters
     ----------
@@ -627,7 +625,7 @@ def last_pitch(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def last_pitch_class(pitches: list[int]) -> int:
-    """Find the last pitch class in the melody.
+    """The last pitch class in the melody.
     
     Parameters
     ----------
@@ -645,7 +643,7 @@ def last_pitch_class(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def basic_pitch_histogram(pitches: list[int]) -> dict:
-    """Create histogram of pitch values within range of input pitches.
+    """A histogram of pitch values within the range of input pitches.
 
     Parameters
     ----------
@@ -656,6 +654,12 @@ def basic_pitch_histogram(pitches: list[int]) -> dict:
     -------
     dict
         Dictionary mapping pitch values to counts
+
+    Note
+    ----
+    We use the histogram in the range of input pitches to reduce the output size. An implementation
+    that is truer to the original jSymbolic implementation would return 128 bins (0-127) regardless of how any different pitches are present.
+    However, we believe our approach is more concise and easier to understand for many purposes.
     """
     if not pitches:
         return {}
@@ -669,12 +673,8 @@ def basic_pitch_histogram(pitches: list[int]) -> dict:
 @jsymbolic
 @pitch_feature
 def melodic_pitch_variety(pitches: list[int], starts: list[float], tempo: float = 120.0, ppqn: int = 480) -> float:
-    """Calculate average number of notes before a pitch is repeated.
+    """The average number of notes that pass before a pitch is repeated.
     
-    This matches jSymbolic's implementation which counts ticks instead of individual notes for counting purposes.
-    The original jSymbolic implementation uses a tick-based approach where each tick represents a time unit,
-    and we count how many different pitches occur between repetitions.
-
     Parameters
     ----------
     pitches : list[int]
@@ -787,7 +787,7 @@ def _consecutive_fifths(pitch_classes: list[int]) -> list[int]:
 @jsymbolic
 @pitch_feature
 def dominant_spread(pitches: list[int]) -> int:
-    """Find longest sequence of pitch classes separated by perfect 5ths that each appear >9% of the time.
+    """The longest sequence of pitch classes separated by perfect 5ths that each appear >9% of the time.
 
     Parameters
     ----------
@@ -832,7 +832,7 @@ def dominant_spread(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def mean_pitch(pitches: list[int]) -> int:
-    """Calculate mean pitch value.
+    """The arithmetic mean of the pitch numbers in the melody.
 
     Parameters
     ----------
@@ -849,7 +849,7 @@ def mean_pitch(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def mean_pitch_class(pitches: list[int]) -> float:
-    """Calculate mean pitch class value.
+    """The arithmetic mean of the pitch classes in the melody.
     
     Parameters
     ----------
@@ -865,7 +865,7 @@ def mean_pitch_class(pitches: list[int]) -> float:
 
 @jsymbolic
 def most_common_pitch(pitches: list[int]) -> int:
-    """Find most frequently occurring pitch.
+    """The most frequently occurring pitch number in the melody.
 
     Parameters
     ----------
@@ -882,7 +882,7 @@ def most_common_pitch(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def most_common_pitch_class(pitches: list[int]) -> int:
-    """Find most frequently occurring pitch class.
+    """The most frequently occurring pitch class in the melody.
     
     Parameters
     ----------
@@ -901,7 +901,7 @@ def most_common_pitch_class(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def number_of_unique_pitch_classes(pitches: list[int]) -> int:
-    """Count number of unique pitch classes.
+    """The number of unique pitch classes in the melody.
     
     Parameters
     ----------
@@ -918,7 +918,7 @@ def number_of_unique_pitch_classes(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def number_of_common_pitches_classes(pitches: list[int]) -> int:
-    """Count pitch classes that appear in at least 20% of notes.
+    """The number of pitch classes that appear in at least 20% of total notes.
 
     Parameters
     ----------
@@ -937,7 +937,7 @@ def number_of_common_pitches_classes(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def number_of_unique_pitches(pitches: list[int]) -> int:
-    """Count number of unique pitches.
+    """The number of unique pitch numbers in the melody.
 
     Parameters
     ----------
@@ -954,7 +954,7 @@ def number_of_unique_pitches(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def number_of_common_pitches(pitches: list[int]) -> int:
-    """Count unique pitches that appear in at least 9% of notes.
+    """The number of unique pitch numbers that appear in at least 9% of total notes.
 
     Parameters
     ----------
@@ -973,10 +973,7 @@ def number_of_common_pitches(pitches: list[int]) -> int:
 @midi_toolbox
 @pitch_feature
 def tessitura(pitches: list[int]) -> list[float]:
-    """Calculate melodic tessitura for each note based on von Hippel (2000).
-    Implementation based on MIDI toolbox "tessitura.m"
-    
-    Tessitura is based on standard deviation from median pitch height. The median range 
+    """Tessitura is based on standard deviation from median pitch height. The median range 
     of the melody tends to be favoured and thus more expected. Tessitura predicts 
     whether listeners expect tones close to median pitch height. Higher tessitura values
     correspond to melodies that have a wider range of pitches.
@@ -990,6 +987,11 @@ def tessitura(pitches: list[int]) -> list[float]:
     -------
     list[float]
         Absolute tessitura value for each note in the sequence
+
+    Citation
+    ---------
+    von Hippel, C. (2000).
+    
     """
     if len(pitches) < 2:
         return [0.0] if len(pitches) == 1 else []
@@ -1017,7 +1019,7 @@ def tessitura(pitches: list[int]) -> list[float]:
 @novel
 @pitch_feature
 def mean_tessitura(pitches: list[int]) -> float:
-    """Calculate mean tessitura across all notes.
+    """The arithmetic mean of the sequence of tessitura values.
     
     Parameters
     ----------
@@ -1037,7 +1039,7 @@ def mean_tessitura(pitches: list[int]) -> float:
 @novel
 @pitch_feature
 def tessitura_std(pitches: list[int]) -> float:
-    """Calculate standard deviation of tessitura values.
+    """The standard deviation of the sequence of tessitura values.
     
     Parameters
     ----------
@@ -1057,8 +1059,8 @@ def tessitura_std(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def prevalence_of_most_common_pitch(pitches: list[int]) -> float:
-    """Calculate proportion of most common pitch with regards to the
-    number of notes in the whole melody.
+    """The proportion of pitches that are the most common pitch with regards to the
+    total number of pitches in the melody.
 
     Parameters
     ----------
@@ -1075,8 +1077,8 @@ def prevalence_of_most_common_pitch(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def prevalence_of_most_common_pitch_class(pitches: list[int]) -> float:
-    """Calculate proportion of most common pitch class with regards to the
-    number of notes in the whole melody.
+    """The proportion of pitch classes that are the most common pitch class with regards to the
+    total number of pitch classes in the melody.
 
     Parameters
     ----------
@@ -1096,7 +1098,7 @@ def prevalence_of_most_common_pitch_class(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def relative_prevalence_of_top_pitches(pitches: list[int]) -> float:
-    """Calculate ratio of the frequency of the second most common pitch to the frequency of the most common pitch.
+    """The ratio of the frequency of the second most common pitch to the frequency of the most common pitch.
 
     Parameters
     ----------
@@ -1127,7 +1129,7 @@ def relative_prevalence_of_top_pitches(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def relative_prevalence_of_top_pitch_classes(pitches: list[int]) -> float:
-    """Calculate ratio of the frequency of the second most common pitch class to the frequency of the most common pitch class.
+    """The ratio of the frequency of the second most common pitch class to the frequency of the most common pitch class.
 
     Parameters
     ----------
@@ -1162,7 +1164,7 @@ def relative_prevalence_of_top_pitch_classes(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def interval_between_most_prevalent_pitches(pitches: list[int]) -> int:
-    """Calculate the number of semitones between the most prevalent pitches.
+    """The number of semitones between the two most prevalent pitches.
 
     Parameters
     ----------
@@ -1194,7 +1196,7 @@ def interval_between_most_prevalent_pitches(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def interval_between_most_prevalent_pitch_classes(pitches: list[int]) -> int:
-    """Calculate the number of semitones between the most prevalent pitch classes.
+    """The number of semitones between the two most prevalent pitch classes.
 
     Parameters
     ----------
@@ -1227,7 +1229,7 @@ def interval_between_most_prevalent_pitch_classes(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_feature
 def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
-    """Create histogram of pitch classes arranged in circle of fifths.
+    """A histogram of pitch classes arranged according to the circle of fifths.
 
     Parameters
     ----------
@@ -1237,7 +1239,7 @@ def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
     Returns
     -------
     dict
-        Dictionary mapping pitch classes to counts, arranged by circle of fifths
+        Dictionary mapping pitch classes to counts, arranged according to the circle of fifths
     """
     # again, we don't use the histogram object for this one to simplify the output
     pcs = [pitch % 12 for pitch in pitches]
@@ -1252,7 +1254,7 @@ def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
 @jsymbolic
 @pitch_feature
 def pitch_class_skewness(pitches: list[int]) -> float:
-    """Calculate skewness of pitch class histogram.
+    """The skewness of the pitch class histogram, using Pearson's median skewness formula.
 
     Parameters
     ----------
@@ -1273,7 +1275,7 @@ def pitch_class_skewness(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def pitch_class_kurtosis(pitches: list[int]) -> float:
-    """Calculate kurtosis of pitch class histogram.
+    """The sample excess kurtosis of the pitch class histogram.
 
     Parameters
     ----------
@@ -1287,14 +1289,15 @@ def pitch_class_kurtosis(pitches: list[int]) -> float:
     """
     if not pitches:
         return 0.0
-    
+
     histogram = PitchClassHistogram(pitches, folded=False)
     return histogram.kurtosis
 
 @jsymbolic
 @pitch_feature
 def pitch_class_skewness_after_folding(pitches: list[int]) -> float:
-    """Calculate skewness of folded fifths pitch class histogram.
+    """The skewness of the pitch class histogram, using Pearson's median skewness formula, 
+    after arranging the pitch classes according to the circle of fifths.
 
     Parameters
     ----------
@@ -1315,7 +1318,8 @@ def pitch_class_skewness_after_folding(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def pitch_class_kurtosis_after_folding(pitches: list[int]) -> float:
-    """Calculate kurtosis of folded fifths pitch class histogram.
+    """The sample excess kurtosis of the pitch class histogram, after arranging 
+    the pitch classes according to the circle of fifths.
 
     Parameters
     ----------
@@ -1336,7 +1340,7 @@ def pitch_class_kurtosis_after_folding(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def strong_tonal_centres(pitches: list[int]) -> float:
-    """Calculate number of isolated peaks in the fifths pitch histogram that each account for at least 9% of notes.
+    """The number of isolated peaks in the pitch class histogram that each account for at least 9% of notes.
 
     Parameters
     ----------
@@ -1376,10 +1380,7 @@ def strong_tonal_centres(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def pitch_skewness(pitches: list[int]) -> float:
-    """Calculate skewness of the MIDI pitches using Pearson's median skewness coefficient.
-
-    This matches jSymbolic's PitchSkewnessFeature implementation which calculates
-    the median skewness of the raw pitch values.
+    """The skewness of the pitch histogram, using Pearson's median skewness formula.
 
     Parameters
     ----------
@@ -1400,7 +1401,7 @@ def pitch_skewness(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def pitch_kurtosis(pitches: list[int]) -> float:
-    """Calculate kurtosis of regular pitch histogram.
+    """The sample excess kurtosis of the pitch histogram.
 
     Parameters
     ----------
@@ -1420,7 +1421,7 @@ def pitch_kurtosis(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def importance_of_bass_register(pitches: list[int]) -> float:
-    """The proportion of MIDI pitch numbers that are between 0 and 54. 
+    """The proportion of pitch numbers in the melody that are between 0 and 54. 
     
     Parameters
     ----------
@@ -1437,7 +1438,7 @@ def importance_of_bass_register(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def importance_of_middle_register(pitches: list[int]) -> float:
-    """The proportion of MIDI pitch numbers that are between 55 and 72. 
+    """The proportion of pitch numbers in the melody that are between 55 and 72. 
 
     Parameters
     ----------
@@ -1454,7 +1455,7 @@ def importance_of_middle_register(pitches: list[int]) -> float:
 @jsymbolic
 @pitch_feature
 def importance_of_high_register(pitches: list[int]) -> float:
-    """The proportion of MIDI pitch numbers that are between 73 and 127. 
+    """The proportion of pitch numbers in the melody that are between 73 and 127. 
     
     Parameters
     ----------
@@ -1472,7 +1473,7 @@ def importance_of_high_register(pitches: list[int]) -> float:
 @simile
 @interval_feature
 def pitch_interval(pitches: list[int]) -> list[int]:
-    """Calculate intervals between consecutive pitches.
+    """The intervals (in semitones) between consecutive pitches in the melody.
 
     Parameters
     ----------
@@ -1489,7 +1490,7 @@ def pitch_interval(pitches: list[int]) -> list[int]:
 @fantastic
 @interval_feature
 def absolute_interval_range(pitches: list[int]) -> int:
-    """Calculate range between largest and smallest absolute interval size.
+    """The range between the largest and smallest absolute interval size.
 
     Parameters
     ----------
@@ -1507,7 +1508,7 @@ def absolute_interval_range(pitches: list[int]) -> int:
 @jsymbolic
 @interval_feature
 def mean_absolute_interval(pitches: list[int]) -> float:
-    """Calculate mean absolute interval size.
+    """The arithmetic mean of the absolute intervals in the melody.
 
     Parameters
     ----------
@@ -1528,7 +1529,7 @@ mean_melodic_interval = mean_absolute_interval
 @fantastic
 @interval_feature
 def standard_deviation_absolute_interval(pitches: list[int]) -> float:
-    """Calculate standard deviation of absolute interval sizes.
+    """The standard deviation of the absolute intervals in the melody.
 
     Parameters
     ----------
@@ -1546,7 +1547,7 @@ def standard_deviation_absolute_interval(pitches: list[int]) -> float:
 @jsymbolic
 @interval_feature
 def modal_interval(pitches: list[int]) -> int:
-    """Find most common interval size.
+    """The most common interval size in the melody.
 
     Parameters
     ----------
@@ -1571,7 +1572,7 @@ most_common_interval = modal_interval
 @fantastic
 @interval_feature
 def interval_entropy(pitches: list[int]) -> float:
-    """Calculate Shannon entropy of interval distribution.
+    """The zeroth-order base-2 entropy of the interval distribution.
 
     Parameters
     ----------
@@ -1616,7 +1617,7 @@ def _get_durations(starts: list[float], ends: list[float], tempo: float = 120.0)
 @midi_toolbox
 @interval_feature
 def ivdist1(pitches: list[int], starts: list[float], ends: list[float], tempo: float = 120.0) -> dict:
-    """Calculate distribution of intervals, weighted by their durations.
+    """The distribution of intervals in the melody, weighted by their durations.
 
     Parameters
     ----------
@@ -1656,9 +1657,7 @@ def ivdist1(pitches: list[int], starts: list[float], ends: list[float], tempo: f
 @midi_toolbox
 @interval_feature
 def ivdirdist1(pitches: list[int]) -> dict[int, float]:
-    """Calculate proportion of upward intervals for each interval size (1-12 semitones).
-    Implementation based on MIDI toolbox "ivdirdist1.m"
-    
+    """The proportion of upward intervals for each interval size (1-12 semitones).
     Returns the proportion of upward intervals for each interval size in the melody
     as a dictionary mapping interval sizes to their directional bias values.
     
@@ -1702,12 +1701,10 @@ def ivdirdist1(pitches: list[int]) -> dict[int, float]:
 @midi_toolbox
 @interval_feature
 def ivsizedist1(pitches: list[int]) -> dict[int, float]:
-    """Calculate distribution of interval sizes (0-12 semitones).
-    Implementation based on MIDI toolbox "ivsizedist1.m"
-    
-    Returns the distribution of interval sizes by combining upward and downward 
-    intervals of the same absolute size. The first component represents unison (0)
-    and the last component represents octave (12).
+    """The distribution of interval sizes (0-12 semitones). Returns the distribution 
+    of interval sizes by combining upward and downward intervals of the 
+    same absolute size. The first component represents a unison (0)
+    and the last component represents an octave (12).
     
     Parameters
     ----------
@@ -1746,8 +1743,8 @@ def ivsizedist1(pitches: list[int]) -> dict[int, float]:
 
 @simile
 @interval_feature
-def interval_direction(pitches: list[int]) -> tuple[float, float]:
-    """Determine direction of each interval and calculate mean and standard deviation.
+def interval_direction(pitches: list[int]) -> list[int]:
+    """The sequence of interval directions in the melody.
 
     Parameters
     ----------
@@ -1756,30 +1753,69 @@ def interval_direction(pitches: list[int]) -> tuple[float, float]:
 
     Returns
     -------
-    tuple[float, float]
-        Mean and standard deviation of interval directions, where:
+    list[int]
+        Sequence of interval directions, where:
         1 represents upward motion
         0 represents same pitch
         -1 represents downward motion
     """
-    directions = [
+    return [
         1 if pitches[i + 1] > pitches[i] else 0 if pitches[i + 1] == pitches[i] else -1
         for i in range(len(pitches) - 1)
     ]
 
-    if not directions:
-        return 0.0, 0.0
+@novel
+@interval_feature
+def interval_direction_mean(pitches: list[int]) -> float:
+    """The mean of the direction of each interval in the melody.
 
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Mean of interval directions
+    """
+    directions = interval_direction(pitches)
+    
+    if not directions:
+        return 0.0
+    
+    return float(sum(directions) / len(directions))
+
+@novel
+@interval_feature
+def interval_direction_std(pitches: list[int]) -> float:
+    """The standard deviation of the direction of each interval in the melody.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Standard deviation of interval directions
+    """
+    directions = interval_direction(pitches)
+    
+    if not directions:
+        return 0.0
+    
     mean = sum(directions) / len(directions)
     variance = sum((x - mean) ** 2 for x in directions) / len(directions)
     std_dev = math.sqrt(variance)
-
-    return float(mean), float(std_dev)
+    
+    return float(std_dev)
 
 @jsymbolic
 @interval_feature
 def average_length_of_melodic_arcs(pitches: list[int]) -> float:
-    """Calculate average number of notes that separate peaks and troughs in melodic arcs.
+    """The average number of notes that separate peaks and troughs in melodic arcs.
 
     Parameters
     ----------
@@ -1833,7 +1869,7 @@ def average_length_of_melodic_arcs(pitches: list[int]) -> float:
 @jsymbolic
 @interval_feature
 def average_interval_span_by_melodic_arcs(pitches: list[int]) -> float:
-    """Calculate average interval span of melodic arcs.
+    """The average interval span of melodic arcs.
 
     Parameters
     ----------
@@ -1889,10 +1925,7 @@ def average_interval_span_by_melodic_arcs(pitches: list[int]) -> float:
 @jsymbolic
 @interval_feature
 def distance_between_most_prevalent_melodic_intervals(pitches: list[int]) -> float:
-    """Calculate absolute difference between two most common interval sizes.
-    
-    This implementation follows jSymbolic's approach using the melodic interval histogram
-    to find the two most prevalent intervals and calculate their absolute difference.
+    """The absolute difference between the two most common interval sizes.
 
     Parameters
     ----------
@@ -1935,7 +1968,7 @@ def distance_between_most_prevalent_melodic_intervals(pitches: list[int]) -> flo
 @jsymbolic
 @interval_feature
 def melodic_interval_histogram(pitches: list[int]) -> dict:
-    """Create histogram of interval sizes.
+    """A histogram of interval sizes.
 
     Parameters
     ----------
@@ -1954,7 +1987,7 @@ def melodic_interval_histogram(pitches: list[int]) -> dict:
 @jsymbolic
 @interval_feature
 def melodic_large_intervals(pitches: list[int]) -> float:
-    """Calculate proportion of intervals >= 13 semitones.
+    """The proportion of intervals >= 13 semitones.
 
     Parameters
     ----------
@@ -1974,7 +2007,7 @@ def melodic_large_intervals(pitches: list[int]) -> float:
 
 
 def variable_melodic_intervals(pitches: list[int], interval_level: Union[int, list[int]]) -> float:
-    """Calculate proportion of intervals >= specified size.
+    """The proportion of intervals >= specified size.
 
     Parameters
     ----------
@@ -2005,7 +2038,7 @@ def variable_melodic_intervals(pitches: list[int], interval_level: Union[int, li
 @jsymbolic
 @interval_feature
 def melodic_thirds(pitches: list[int]) -> float:
-    """Calculate proportion of intervals that are thirds (3 or 4 semitones).
+    """The proportion of intervals that are thirds (3 or 4 semitones).
     
     Parameters
     ----------
@@ -2023,7 +2056,7 @@ def melodic_thirds(pitches: list[int]) -> float:
 @jsymbolic
 @interval_feature
 def melodic_perfect_fourths(pitches: list[int]) -> float:
-    """Calculate proportion of intervals that are perfect fourths (5 semitones).
+    """The proportion of intervals that are perfect fourths (5 semitones).
     
     Parameters
     ----------
@@ -2040,7 +2073,7 @@ def melodic_perfect_fourths(pitches: list[int]) -> float:
 @jsymbolic
 @interval_feature
 def melodic_tritones(pitches: list[int]) -> float:
-    """Calculate proportion of intervals that are tritones (6 semitones).
+    """The proportion of intervals that are tritones (6 semitones).
     
     Parameters
     ----------
@@ -2057,7 +2090,7 @@ def melodic_tritones(pitches: list[int]) -> float:
 @jsymbolic
 @interval_feature
 def melodic_perfect_fifths(pitches: list[int]) -> float:
-    """Calculate proportion of intervals that are perfect fifths (7 semitones).
+    """The proportion of intervals that are perfect fifths (7 semitones).
     
     Parameters
     ----------
@@ -2074,7 +2107,7 @@ def melodic_perfect_fifths(pitches: list[int]) -> float:
 @jsymbolic
 @interval_feature
 def melodic_sixths(pitches: list[int]) -> float:
-    """Calculate proportion of intervals that are sixths (8 or 9 semitones).
+    """The proportion of intervals that are sixths (8 or 9 semitones).
     
     Parameters
     ----------
@@ -2091,7 +2124,7 @@ def melodic_sixths(pitches: list[int]) -> float:
 @jsymbolic
 @interval_feature
 def melodic_sevenths(pitches: list[int]) -> float:
-    """Calculate proportion of intervals that are sevenths (10 or 11 semitones).
+    """The proportion of intervals that are sevenths (10 or 11 semitones).
     
     Parameters
     ----------
@@ -2108,7 +2141,7 @@ def melodic_sevenths(pitches: list[int]) -> float:
 @jsymbolic
 @interval_feature
 def melodic_octaves(pitches: list[int]) -> int:
-    """Calculate proportion of intervals that are octaves (12 semitones).
+    """The proportion of intervals that are octaves (12 semitones).
     
     Parameters
     ----------
@@ -2125,7 +2158,7 @@ def melodic_octaves(pitches: list[int]) -> int:
 @jsymbolic
 @interval_feature
 def minor_major_third_ratio(pitches: list[int]) -> float:
-    """Calculate ratio of minor thirds to major thirds.
+    """The ratio of minor thirds to major thirds.
     
     Parameters
     ----------
@@ -2148,10 +2181,7 @@ def minor_major_third_ratio(pitches: list[int]) -> float:
 @jsymbolic
 @interval_feature
 def direction_of_melodic_motion(pitches: list[int]) -> float:
-    """Calculate the proportion of upward melodic motions.
-    
-    This matches jSymbolic's implementation which calculates the fraction
-    of melodic intervals that are ascending in pitch.
+    """The proportion of upward melodic motions with regards to the total number of melodic motions.
     
     Parameters
     ----------
@@ -2184,7 +2214,7 @@ def direction_of_melodic_motion(pitches: list[int]) -> float:
 @jsymbolic
 @interval_feature
 def number_of_common_melodic_intervals(pitches: list[int]) -> int:
-    """Count intervals that appear in at least 9% of melodic transitions.
+    """The number of intervals that appear in at least 9% of melodic transitions.
 
     Parameters
     ----------
@@ -2208,7 +2238,7 @@ def number_of_common_melodic_intervals(pitches: list[int]) -> int:
 @jsymbolic
 @interval_feature
 def prevalence_of_most_common_melodic_interval(pitches: list[int]) -> float:
-    """Calculate proportion of intervals that are the most common interval.
+    """The proportion of intervals that are the most common interval.
 
     Parameters
     ----------
@@ -2234,7 +2264,7 @@ def prevalence_of_most_common_melodic_interval(pitches: list[int]) -> float:
 @jsymbolic
 @interval_feature
 def relative_prevalence_of_most_common_melodic_intervals(pitches: list[int]) -> float:
-    """Calculate ratio of the frequency of the second most common interval to the frequency of the most common interval.
+    """The ratio of the frequency of the second most common interval to the frequency of the most common interval.
 
     Parameters
     ----------
@@ -2405,13 +2435,10 @@ def get_interpolation_contour_features(
 @midi_toolbox
 @contour_feature
 def get_comb_contour_matrix(pitches: list[int]) -> list[list[int]]:
-    """Calculate the Marvin & Laprade (1987) comb contour matrix.
-    Implementation based on MIDI toolbox "combcontour.m"
+    """The Marvin & Laprade (1987) comb contour matrix.
     For a melody with n notes, returns an n x n binary matrix C where
     C[i][j] = 1 if pitch of note j is higher than pitch of note i (p[j] > p[i])
     for i >= j (lower triangle including diagonal), and 0 otherwise.
-    This follows the MIDI Toolbox definition (combcontour.m), which fills the
-    lower-triangular part column-wise via c(k:a,k) = p(k) > p(k:a).
 
     Parameters
     ----------
@@ -2443,6 +2470,9 @@ def get_polynomial_contour_features(
     """Calculate polynomial contour features.
 
     Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
 
     Returns
     -------
@@ -2474,7 +2504,7 @@ def get_huron_contour_features(melody: Melody) -> str:
 @jsymbolic
 @duration_feature
 def initial_tempo(melody: Melody) -> float:
-    """Access tempo of melody.
+    """The first tempo of the melody.
 
     Parameters
     ----------
@@ -2495,7 +2525,7 @@ _get_tempo = initial_tempo
 @jsymbolic
 @duration_feature
 def mean_tempo(melody: Melody) -> float:
-    """Calculate mean tempo of melody.
+    """The mean tempo of the melody.
 
     Parameters
     ----------
@@ -2532,7 +2562,7 @@ def mean_tempo(melody: Melody) -> float:
 @jsymbolic
 @duration_feature
 def tempo_variability(melody: Melody) -> float:
-    """Calculate variability of tempo of melody.
+    """The variability of tempo of the melody.
 
     Parameters
     ----------
@@ -2551,7 +2581,7 @@ def tempo_variability(melody: Melody) -> float:
 @fantastic
 @duration_feature
 def duration_range(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Calculate range between longest and shortest note duration.
+    """The range between the longest and shortest note duration in quarter notes.
 
     Parameters
     ----------
@@ -2573,7 +2603,7 @@ def duration_range(starts: list[float], ends: list[float], tempo: float = 120.0)
 @novel
 @duration_feature
 def mean_duration(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Calculate mean note duration in quarter notes.
+    """The mean note duration in quarter notes.
 
     Parameters
     ----------
@@ -2598,7 +2628,7 @@ def mean_duration(starts: list[float], ends: list[float], tempo: float = 120.0) 
 @jsymbolic
 @duration_feature
 def average_note_duration(starts: list[float], ends: list[float]) -> float:
-    """Calculate average note duration in seconds.
+    """The average note duration in seconds.
 
     Parameters
     ----------
@@ -2620,7 +2650,7 @@ def average_note_duration(starts: list[float], ends: list[float]) -> float:
 @novel
 @duration_feature
 def duration_standard_deviation(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Calculate standard deviation of note durations in quarter notes.
+    """The standard deviation of note durations in quarter notes.
 
     Parameters
     ----------
@@ -2642,7 +2672,7 @@ def duration_standard_deviation(starts: list[float], ends: list[float], tempo: f
 @jsymbolic
 @duration_feature
 def variability_of_note_durations(starts: list[float], ends: list[float]) -> float:
-    """Calculate standard deviation of note durations in seconds.
+    """The standard deviation of note durations in seconds.
 
     Parameters
     ----------
@@ -2665,7 +2695,7 @@ def variability_of_note_durations(starts: list[float], ends: list[float]) -> flo
 @jsymbolic
 @duration_feature
 def modal_duration(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Find most common note duration in quarter notes.
+    """The most common note duration in quarter notes.
 
     Parameters
     ----------
@@ -2690,7 +2720,7 @@ def modal_duration(starts: list[float], ends: list[float], tempo: float = 120.0)
 @fantastic
 @duration_feature
 def duration_entropy(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Calculate Shannon entropy of duration distribution in quarter notes.
+    """The zeroth-order base-2 entropy of the duration distribution in quarter notes.
 
     Parameters
     ----------
@@ -2712,7 +2742,7 @@ def duration_entropy(starts: list[float], ends: list[float], tempo: float = 120.
 @fantastic
 @duration_feature
 def length(starts: list[float]) -> float:
-    """Count total number of notes.
+    """The total number of notes.
 
     Parameters
     ----------
@@ -2729,7 +2759,7 @@ def length(starts: list[float]) -> float:
 @novel
 @duration_feature
 def number_of_unique_durations(starts: list[float], ends: list[float], tempo: float = 120.0) -> int:
-    """Count number of unique note durations.
+    """The number of unique note durations.
 
     Parameters
     ----------
@@ -2752,10 +2782,7 @@ def number_of_unique_durations(starts: list[float], ends: list[float], tempo: fl
 @jsymbolic
 @duration_feature
 def global_duration(melody: Melody) -> float:
-    """Calculate total duration in seconds of the MIDI sequence.
-    
-    This matches jSymbolic's DurationInSecondsFeature implementation by using
-    the total MIDI sequence duration, including any leading or trailing silence.
+    """The total duration in seconds of the melody.
 
     Parameters
     ----------
@@ -2776,7 +2803,7 @@ duration_in_seconds = global_duration
 @jsymbolic
 @duration_feature
 def note_density(melody: Melody) -> float:
-    """Calculate average number of notes per second.
+    """The average number of notes per second.
 
     Parameters
     ----------
@@ -2798,11 +2825,8 @@ def note_density(melody: Melody) -> float:
 @jsymbolic
 @duration_feature
 def note_density_variability(melody: Melody) -> float:
-    """Calculate variability of note density using 5-second windows.
-    
-    Divides the melody into 5-second windows and calculates the standard deviation
-    of note density across these windows. Uses tick-based windowing to match jSymbolic precisely.
-    
+    """The standard deviation of note density across 5-second windows.
+
     Parameters
     ----------
     melody : Melody
@@ -2812,105 +2836,44 @@ def note_density_variability(melody: Melody) -> float:
     -------
     float
         Standard deviation of note density using 5-second windows
+
+    Note
+    ----
+
+    Our tests indicate a certain discrepancy between our outputs and JSymbolic's outputs,
+    which may be a consequence of JSymbolic's tick-based approach, or perhaps its
+    idiosyncratic windowing approach.
+    
     """
-    # TODO: this, and its quarter note version, are the only features I have not been able to reproduce within a 1% tolerance of the original jSymbolic implementation
     if not melody.starts or not melody.ends or len(melody.starts) < 2:
         return 0.0
 
-    # Get MIDI sequence properties
-    ppqn = 480  # Standard MIDI PPQN
-
-    tempo_changes = melody.tempo_changes or [(0.0, melody.tempo)]
-    tempo_changes = sorted(tempo_changes, key=lambda x: float(x[0]))
-
-    seconds_per_tick_array: list[float] = []
-    current_time = 0.0
-    change_index = 0
-    current_bpm = float(tempo_changes[0][1])
-    current_spt = (60.0 / current_bpm) / float(ppqn)
-    next_change_time = float(tempo_changes[1][0]) if len(tempo_changes) > 1 else float('inf')
-
-    while current_time <= melody.total_duration:
-        seconds_per_tick_array.append(current_spt)
-        current_time += current_spt
-        while current_time >= next_change_time and change_index + 1 < len(tempo_changes):
-            change_index += 1
-            current_bpm = float(tempo_changes[change_index][1])
-            current_spt = (60.0 / current_bpm) / float(ppqn)
-            next_change_time = float(tempo_changes[change_index + 1][0]) if change_index + 1 < len(tempo_changes) else float('inf')
-
-    total_duration_ticks = len(seconds_per_tick_array) - 1
-    
-    window_start_ticks = []
-    window_end_ticks = []
-    
+    # Create 5-second windows and calculate note density for each
     window_duration = 5.0
-    window_overlap_offset = 0.0
-    time_interval_to_next_tick = window_duration - window_overlap_offset
-    
-    this_tick = 0
-    total_seconds_accumulated_so_far = 0.0
-    
-    while total_seconds_accumulated_so_far <= melody.total_duration and this_tick < len(seconds_per_tick_array):
-        window_start_ticks.append(this_tick)
-        
-        seconds_accumulated_so_far = 0.0
-        found_next_tick = False
-        tick_of_next_beginning = 0
-        
-        while seconds_accumulated_so_far < window_duration and this_tick < len(seconds_per_tick_array):
-            if not found_next_tick and seconds_accumulated_so_far >= time_interval_to_next_tick:
-                tick_of_next_beginning = this_tick
-                found_next_tick = True
-            
-            seconds_accumulated_so_far += seconds_per_tick_array[this_tick]
-            this_tick += 1
-        
-        window_end_ticks.append(this_tick - 1)
-        
-        if found_next_tick:
-            this_tick = tick_of_next_beginning
-        
-        total_seconds_accumulated_so_far += seconds_accumulated_so_far - window_overlap_offset
-    
-    if len(window_start_ticks) < 2:
-        return 0.0
-    
-    cumulative_seconds = [0.0]
-    for spt in seconds_per_tick_array:
-        cumulative_seconds.append(cumulative_seconds[-1] + spt)
-
     window_densities = []
     
-    for i in range(len(window_start_ticks)):
-        start_tick = window_start_ticks[i]
-        end_tick = window_end_ticks[i]
+    # Start from 0 and create non-overlapping 5-second windows
+    start_time = 0.0
+    while start_time < melody.total_duration:
+        end_time = min(start_time + window_duration, melody.total_duration)
         
-        window_start_seconds = cumulative_seconds[start_tick]
-        window_end_seconds = cumulative_seconds[end_tick + 1]
+        # Count notes that start within this window
+        notes_in_window = sum(1.0 for start in melody.starts if start_time <= start < end_time)
         
-        window_duration_precise = window_end_seconds - window_start_seconds
-        
-        starts_in_window = sum(
-            1 for start in melody.starts if window_start_seconds <= start < window_end_seconds
-        )
+        # we tried this too, but it just exacerbatated the discrepancy
+        # last_onset_in_window = max(start for start in melody.starts if start_time <= start < end_time)
+        # last_offset_in_window = max(end for end in melody.ends if start_time <= end < end_time)
+        # last_event_in_window = max(last_onset_in_window, last_offset_in_window)
 
-        carried_into_window = 0
-        if i > 0 and melody.ends is not None and melody.starts is not None:
-            prev_start_tick = window_start_ticks[i - 1]
-            prev_start_seconds = cumulative_seconds[prev_start_tick]
-            for start, end in zip(melody.starts, melody.ends):
-                if prev_start_seconds <= start < window_start_seconds and end > window_start_seconds:
-                    carried_into_window += 1
+        # window_duration_actual = last_event_in_window - start_time
+        window_duration_actual = end_time - start_time
 
-        notes_in_window = starts_in_window + carried_into_window
+
+        if window_duration_actual > 0:
+            density = notes_in_window / window_duration_actual
+            window_densities.append(density)
         
-        if window_duration_precise == 0:
-            window_density = 0.0
-        else:
-            window_density = float(notes_in_window) / window_duration_precise
-        
-        window_densities.append(window_density)
+        start_time += window_duration
     
     if len(window_densities) < 2:
         return 0.0
@@ -2920,9 +2883,7 @@ def note_density_variability(melody: Melody) -> float:
 @jsymbolic
 @duration_feature
 def note_density_per_quarter_note(melody: Melody) -> float:
-    """Calculate average number of notes per quarter note.
-    
-    Finds the average number of note onsets per unit of time corresponding to an
+    """The average number of note onsets per unit of time corresponding to an
     idealized quarter note duration based on the tempo.
     
     Parameters
@@ -2950,10 +2911,10 @@ def note_density_per_quarter_note(melody: Melody) -> float:
 @jsymbolic
 @duration_feature
 def note_density_per_quarter_note_variability(melody: Melody) -> float:
-    """Calculate variability of note density per quarter note.
+    """The standard deviation of note density per quarter note.
     
     Divides the melody into 8-quarter-note windows and calculates the standard deviation
-    of note density across these windows. Uses tick-based windowing to match jSymbolic.
+    of note density across these windows.
     
     Parameters
     ----------
@@ -2964,48 +2925,50 @@ def note_density_per_quarter_note_variability(melody: Melody) -> float:
     -------
     float
         Standard deviation of note density across windows
+
+    Note
+    ----
+
+    Our tests indicate a certain discrepancy between our outputs and JSymbolic's outputs,
+    which may be a consequence of JSymbolic's tick-based approach, or perhaps its
+    idiosyncratic windowing approach.
     """
-    if not melody.starts or not melody.ends:
+    if not melody.starts or not melody.ends or len(melody.starts) < 2:
         return 0.0
 
-    tempo = melody.tempo
-    ppqn = 480
-    
-    seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
-    to_ticks = lambda t: int(round(float(t) / seconds_per_tick))
-    
-    quarter_note_duration = 60.0 / tempo
-    window_size_seconds = 8.0 * quarter_note_duration
-    window_size_ticks = to_ticks(window_size_seconds)
-    
-    total_duration_ticks = to_ticks(melody.total_duration)
-    
-    if total_duration_ticks < window_size_ticks:
-        return 0.0
-    
+    # Use 8-quarter-note windows (matching jSymbolic)
+    window_size_quarter_notes = 8.0
+    quarter_note_duration = 60.0 / melody.tempo
+    window_size_seconds = window_size_quarter_notes * quarter_note_duration
     window_densities = []
-    window_start_seconds = 0.0
     
-    while window_start_seconds < melody.total_duration:
-        window_end_seconds = min(window_start_seconds + window_size_seconds, melody.total_duration)
-
-        notes_in_window = sum(1 for start in melody.starts if window_start_seconds <= start < window_end_seconds)
-        window_duration_seconds = window_end_seconds - window_start_seconds
+    # Start from 0 and create non-overlapping 8-quarter-note windows
+    start_time = 0.0
+    while start_time < melody.total_duration:
+        end_time = min(start_time + window_size_seconds, melody.total_duration)
+        
+        # Count notes that start within this window
+        notes_in_window = sum(1 for start in melody.starts if start_time <= start < end_time)
+        
+        window_duration_seconds = end_time - start_time
         window_duration_quarter_notes = window_duration_seconds / quarter_note_duration
+        
         if window_duration_quarter_notes > 0:
-            window_density = notes_in_window / window_duration_quarter_notes
-            window_densities.append(window_density)
-
-        window_start_seconds += window_size_seconds
-
+            # Calculate note density per quarter note for this window
+            density_per_quarter_note = float(notes_in_window) / window_duration_quarter_notes
+            window_densities.append(density_per_quarter_note)
+        
+        start_time += window_size_seconds
+    
     if len(window_densities) < 2:
         return 0.0
+    
     return np.std(window_densities, ddof=1)
 
 @idyom
 @duration_feature
 def ioi(starts: list[float]) -> list[float]:
-    """Calculate the time between consecutive onsets (inter-onset interval).
+    """The time between consecutive onsets (inter-onset interval).
     
     Parameters
     ----------
@@ -3026,7 +2989,7 @@ def ioi(starts: list[float]) -> list[float]:
 @jsymbolic
 @duration_feature
 def ioi_mean(starts: list[float]) -> float:
-    """Calculate mean of inter-onset intervals.
+    """The arithmetic mean of inter-onset intervals.
 
     Parameters
     ----------
@@ -3049,7 +3012,7 @@ average_time_between_attacks = ioi_mean
 @jsymbolic
 @duration_feature
 def ioi_standard_deviation(starts: list[float]) -> float:
-    """Calculate standard deviation of inter-onset intervals.
+    """The standard deviation of inter-onset intervals.
 
     Parameters
     ----------
@@ -3070,8 +3033,8 @@ variability_of_time_between_attacks = ioi_standard_deviation
 
 @idyom
 @duration_feature
-def ioi_ratio(starts: list[float]) -> tuple[float, float]:
-    """Calculate mean and standard deviation of inter-onset interval ratios.
+def ioi_ratio(starts: list[float]) -> list[float]:
+    """The sequence of inter-onset interval ratios.
 
     Parameters
     ----------
@@ -3080,24 +3043,63 @@ def ioi_ratio(starts: list[float]) -> tuple[float, float]:
 
     Returns
     -------
-    tuple[float, float]
-        Mean and standard deviation of IOI ratios
+    list[float]
+        Sequence of IOI ratios
     """
-    if len(starts) < 2:
-        return 0.0, 0.0
+    if len(starts) < 3:
+        return []
 
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
-
     if len(intervals) < 2:
-        return 0.0, 0.0
+        return []
 
     ratios = [intervals[i] / intervals[i - 1] for i in range(1, len(intervals))]
-    return float(np.mean(ratios)), float(np.std(ratios, ddof=1))
+    return [float(r) for r in ratios]
+
+@novel
+@duration_feature
+def ioi_ratio_mean(starts: list[float]) -> float:
+    """The arithmetic mean of inter-onset interval ratios.
+
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+
+    Returns
+    -------
+    float
+        Mean of IOI ratios
+    """
+    ratios = ioi_ratio(starts)
+    if not ratios:
+        return 0.0
+    return float(np.mean(ratios))
+
+@novel
+@duration_feature
+def ioi_ratio_standard_deviation(starts: list[float]) -> float:
+    """The standard deviation of inter-onset interval ratios.
+
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+
+    Returns
+    -------
+    float
+        Standard deviation of IOI ratios
+    """
+    ratios = ioi_ratio(starts)
+    if not ratios:
+        return 0.0
+    return float(np.std(ratios, ddof=1))
 
 @novel
 @duration_feature
 def ioi_range(starts: list[float]) -> float:
-    """Calculate range of inter-onset intervals.
+    """The range of inter-onset intervals.
 
     Parameters
     ----------
@@ -3114,8 +3116,8 @@ def ioi_range(starts: list[float]) -> float:
 
 @novel
 @duration_feature
-def ioi_contour(starts: list[float]) -> tuple[float, float]:
-    """Calculate mean and standard deviation of IOI contour.
+def ioi_contour(starts: list[float]) -> list[int]:
+    """The sequence of IOI contour values (-1: shorter, 0: same, 1: longer).
 
     Parameters
     ----------
@@ -3124,21 +3126,64 @@ def ioi_contour(starts: list[float]) -> tuple[float, float]:
 
     Returns
     -------
-    tuple[float, float]
-        Mean and standard deviation of contour values (-1: shorter, 0: same, 1: longer)
+    list[int]
+        Sequence of contour values
     """
+    if len(starts) < 3:
+        return []
+
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
     if len(intervals) < 2:
-        return 0.0, 0.0
+        return []
 
     ratios = [intervals[i] / intervals[i - 1] for i in range(1, len(intervals))]
     contour = [int(np.sign(ratio - 1)) for ratio in ratios]
-    return float(np.mean(contour)), float(np.std(contour, ddof=1))
+    return [int(c) for c in contour]
+
+@novel
+@duration_feature
+def ioi_contour_mean(starts: list[float]) -> float:
+    """The arithmetic mean of IOI contour values.
+
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+
+    Returns
+    -------
+    float
+        Mean of contour values
+    """
+    contour = ioi_contour(starts)
+    if not contour:
+        return 0.0
+    return float(np.mean(contour))
+
+@novel
+@duration_feature
+def ioi_contour_standard_deviation(starts: list[float]) -> float:
+    """The standard deviation of IOI contour values.
+
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+
+    Returns
+    -------
+    float
+        Standard deviation of contour values
+    """
+    contour = ioi_contour(starts)
+    if not contour:
+        return 0.0
+    return float(np.std(contour, ddof=1))
 
 @jsymbolic
 @duration_feature
 def duration_histogram(starts: list[float], ends: list[float], tempo: float = 120.0) -> dict:
-    """Calculate histogram of note durations.
+    """A histogram of note durations in quarter notes.
 
     Parameters
     ----------
@@ -3163,13 +3208,9 @@ def duration_histogram(starts: list[float], ends: list[float], tempo: float = 12
 @jsymbolic
 @duration_feature
 def range_of_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Range of rhythmic values located within the 12-bin PPQN-based histogram.
-
-    This mirrors jSymbolic's feature that computes the range (in bins)
-    of the rhythmic value histogram. Durations are converted to quarter
-    notes and mapped to 12 fixed rhythmic bins using midpoints. The
-    returned value is the difference between the highest and lowest
-    non-empty bins (0 if empty).
+    """The range of rhythmic values located within the 12-bin PPQN-based histogram. Durations are 
+    converted to quarter notes and mapped to 12 fixed rhythmic bins using midpoints. The
+    returned value is the difference between the highest and lowest non-empty bins.
 
     Parameters
     ----------
@@ -3212,10 +3253,7 @@ def range_of_rhythmic_values(starts: list[float], ends: list[float], tempo: floa
 @jsymbolic
 @duration_feature
 def number_of_different_rhythmic_values_present(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Number of distinct rhythmic value bins that are present in the melody (non-zero).
-
-    Builds the 12-bin rhythmic value histogram (normalized) from durations
-    expressed in quarter notes and counts how many bins have non-zero mass.
+    """The number of distinct rhythmic value bins that are present in the melody (non-zero).
 
     Parameters
     ----------
@@ -3249,11 +3287,7 @@ def number_of_different_rhythmic_values_present(starts: list[float], ends: list[
 @jsymbolic
 @duration_feature
 def number_of_common_rhythmic_values_present(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Number of rhythmic value bins with normalized proportion >= 0.15.
-
-    Builds the normalized 12-bin rhythmic value histogram from durations in
-    quarter notes and counts how many bins meet or exceed the 0.15 threshold,
-    matching jSymbolic's definition of "common" rhythmic values.
+    """The number of rhythmic value bins with normalized proportion >= 0.15.
 
     Parameters
     ----------
@@ -3287,11 +3321,7 @@ def number_of_common_rhythmic_values_present(starts: list[float], ends: list[flo
 @jsymbolic
 @duration_feature
 def prevalence_of_very_short_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Sum of the two shortest rhythmic bins (indexes 0 and 1).
-
-    Builds the normalized 12-bin rhythmic value histogram from durations in
-    quarter notes and returns the combined mass of bins 0 and 1, corresponding
-    to 32nd-or-less and 16th notes in the jSymbolic scheme.
+    """The sum of the two shortest rhythmic bins (indexes 0 and 1).
 
     Parameters
     ----------
@@ -3320,11 +3350,7 @@ def prevalence_of_very_short_rhythmic_values(starts: list[float], ends: list[flo
 @jsymbolic
 @duration_feature
 def prevalence_of_short_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Sum of the three shortest rhythmic bins (indexes 0, 1, and 2).
-
-    Builds the normalized 12-bin rhythmic value histogram from durations in
-    quarter notes and returns the combined mass of bins 0, 1 and 2, corresponding
-    to 32nd-or-less, 16th, and 8th notes in the jSymbolic scheme.
+    """The sum of the three shortest rhythmic bins (indexes 0, 1, and 2).
 
     Parameters
     ----------
@@ -3353,11 +3379,7 @@ def prevalence_of_short_rhythmic_values(starts: list[float], ends: list[float], 
 @jsymbolic
 @duration_feature
 def prevalence_of_medium_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Sum of rhythmic bins 2..6 (8th through half notes).
-
-    Uses the normalized 12-bin rhythmic value histogram from durations in
-    quarter notes and returns the combined mass of bins 2, 3, 4, 5 and 6,
-    matching the jSymbolic definition of medium rhythmic values.
+    """The sum of rhythmic bins 2 to 6 (8th notes to half notes).
 
     Parameters
     ----------
@@ -3392,11 +3414,7 @@ def prevalence_of_medium_rhythmic_values(starts: list[float], ends: list[float],
 @jsymbolic
 @duration_feature
 def prevalence_of_long_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Sum of rhythmic bins 6..11 (half through dotted double whole or more).
-
-    Uses the normalized 12-bin rhythmic value histogram from durations in
-    quarter notes and returns the combined mass of bins 6, 7, 8, 9, 10 and 11,
-    matching the jSymbolic definition of long rhythmic values.
+    """The sum of rhythmic bins 6 to 11 (half notes to dotted double whole notes or more).
 
     Parameters
     ----------
@@ -3410,7 +3428,7 @@ def prevalence_of_long_rhythmic_values(starts: list[float], ends: list[float], t
     Returns
     -------
     float
-        Proportion in [0, 1] for bins 6..11 combined (0.0 if no durations)
+        Proportion in [0, 1] for bins 6 to 11 combined (0.0 if no durations)
     """
     durations_qn = _get_durations(starts, ends, tempo)
     if not durations_qn:
@@ -3432,11 +3450,7 @@ def prevalence_of_long_rhythmic_values(starts: list[float], ends: list[float], t
 @jsymbolic
 @duration_feature
 def prevalence_of_very_long_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Sum of rhythmic bins 9..11 (dotted whole through dotted double whole or more).
-
-    Uses the normalized 12-bin rhythmic value histogram from durations in
-    quarter notes and returns the combined mass of bins 9, 10 and 11,
-    matching the jSymbolic definition of very long rhythmic values.
+    """The sum of rhythmic bins 9 to 11 (dotted whole notes to dotted double whole notes or more).
 
     Parameters
     ----------
@@ -3469,10 +3483,7 @@ def prevalence_of_very_long_rhythmic_values(starts: list[float], ends: list[floa
 @jsymbolic
 @duration_feature
 def prevalence_of_dotted_notes(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Sum of dotted rhythmic bins: 3, 5, 7, 9, 11.
-
-    Uses the normalized 12-bin histogram and returns the combined mass
-    of the dotted bins, matching jSymbolic.
+    """The sum of dotted rhythmic bins: 3, 5, 7, 9, 11.
 
     Parameters
     ----------
@@ -3507,7 +3518,8 @@ def prevalence_of_dotted_notes(starts: list[float], ends: list[float], tempo: fl
 @jsymbolic
 @duration_feature
 def shortest_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Shortest rhythmic value (in quarter notes) among non-empty bins. Returns 0.0 if empty.
+    """The shortest rhythmic value (in quarter notes) among non-empty bins.
+    
     Parameters
     ----------
     starts : list[float]
@@ -3538,7 +3550,8 @@ def shortest_rhythmic_value(starts: list[float], ends: list[float], tempo: float
 @jsymbolic
 @duration_feature
 def longest_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Longest rhythmic value (in quarter notes) among non-empty bins. Returns 0.0 if empty.
+    """The longest rhythmic value (in quarter notes) among non-empty bins.
+    
     Parameters
     ----------
     starts : list[float]
@@ -3569,7 +3582,8 @@ def longest_rhythmic_value(starts: list[float], ends: list[float], tempo: float 
 @jsymbolic
 @duration_feature
 def mean_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Mean rhythmic value (in quarter notes) using normalized histogram, weighted by the frequency of the rhythmic value.
+    """The mean rhythmic value (in quarter notes) using the normalized histogram, weighted by the frequency of the rhythmic value.
+    
     Parameters
     ----------
     starts : list[float]
@@ -3602,7 +3616,8 @@ def mean_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 1
 @jsymbolic
 @duration_feature
 def most_common_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Modal rhythmic value (in quarter notes). Returns 0.0 if empty or all-zero.
+    """The modal rhythmic value (in quarter notes).
+    
     Parameters
     ----------
     starts : list[float]
@@ -3638,7 +3653,8 @@ def most_common_rhythmic_value(starts: list[float], ends: list[float], tempo: fl
 @jsymbolic
 @duration_feature
 def prevalence_of_most_common_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Proportion (0.0 - 1.0) of the modal rhythmic bin. Returns 0.0 if empty.
+    """The proportion (0.0 - 1.0) of the modal rhythmic bin.
+    
     Parameters
     ----------
     starts : list[float]
@@ -3668,10 +3684,8 @@ def prevalence_of_most_common_rhythmic_value(starts: list[float], ends: list[flo
 @jsymbolic
 @duration_feature
 def relative_prevalence_of_most_common_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Ratio of the second-most-common rhythmic bin to the most common bin.
+    """The ratio of the second-most-common rhythmic bin to the most common bin.
 
-    Uses the normalized 12-bin rhythmic value histogram. If the most common bin
-    has zero mass (i.e., histogram is empty), returns 0.0.
     Parameters
     ----------
     starts : list[float]
@@ -3720,11 +3734,8 @@ def relative_prevalence_of_most_common_rhythmic_values(starts: list[float], ends
 @jsymbolic
 @duration_feature
 def difference_between_most_common_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Absolute difference in bins between most and second most common rhythmic values.
+    """The absolute difference in bins between most and second most common rhythmic values.
 
-    Uses the normalized 12-bin rhythmic value histogram to find the indices of
-    the largest and second-largest bins (breaking ties toward the smaller index),
-    then returns |i1 - i2| as a float. Returns 0.0 if histogram is empty.
     Parameters
     ----------
     starts : list[float]
@@ -3787,9 +3798,8 @@ def _rhythmic_run_lengths(starts: list[float], ends: list[float], tempo: float =
 @jsymbolic
 @duration_feature
 def mean_rhythmic_value_run_length(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Mean run length of identical rhythmic values across the melody. Run length is the number of consecutive 
-    notes with the same rhythmic value. Mimics jSymbolic behavior by quantizing each note's duration to the nearest
-    of 12 rhythmic bins (based on quarter-note durations) and then computing the mean length of consecutive runs of identical bins.
+    """The mean run length of identical rhythmic values across the melody. Run length is the number of consecutive 
+    notes with the same rhythmic value.
 
     Returns 0.0 if there are fewer than 1 notes.
     """
@@ -3801,7 +3811,7 @@ def mean_rhythmic_value_run_length(starts: list[float], ends: list[float], tempo
 @jsymbolic
 @duration_feature
 def median_rhythmic_value_run_length(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Median run length of identical rhythmic values across the melody. Run length is the number of consecutive 
+    """The median run length of identical rhythmic values across the melody. Run length is the number of consecutive 
     notes with the same rhythmic value."""
     runs = _rhythmic_run_lengths(starts, ends, tempo)
     if not runs:
@@ -3812,7 +3822,7 @@ def median_rhythmic_value_run_length(starts: list[float], ends: list[float], tem
 @jsymbolic
 @duration_feature
 def variability_in_rhythmic_value_run_lengths(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Variability (standard deviation) of rhythmic value run lengths. Run length is the number of consecutive 
+    """The standard deviation of rhythmic value run lengths. Run length is the number of consecutive 
     notes with the same rhythmic value."""
     runs = _rhythmic_run_lengths(starts, ends, tempo)
     if not runs or len(runs) == 1:
@@ -3838,12 +3848,21 @@ def _rhythmic_value_offsets(starts: list[float], ends: list[float], tempo: float
 @jsymbolic
 @duration_feature
 def mean_rhythmic_value_offset(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Mean quantization offset from nearest ideal rhythmic value (in quarter notes).
+    """The mean quantized offset from the nearest ideal rhythmic value (in quarter notes).
 
-    For each note, map its duration (in quarter notes) to the nearest ideal
-    rhythmic value among the 12-bin scheme, then compute the absolute
-    difference between the actual duration and that ideal. Return the mean of
-    these offsets. Returns 0.0 if there are no durations.
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Mean quantized offset from the nearest ideal rhythmic value (in quarter notes) (0.0 if no durations)
     """
     offsets = _rhythmic_value_offsets(starts, ends, tempo)
     if not offsets:
@@ -3854,7 +3873,22 @@ def mean_rhythmic_value_offset(starts: list[float], ends: list[float], tempo: fl
 @jsymbolic
 @duration_feature
 def median_rhythmic_value_offset(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Median quantization offset from nearest ideal rhythmic value (in quarter notes)."""
+    """The median quantized offset from the nearest ideal rhythmic value (in quarter notes).
+    
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Median quantized offset from the nearest ideal rhythmic value (in quarter notes) (0.0 if no durations)
+    """
     offsets = _rhythmic_value_offsets(starts, ends, tempo)
     if not offsets:
         return 0.0
@@ -3864,7 +3898,22 @@ def median_rhythmic_value_offset(starts: list[float], ends: list[float], tempo: 
 @jsymbolic
 @duration_feature
 def variability_of_rhythmic_value_offsets(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Variability (standard deviation) of rhythmic value offsets (in quarter notes)."""
+    """The standard deviation of rhythmic value offsets (in quarter notes).
+    
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+
+    Returns
+    -------
+    float
+        Standard deviation of rhythmic value offsets (in quarter notes) (0.0 if no durations)
+    """
     offsets = _rhythmic_value_offsets(starts, ends, tempo)
     if not offsets or len(offsets) == 1:
         return 0.0
@@ -3939,11 +3988,23 @@ def complete_rests_fraction(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Fraction of total duration during which no pitched notes are sounding.
+    """The fraction of the total duration during which no pitched notes are sounding.
+    
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
 
-    Tick-based approximation of jSymbolic's method using our melody representation.
-    We discretize time to ticks using tempo and PPQN, mark pitched activity per tick
-    from note ranges, and sum seconds-per-tick over ticks where no pitched notes sound.
+    Returns
+    -------
+    float
+        Fraction of total duration during which no pitched notes are sounding (0.0 if no durations)
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -3976,11 +4037,23 @@ def longest_complete_rest(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Longest uninterrupted complete rest in quarter-note units (ignore < 0.1 QN).
+    """The longest uninterrupted complete rest in quarter-note units (ignoring rests shorter than 0.1 QN).
 
-    Discretizes time to ticks (constant tempo), finds consecutive runs of silent ticks
-    (no pitched notes sounding), converts the longest run to quarter notes and returns it.
-    Rests shorter than 0.1 of a quarter note are returned as 0.0.
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Longest uninterrupted complete rest in quarter-note units (0.0 if no durations)
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -3998,11 +4071,23 @@ def mean_complete_rest_duration(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Mean duration of complete rests in quarter-note units (ignore < 0.1 QN).
+    """The mean duration of complete rests in quarter-note units (ignoring rests shorter than 0.1 QN).
 
-    Uses tick discretization (constant tempo) to find all consecutive silent runs
-    where no pitched notes are sounding. Converts each run to quarter notes,
-    filters out rests shorter than 0.1 QN, and returns their mean.
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Mean duration of complete rests in quarter-note units (0.0 if no durations)
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -4020,10 +4105,23 @@ def median_complete_rest_duration(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Median duration of complete rests in quarter-note units (ignore < 0.1 QN).
+    """The median duration of complete rests in quarter-note units (ignoring rests shorter than 0.1 QN).
 
-    Same tick-discretized approach as mean_complete_rest_duration, but returns the
-    median of qualifying silent run lengths measured in quarter notes.
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Median duration of complete rests in quarter-note units (0.0 if no durations)
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -4041,12 +4139,23 @@ def variability_of_complete_rest_durations(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Standard deviation of complete rest durations in quarter notes (ignore < 0.1 QN).
+    """The standard deviation of complete rest durations in quarter notes (ignoring rests shorter than 0.1 QN).
 
-    Matches the approach used in mean/median complete rest duration: discretize to ticks,
-    find silent runs, convert to quarter notes, filter out runs shorter than 0.1 QN, then
-    return the sample standard deviation (ddof=1) of the remaining runs. Returns 0.0 if
-    fewer than two qualifying rests.
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Standard deviation of complete rest durations in quarter notes (0.0 if no durations)
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -4157,7 +4266,24 @@ def strongest_rhythmic_pulse(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Bin index (BPM) of the maximum beat histogram magnitude (normal histogram)."""
+    """The bin index (BPM) of the maximum beat histogram magnitude.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Bin index (BPM) of the maximum beat histogram magnitude (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
     seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
@@ -4180,7 +4306,24 @@ def strongest_rhythmic_pulse_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Bin index (BPM) of the maximum in the 120-BPM standardized beat histogram."""
+    """The bin index (BPM) of the maximum in the 120-BPM standardized beat histogram.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Bin index (BPM) of the maximum beat histogram magnitude (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
     seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
@@ -4203,7 +4346,24 @@ def second_strongest_rhythmic_pulse(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Bin index (BPM) of the second-highest magnitude in the beat histogram."""
+    """The bin index (BPM) of the second-highest magnitude in the beat histogram.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Bin index (BPM) of the second-highest magnitude in the beat histogram (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
     seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
@@ -4233,7 +4393,24 @@ def second_strongest_rhythmic_pulse_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Bin index (BPM) of the second-highest magnitude in the 120-BPM standardized beat histogram."""
+    """The bin index (BPM) of the second-highest magnitude in the 120-BPM standardized beat histogram.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Bin index (BPM) of the second-highest magnitude in the 120-BPM standardized beat histogram (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
     seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
@@ -4263,7 +4440,24 @@ def harmonicity_of_two_strongest_rhythmic_pulses(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Ratio of higher to lower bin index of the two strongest rhythmic pulses (normal histogram)."""
+    """The ratio of higher to lower bin index of the two strongest rhythmic pulses.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Ratio of higher to lower bin index of the two strongest rhythmic pulses (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
     
@@ -4318,7 +4512,24 @@ def harmonicity_of_two_strongest_rhythmic_pulses_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Ratio of higher to lower bin index of the two strongest rhythmic pulses (120-BPM standardized histogram)."""
+    """The ratio of higher to lower bin index of the two strongest rhythmic pulses (120-BPM standardized histogram).
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Ratio of higher to lower bin index of the two strongest rhythmic pulses (120-BPM standardized histogram) (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
 
@@ -4373,7 +4584,24 @@ def strength_of_strongest_rhythmic_pulse(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Magnitude of the beat histogram bin with the highest magnitude."""
+    """The magnitude of the beat histogram bin with the highest magnitude.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Magnitude of the beat histogram bin with the highest magnitude (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
     seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
@@ -4395,7 +4623,24 @@ def strength_of_strongest_rhythmic_pulse_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Magnitude of the tempo-standardized beat histogram bin with the highest magnitude."""
+    """The magnitude of the tempo-standardized beat histogram bin with the highest magnitude.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Magnitude of the tempo-standardized beat histogram bin with the highest magnitude (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
     seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
@@ -4417,7 +4662,24 @@ def strength_of_second_strongest_rhythmic_pulse(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Magnitude of the beat histogram bin with the second-highest magnitude."""
+    """The magnitude of the beat histogram bin with the second-highest magnitude.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Magnitude of the beat histogram bin with the second-highest magnitude (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
     seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
@@ -4446,7 +4708,24 @@ def strength_of_second_strongest_rhythmic_pulse_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Magnitude of the tempo-standardized beat histogram bin with the second-highest magnitude."""
+    """The magnitude of the tempo-standardized beat histogram bin with the second-highest magnitude.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Magnitude of the tempo-standardized beat histogram bin with the second-highest magnitude (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
     seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
@@ -4475,7 +4754,24 @@ def strength_ratio_of_two_strongest_rhythmic_pulses(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Ratio of the magnitude of the strongest to second-strongest rhythmic pulse."""
+    """Ratio of the magnitude of the strongest to second-strongest rhythmic pulse.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Ratio of the magnitude of the strongest to second-strongest rhythmic pulse (0.0 if no durations)
+    """
     strongest_strength = strength_of_strongest_rhythmic_pulse(starts, ends, tempo, ppqn)
     second_strongest_strength = strength_of_second_strongest_rhythmic_pulse(starts, ends, tempo, ppqn)
     
@@ -4491,7 +4787,24 @@ def strength_ratio_of_two_strongest_rhythmic_pulses_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Ratio of the magnitude of the strongest to second-strongest rhythmic pulse (120-BPM standardized histogram)."""
+    """Ratio of the magnitude of the strongest to second-strongest rhythmic pulse (120-BPM standardized histogram).
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Ratio of the magnitude of the strongest to second-strongest rhythmic pulse (120-BPM standardized histogram) (0.0 if no durations)
+    """
     strongest_strength = strength_of_strongest_rhythmic_pulse_tempo_standardized(starts, ends, tempo, ppqn)
     second_strongest_strength = strength_of_second_strongest_rhythmic_pulse_tempo_standardized(starts, ends, tempo, ppqn)
     
@@ -4507,7 +4820,24 @@ def combined_strength_of_two_strongest_rhythmic_pulses(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Sum of the magnitudes of the two strongest rhythmic pulses."""
+    """Sum of the magnitudes of the two strongest rhythmic pulses.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Sum of the magnitudes of the two strongest rhythmic pulses (0.0 if no durations)
+    """
     strongest_strength = strength_of_strongest_rhythmic_pulse(starts, ends, tempo, ppqn)
     second_strongest_strength = strength_of_second_strongest_rhythmic_pulse(starts, ends, tempo, ppqn)
     
@@ -4521,7 +4851,24 @@ def combined_strength_of_two_strongest_rhythmic_pulses_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Sum of the magnitudes of the two strongest rhythmic pulses using tempo-standardized histogram."""
+    """Sum of the magnitudes of the two strongest rhythmic pulses using tempo-standardized histogram.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Sum of the magnitudes of the two strongest rhythmic pulses using tempo-standardized histogram (0.0 if no durations)
+    """
     strongest_strength = strength_of_strongest_rhythmic_pulse_tempo_standardized(starts, ends, tempo, ppqn)
     second_strongest_strength = strength_of_second_strongest_rhythmic_pulse_tempo_standardized(starts, ends, tempo, ppqn)
     
@@ -4535,7 +4882,24 @@ def rhythmic_variability(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Standard deviation of the beat histogram bin magnitudes, excluding first 40 bins."""
+    """The standard deviation of the beat histogram bin magnitudes, excluding the first 40 bins.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Standard deviation of the beat histogram bin magnitudes, excluding the first 40 bins (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
     seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
@@ -4563,7 +4927,24 @@ def rhythmic_variability_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Standard deviation of the tempo-standardized beat histogram bin magnitudes, excluding first 40 bins."""
+    """The standard deviation of the tempo-standardized beat histogram bin magnitudes, excluding the first 40 bins.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Standard deviation of the tempo-standardized beat histogram bin magnitudes, excluding the first 40 bins (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
     seconds_per_tick = (60.0 / float(tempo)) / float(ppqn)
@@ -4591,7 +4972,24 @@ def rhythmic_looseness(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Average width of beat histogram peaks. Width is distance between points at 30% of peak height."""
+    """The average width of beat histogram peaks. Width is defined as the distance between points at 30% of the peak height.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Average width of beat histogram peaks (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
 
@@ -4661,7 +5059,24 @@ def rhythmic_looseness_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Average width of beat histogram peaks using tempo-standardized histogram. Width is distance between points at 30% of peak height."""
+    """The average width of beat histogram peaks using tempo-standardized histogram. Width is defined as the distance between points at 30% of the peak height.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Average width of beat histogram peaks using tempo-standardized histogram (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
 
@@ -4754,7 +5169,24 @@ def polyrhythms(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Fraction of beat histogram peaks that are not integer multiples/factors of the highest peak."""
+    """The fraction of beat histogram peaks that are not integer multiples/factors of the highest peak.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Fraction of beat histogram peaks that are not integer multiples/factors of the highest peak (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
     
@@ -4798,7 +5230,24 @@ def polyrhythms_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Fraction of beat histogram peaks that are not integer multiples/factors of the highest peak using tempo-standardized histogram."""
+    """The fraction of beat histogram peaks that are not integer multiples/factors of the highest peak using tempo-standardized histogram.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Fraction of beat histogram peaks that are not integer multiples/factors of the highest peak using tempo-standardized histogram (0.0 if no durations)
+    """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
 
@@ -4841,7 +5290,23 @@ def number_of_strong_rhythmic_pulses(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Count BPM bins with sufficiently strong pulses (> 0.001).
+    """The count of BPM bins with pulses greater than 0.001.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Count of BPM bins with sufficiently strong pulses (> 0.001) (0.0 if no durations)
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -4858,7 +5323,23 @@ def number_of_strong_rhythmic_pulses_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Count strong rhythmic pulses using the tempo-standardized beat histogram.
+    """The count of BPM bins with pulses greater than 0.001 using the tempo-standardized beat histogram.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Count of BPM bins with sufficiently strong pulses (> 0.001) (0.0 if no durations)
     """
     _, std_table = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
     return _count_strong_pulses(list(std_table), column_index=0)
@@ -4871,7 +5352,24 @@ def number_of_moderate_rhythmic_pulses(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Number of beat histogram peaks with normalized magnitudes over 0.01."""
+    """The number of beat histogram peaks with normalized magnitudes over 0.01.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Number of beat histogram peaks with normalized magnitudes over 0.01 (0.0 if no durations)
+    """
     table, _ = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
     return _count_strong_pulses(list(table), column_index=1)
 
@@ -4883,7 +5381,24 @@ def number_of_moderate_rhythmic_pulses_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Number of tempo-standardized beat histogram peaks with normalized magnitudes over 0.01."""
+    """The number of tempo-standardized beat histogram peaks with normalized magnitudes over 0.01.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Number of tempo-standardized beat histogram peaks with normalized magnitudes over 0.01 (0.0 if no durations)
+    """
     _, std_table = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
     return _count_strong_pulses(list(std_table), column_index=1)
 
@@ -4895,7 +5410,24 @@ def number_of_relatively_strong_rhythmic_pulses(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Number of peaks at least 30% of the max magnitude."""
+    """The number of peaks at least 30% of the max magnitude.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Number of peaks at least 30% of the max magnitude (0.0 if no durations)
+    """
     table, _ = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
     return _count_strong_pulses(list(table), column_index=2)
 
@@ -4907,14 +5439,31 @@ def number_of_relatively_strong_rhythmic_pulses_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """Number of tempo-standardized peaks at least 30% of the max magnitude."""
+    """The number of tempo-standardized peaks at least 30% of the max magnitude.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note start times (seconds)
+    ends : list[float]
+        Note end times (seconds)
+    tempo : float, optional
+        Tempo in BPM (only used to convert seconds to quarter notes)
+    ppqn : int, optional
+        Pulses per quarter note (MIDI resolution), default 480
+
+    Returns
+    -------
+    float
+        Number of tempo-standardized peaks at least 30% of the max magnitude (0.0 if no durations)
+    """
     _, std_table = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
     return _count_strong_pulses(list(std_table), column_index=2)
 
 @novel
 @duration_feature
 def ioi_histogram(starts: list[float]) -> dict:
-    """Calculate histogram of inter-onset intervals.
+    """A histogram of inter-onset intervals.
 
     Parameters
     ----------
@@ -4933,7 +5482,7 @@ def ioi_histogram(starts: list[float]) -> dict:
 @jsymbolic
 @duration_feature
 def minimum_note_duration(starts: list[float], ends: list[float]) -> float:
-    """Calculate minimum note duration in seconds.
+    """The minimum note duration in seconds.
 
     Parameters
     ----------
@@ -4950,7 +5499,7 @@ def minimum_note_duration(starts: list[float], ends: list[float]) -> float:
 @jsymbolic
 @duration_feature
 def maximum_note_duration(starts: list[float], ends: list[float]) -> float:
-    """Calculate maximum note duration in seconds.
+    """The maximum note duration in seconds.
 
     Parameters
     ----------
@@ -4969,10 +5518,8 @@ def maximum_note_duration(starts: list[float], ends: list[float]) -> float:
 @fantastic
 @duration_feature
 def equal_duration_transitions(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Calculate proportion of equal duration transitions (d.eq.trans).
+    """The proportion of duration transitions that are equal in length.
     
-    Based on Steinbeck (1982) as implemented in FANTASTIC toolbox.
-    Measures the relative frequency of duration transitions where the ratio equals 1.0.
     
     Parameters
     ----------
@@ -4985,6 +5532,10 @@ def equal_duration_transitions(starts: list[float], ends: list[float], tempo: fl
     -------
     float
         Proportion of equal duration transitions (0.0 to 1.0)
+
+    Citation
+    --------
+    Steinbeck (1982)
     """
     ratios = get_duration_ratios(starts, ends)
     if not ratios:
@@ -4998,22 +5549,23 @@ def equal_duration_transitions(starts: list[float], ends: list[float], tempo: fl
 @fantastic
 @duration_feature
 def half_duration_transitions(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Calculate proportion of half/double duration transitions (d.half.trans).
-    
-    Based on Steinbeck (1982) as implemented in FANTASTIC toolbox.
-    Measures transitions where duration is halved (ratio = 0.5) or doubled (ratio = 2.0).
+    """The proportion of duration transitions that are halved or doubled.
     
     Parameters
     ----------
     starts : list[float]
         List of note start times
-    ends : list[float] 
+    ends : list[float]
         List of note end times
-        
+
     Returns
     -------
     float
         Proportion of half/double duration transitions (0.0 to 1.0)
+
+    Citation
+    --------
+    Steinbeck (1982)
     """
     ratios = get_duration_ratios(starts, ends)
     if not ratios:
@@ -5028,10 +5580,7 @@ def half_duration_transitions(starts: list[float], ends: list[float], tempo: flo
 @fantastic
 @duration_feature
 def dotted_duration_transitions(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Calculate proportion of dotted duration transitions (d.dotted.trans).
-    
-    Based on Steinbeck (1982) as implemented in FANTASTIC toolbox.
-    Measures transitions involving dotted note relationships (1/3 or 3/1 ratios).
+    """The proportion of duration transitions that are dotted.
     
     Parameters
     ----------
@@ -5044,6 +5593,10 @@ def dotted_duration_transitions(starts: list[float], ends: list[float], tempo: f
     -------
     float
         Proportion of dotted duration transitions (0.0 to 1.0)
+
+    Citation
+    --------
+    Steinbeck (1982)
     """
     ratios = get_duration_ratios(starts, ends)
     if not ratios:
@@ -5058,7 +5611,7 @@ def dotted_duration_transitions(starts: list[float], ends: list[float], tempo: f
 @jsymbolic
 @duration_feature
 def total_number_of_notes(starts: list[float]) -> int:
-    """Calculate total number of notes.
+    """The total number of notes.
     
     Parameters
     ----------
@@ -5075,9 +5628,8 @@ def total_number_of_notes(starts: list[float]) -> int:
 @jsymbolic
 @duration_feature
 def amount_of_staccato(starts: list[float], ends: list[float]) -> float:
-    """Calculate amount of staccato. Defined as the number of notes with
-    a duration shorter than 0.1 seconds, divided by the total number of notes.
-    
+    """The proportion of notes with a duration shorter than 0.1 seconds.
+
     Parameters
     ----------
     starts : list[float]
@@ -5101,7 +5653,8 @@ def amount_of_staccato(starts: list[float], ends: list[float]) -> float:
 @midi_toolbox
 @duration_feature
 def mean_duration_accent(starts: list[float], ends: list[float], tau: float = 0.5, accent_index: float = 2.0) -> float:
-    """Calculate mean duration accent across all notes.
+    """The mean duration accent across all notes. Duration accent represents the perceptual salience of notes based on their duration,
+    as defined by Parncutt (1994).
     
     Parameters
     ----------
@@ -5127,7 +5680,8 @@ def mean_duration_accent(starts: list[float], ends: list[float], tau: float = 0.
 @novel
 @duration_feature
 def duration_accent_std(starts: list[float], ends: list[float], tau: float = 0.5, accent_index: float = 2.0) -> float:
-    """Calculate standard deviation of duration accents.
+    """The standard deviation of duration accents. Duration accent represents the perceptual salience of notes based on their duration,
+    as defined by Parncutt (1994).
     
     Parameters
     ----------
@@ -5153,11 +5707,10 @@ def duration_accent_std(starts: list[float], ends: list[float], tau: float = 0.5
 @midi_toolbox
 @duration_feature
 def npvi(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """Calculate normalized Pairwise Variability Index (nPVI) for durations.
-    Implementation based on MIDI toolbox "nPVI.m"
-    The nPVI measures durational variability of events, originally developed for 
+    """The normalized Pairwise Variability Index (nPVI) of note durations in quarter notes.
+    The nPVI measures the durational variability of events, originally developed for 
     language research to distinguish stress-timed vs. syllable-timed languages.
-    It has been applied to music by Patel & Daniele (2003) to study prosodic
+    Applied to music by Patel & Daniele (2003) to study the prosodic
     influences on musical rhythm.
     
     Parameters
@@ -5198,12 +5751,9 @@ def npvi(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
 @midi_toolbox
 @duration_feature
 def onset_autocorrelation(starts: list[float], ends: list[float], divisions_per_quarter: int = 4, max_lag_quarters: int = 8) -> list[float]:
-    """Calculate autocorrelation function of onset times weighted by duration accents.
-    Implementation based on MIDI toolbox "onsetacorr.m"
-    
-    This function calculates the autocorrelation of onset times weighted by onset durations,
-    which are in turn weighted by Parncutt's durational accent (1994). This is useful for
-    meter induction and rhythmic analysis.
+    """The autocorrelation function of onset times weighted by duration accents.
+    This is calculated by weighting the onset times by the duration accents,
+    as defined by Parncutt (1994).
     
     Parameters
     ----------
@@ -5267,7 +5817,7 @@ def onset_autocorrelation(starts: list[float], ends: list[float], divisions_per_
 @novel
 @duration_feature
 def onset_autocorr_peak(starts: list[float], ends: list[float], divisions_per_quarter: int = 4, max_lag_quarters: int = 8) -> float:
-    """Calculate the maximum autocorrelation value (excluding lag 0).
+    """The maximum onset autocorrelation value (excluding lag 0).
     
     Parameters
     ----------
@@ -5294,7 +5844,8 @@ def onset_autocorr_peak(starts: list[float], ends: list[float], divisions_per_qu
 @fantastic
 @tonality_feature
 def tonalness(pitches: list[int]) -> float:
-    """Calculate tonalness as magnitude of highest key correlation.
+    """The magnitude of the highest correlation with a precomputed key profile.
+    This key profile is established and elaborated on in Krumhansl (1990).
 
     Parameters
     ----------
@@ -5305,6 +5856,10 @@ def tonalness(pitches: list[int]) -> float:
     -------
     float
         Magnitude of highest key correlation value
+
+    Citation
+    --------
+    Krumhansl (1990)
     """
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlation = compute_tonality_vector(pitch_classes)
@@ -5313,7 +5868,7 @@ def tonalness(pitches: list[int]) -> float:
 @fantastic
 @tonality_feature
 def tonal_clarity(pitches: list[int]) -> float:
-    """Calculate ratio between top two key correlation values.
+    """The ratio between the top two key correlation values.
 
     Parameters
     ----------
@@ -5345,7 +5900,7 @@ def tonal_clarity(pitches: list[int]) -> float:
 @fantastic
 @tonality_feature
 def tonal_spike(pitches: list[int]) -> float:
-    """Calculate ratio between highest key correlation and sum of all others.
+    """The ratio between the highest key correlation and the sum of all other correlations.
 
     Parameters
     ----------
@@ -5377,7 +5932,7 @@ def tonal_spike(pitches: list[int]) -> float:
 @novel
 @tonality_feature
 def tonal_entropy(pitches: list[int]) -> float:
-    """Calculate tonal entropy as the entropy across the key correlations.
+    """The zeroth-order base-2 entropy of all key correlations.
 
     Parameters
     ----------
@@ -5441,7 +5996,17 @@ def _get_key_distances() -> dict[str, int]:
 @tonality_feature
 def referent(pitches: list[int]) -> int:
     """
-    Feature that describes the chromatic interval of the key centre from C.
+    The chromatic interval of the key centre from C.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    int
+        Chromatic interval of the key centre from C
     """
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
@@ -5458,12 +6023,22 @@ def referent(pitches: list[int]) -> int:
     key_distances = _get_key_distances()
 
     return key_distances[key_name]
-
 @idyom
 @tonality_feature
-def inscale(pitches: list[int]) -> int:
+def inscale(pitches: list[int]) -> list[int]:
     """
-    Captures whether the melody contains any notes which deviate from the estimated key.
+    For each pitch in the melody, returns 1 if the pitch is in the estimated key's scale,
+    or 0 if it deviates from the scale.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    list[int]
+        List of 1s and 0s indicating whether each pitch is in the scale
     """
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)[0]
@@ -5485,20 +6060,28 @@ def inscale(pitches: list[int]) -> int:
     # Transpose scale to key
     scale = [(note + root) % 12 for note in scale]
 
-    # Check if any pitch classes are outside the scale
-    for pc in pitch_classes:
-        if pc not in scale:
-            return 0
+    # Check each pitch class against the scale
+    return [1 if pc in scale else 0 for pc in pitch_classes]
 
-    return 1
-
+# I still think this is cool and I like it a lot, but it's not included in any of the software
+# since this feature set is the result of a systematic review of toolboxes, we can't return it right now
+# but it's here and it works
 @novel
-@tonality_feature
 def temperley_likelihood(pitches: list[int]) -> float:
     """
-    Calculates the likelihood of a melody using Bayesian reasoning,
+    The likelihood of a melody using Bayesian reasoning,
     according to David Temperley's model
     (http://davidtemperley.com/wp-content/uploads/2015/11/temperley-cs08.pdf).
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    float
+        Likelihood of the melody using Bayesian reasoning
     """
     # represent all possible notes as int
     notes_ints = np.arange(0, 120, 1)
@@ -5568,14 +6151,146 @@ def temperley_likelihood(pitches: list[int]) -> float:
 @tonality_feature
 def tonalness_histogram(pitches: list[int]) -> dict:
     """
-    Calculates the histogram of KS correlation values.
+    A histogram of Krumhansl-Schmuckler correlation values.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    dict
+        Histogram of KS correlation values
+
+    Citation
+    --------
+    Krumhansl (1990)
     """
     p = [p % 12 for p in pitches]
     return histogram_bins(compute_tonality_vector(p)[0][1], 24)
 
 @idyom
 @midi_toolbox
-@tonality_feature
+@complexity_feature
+def narmour_registral_direction(pitches: list[int]) -> int:
+    """The score is set to zero. If an interval greater than a perfect fifth is followed by a direction change, a score
+    of 1 is given. If an interval smaller than a perfect fourth continues in the same direction, 
+    a score of 1 is given. This feature returns either 0 or 1 accordingly.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    int
+        Narmour registral direction score (0 or 1)
+
+    Citation
+    --------
+    Narmour (1990)
+    """
+    return int(registral_direction(pitches))
+
+@idyom
+@midi_toolbox
+@complexity_feature
+def narmour_proximity(pitches: list[int]) -> int:
+    """Proximity is defined as 6 minus the absolute interval between the last two notes.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    int
+        Narmour proximity score (0 to 6)
+
+    Citation
+    --------
+    Narmour (1990)
+    """
+    return int(proximity(pitches))
+
+@idyom
+@midi_toolbox
+@complexity_feature
+def narmour_closure(pitches: list[int]) -> int:
+    """A score of 1 is given if the last three notes in a melody constitute a change in
+    direction. Another score of 1 is given if the final interval is more than one tone
+    smaller than the penultimate. As such, this returns integer values between 0 and 2.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    int
+        Narmour closure score (0 to 2)
+
+    Citation
+    --------
+    Narmour (1990)
+    """
+    return int(closure(pitches))
+
+@idyom
+@midi_toolbox
+@complexity_feature
+def narmour_registral_return(pitches: list[int]) -> int:
+    """If the last three notes move away from and then back to the same pitch, a score
+    of 3 is returned. If the pitch returned to is 1 semitone away from the initial,
+    returns 2. If the pitch returned to is 2 semitones away from the initial, returns 1. 
+    Otherwise, a score of 0 is returned.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    int
+        Narmour registral return score (0 to 3)
+
+    Citation
+    --------
+    Narmour (1990)
+    """
+    return int(registral_return(pitches))
+
+@idyom
+@midi_toolbox
+@complexity_feature
+def narmour_intervallic_difference(pitches: list[int]) -> int:
+    """If a large interval is followed by a smaller interval, returns 1 if either:
+    - The smaller interval continues in the same direction and is at least 3 semitones smaller
+    - The smaller interval changes direction and is at least 2 semitones smaller
+    Additionally, returns 1 if a small interval is followed by another interval of the same size.
+    Otherwise returns 0.
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+
+    Returns
+    -------
+    int
+        Narmour intervallic difference score (0 or 1)
+
+    Citation
+    --------
+    Narmour (1990)
+    """
+    return int(intervallic_difference(pitches))
+
 def get_narmour_features(melody: Melody) -> Dict:
     """Calculate Narmour's implication-realization features.
 
@@ -5605,11 +6320,11 @@ def get_narmour_features(melody: Melody) -> Dict:
     """
     pitches = melody.pitches
     return {
-        "registral_direction": registral_direction(pitches),
-        "proximity": proximity(pitches),
-        "closure": closure(pitches),
-        "registral_return": registral_return(pitches),
-        "intervallic_difference": intervallic_difference(pitches),
+        "registral_direction": narmour_registral_direction(pitches),
+        "proximity": narmour_proximity(pitches),
+        "closure": narmour_closure(pitches),
+        "registral_return": narmour_registral_return(pitches),
+        "intervallic_difference": narmour_intervallic_difference(pitches),
     }
 
 
@@ -5617,7 +6332,7 @@ def get_narmour_features(melody: Melody) -> Dict:
 @jsymbolic
 @complexity_feature
 def amount_of_arpeggiation(pitches: list[int]) -> float:
-    """Calculate the proportion of notes in the melody that constitute triadic movement.
+    """The proportion of pitch intervals in the melody that constitute triadic movements.
 
     Parameters
     ----------
@@ -5636,7 +6351,7 @@ def amount_of_arpeggiation(pitches: list[int]) -> float:
 @jsymbolic
 @complexity_feature
 def chromatic_motion(pitches: list[int]) -> float:
-    """Calculate the proportion of chromatic motion in the melody.
+    """The proportion of chromatic motion in the melody. Chromatic motion is defined as a melodic interval of 1 semitone.
 
     Parameters
     ----------
@@ -5656,9 +6371,9 @@ def chromatic_motion(pitches: list[int]) -> float:
 def melodic_embellishment(
     pitches: list[int], starts: list[float], ends: list[float]
 ) -> float:
-    """Calculate proportion of melodic embellishments. Melodic embellishments are identified by notes 
+    """The proportion of melodic embellishments in the melody. Melodic embellishments are identified by notes 
     that are surrounded on both sides by notes with durations at least 3 times longer than the central 
-    note, on the same channel.
+    note.
 
     Parameters
     ----------
@@ -5696,7 +6411,7 @@ def melodic_embellishment(
 @jsymbolic
 @complexity_feature
 def repeated_notes(pitches: list[int]) -> float:
-    """Calculate the proportion of repeated notes in the melody.
+    """The proportion of repeated notes in the melody.
 
     Parameters
     ----------
@@ -5714,7 +6429,7 @@ def repeated_notes(pitches: list[int]) -> float:
 @jsymbolic
 @complexity_feature
 def stepwise_motion(pitches: list[int]) -> float:
-    """Calculate the proportion of stepwise motion in the melody.
+    """The proportion of stepwise motion in the melody. Stepwise motion is defined as a melodic interval of 1 or 2 semitones.
 
     Parameters
     ----------
@@ -5732,8 +6447,7 @@ def stepwise_motion(pitches: list[int]) -> float:
 @midi_toolbox
 @complexity_feature
 def gradus(pitches: list[int]) -> int:
-    """Calculate degree of melodiousness based on Euler's gradus suavitatis (1739).
-    Implementation based on MIDI toolbox "gradus.m"
+    """The degree of melodiousness based on Euler's gradus suavitatis (1739).
     
     Parameters
     ----------
@@ -5796,9 +6510,7 @@ def gradus(pitches: list[int]) -> int:
 @midi_toolbox
 @complexity_feature
 def mobility(pitches: list[int]) -> list[float]:
-    """Calculate melodic mobility for each note based on von Hippel (2000).
-    Implementation based on MIDI toolbox "mobility.m"
-    
+    """The melodic mobility for each note based on von Hippel (2000).
     Mobility describes why melodies change direction after large skips by 
     observing that they would otherwise run out of the comfortable melodic range.
     It uses lag-one autocorrelation between successive pitch heights.
@@ -5868,7 +6580,7 @@ def mobility(pitches: list[int]) -> list[float]:
 @novel
 @complexity_feature
 def mean_mobility(pitches: list[int]) -> float:
-    """Calculate mean mobility across all notes.
+    """The arithmetic mean of the mobility values across all notes.
     
     Parameters
     ----------
@@ -5889,7 +6601,7 @@ def mean_mobility(pitches: list[int]) -> float:
 @novel
 @complexity_feature
 def mobility_std(pitches: list[int]) -> float:
-    """Calculate standard deviation of mobility values.
+    """The standard deviation of the mobility values across all notes.
     
     Parameters
     ----------
@@ -5934,10 +6646,7 @@ def _stability_distance(weight1: float, weight2: float, proximity: float) -> flo
 @midi_toolbox
 @complexity_feature
 def melodic_attraction(pitches: list[int]) -> list[float]:
-    """Calculate melodic attraction according to Lerdahl (1996).
-    Implementation based on MIDI toolbox "melattraction.m"
-    
-    Calculates melodic attraction based on tonal pitch space theory.
+    """The melodic attraction according to Lerdahl (1996).
     Each tone in a key has certain anchoring strength ("weight") in tonal pitch space.
     Melodic attraction strength is affected by the distance between tones and 
     directed motion patterns.
@@ -6049,7 +6758,7 @@ def melodic_attraction(pitches: list[int]) -> list[float]:
 @novel
 @complexity_feature
 def mean_melodic_attraction(pitches: list[int]) -> float:
-    """Calculate mean melodic attraction across all notes.
+    """The arithmetic mean of the melodic attraction values across all notes.
     
     Parameters
     ----------
@@ -6069,7 +6778,7 @@ def mean_melodic_attraction(pitches: list[int]) -> float:
 @novel
 @complexity_feature
 def melodic_attraction_std(pitches: list[int]) -> float:
-    """Calculate standard deviation of melodic attraction values.
+    """The standard deviation of the melodic attraction values across all notes.
     
     Parameters
     ----------
@@ -6090,7 +6799,9 @@ def melodic_attraction_std(pitches: list[int]) -> float:
 @novel
 @complexity_feature
 def mean_melodic_accent(pitches: list[int]) -> float:
-    """Calculate mean melodic accent across all notes.
+    """The arithmetic mean of the melodic accent values across all notes.
+    Melodic accent is defined by Thomassen's model (1982) according to the 
+    possible melodic contours arising in 3-pitch windows.
     
     Parameters
     ----------
@@ -6110,7 +6821,7 @@ def mean_melodic_accent(pitches: list[int]) -> float:
 @novel
 @complexity_feature
 def melodic_accent_std(pitches: list[int]) -> float:
-    """Calculate standard deviation of melodic accents.
+    """The standard deviation of the melodic accent values across all notes.
     
     Parameters
     ----------
@@ -6129,7 +6840,7 @@ def melodic_accent_std(pitches: list[int]) -> float:
 
 @fantastic
 def get_mtype_features(melody: Melody, phrase_gap: float, max_ngram_order: int) -> dict:
-    """Calculate various n-gram statistics for the melody.
+    """Various n-gram statistics for the melody.
 
     Parameters
     ----------
@@ -6420,12 +7131,9 @@ def _get_simonton_transition_matrix() -> np.ndarray:
 @midi_toolbox
 @complexity_feature
 def compltrans(melody: Melody) -> float:
-    """Calculate melodic originality measure (Simonton, 1984).
-    Implementation based on MIDI toolbox "compltrans.m"
-    
-    Calculates Simonton's melodic originality score based on 2nd order pitch-class
-    distribution derived from 15,618 classical music themes. Higher values indicate
-    higher melodic originality (less predictable transitions).
+    """The melodic originality measure, according to Simonton (1984).
+    Calculated based on 2nd order pitch-class distribution derived from 15,618 classical music themes.
+    Higher values indicate higher melodic originality (less predictable transitions).
     
     Parameters
     ----------
@@ -6468,10 +7176,9 @@ def compltrans(melody: Melody) -> float:
 @midi_toolbox
 @complexity_feature
 def complebm(melody: Melody, method: str = 'o') -> float:
-    """Calculate expectancy-based melodic complexity (Eerola & North, 2000).
-    Implementation based on MIDI toolbox "complebm.m"
+    """Expectancy-based melodic complexity, according to Eerola & North (2000).
     
-    Calculates melodic complexity using an expectancy-based model that considers pitch patterns,
+    Calculated using an expectancy-based model that considers pitch patterns,
     rhythmic features, or both. The complexity score is normalized against the Essen folksong
     collection, where a score of 5 represents average complexity (standard deviation = 1).
     
@@ -7166,11 +7873,11 @@ def get_tonality_features(melody: Melody) -> Dict:
         scale = [0, 2, 4, 5, 7, 9, 11] if is_major else [0, 2, 3, 5, 7, 8, 10]
         scale = [(note + root) % 12 for note in scale]
 
-        # Check if all notes are in scale
-        tonality_features["inscale"] = int(all(pc in scale for pc in pitch_classes))
+        # For each pitch, indicate if it's in the estimated key's scale (1) or not (0)
+        tonality_features["inscale"] = [1 if pc in scale else 0 for pc in pitch_classes]
     else:
         tonality_features["referent"] = -1
-        tonality_features["inscale"] = 0
+        tonality_features["inscale"] = []
 
     # Optimize temperley_likelihood calculation
     if len(pitches) > 1:

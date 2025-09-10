@@ -190,8 +190,7 @@ class StepContour:
 
     @property
     def global_variation(self) -> float:
-        """Calculate the global variation of the step contour by taking the standard
-        deviation of the step contour vector.
+        """The standard deviation of the step contour vector.
 
         Returns
         -------
@@ -208,8 +207,7 @@ class StepContour:
 
     @property
     def global_direction(self) -> float:
-        """Calculate the global direction of the step contour by taking the correlation
-        between the step contour vector and an ascending linear function y = x.
+        """The correlation between the step contour vector and an ascending linear function y = x.
 
         Returns
         -------
@@ -236,8 +234,7 @@ class StepContour:
 
     @property
     def local_variation(self) -> float:
-        """Calculate the local variation of the step contour, by taking the mean
-        absolute difference between adjacent values.
+        """The mean absolute difference between adjacent values of the step contour vector.
 
         Returns
         -------
