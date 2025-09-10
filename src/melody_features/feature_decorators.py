@@ -14,7 +14,7 @@ class FeatureSource:
     JSYMBOLIC = "jsymbolic"
     MELSIM = "melsim"
     SIMILE = "simile"
-    CUSTOM = "custom"
+    NOVEL = "novel"
 
 
 class FeatureType:
@@ -26,7 +26,7 @@ class FeatureType:
     DURATION = "duration"
     COMPLEXITY = "complexity"
     CORPUS = "corpus"
-    MTYPE = "mtype"
+    MTYPE = "mtype" 
 
 def _create_feature_decorator(source: str, citation: str, feature_type: str = None) -> Callable:
     """Create a feature decorator for a specific source and optionally a feature type."""
@@ -101,7 +101,7 @@ simile = _create_feature_decorator(
 )
 
 novel = _create_feature_decorator(
-    FeatureSource.CUSTOM,
+    FeatureSource.NOVEL,
     "Novel features do not appear in any of the referenced literature. We introduce them here to extend the contributions of existing feature sets."
 )
 

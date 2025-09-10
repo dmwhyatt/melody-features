@@ -29,7 +29,7 @@ class HuronContour:
         """
         self.melody = melody
         contour_points = self.get_contour_points(melody)
-        self.huron_contour = self.get_contour_class(contour_points)
+        self._huron_contour = self.get_contour_class(contour_points)
 
     def get_contour_points(self, melody: Melody) -> list[float]:
         """Get the contour points of a melody.
@@ -116,6 +116,20 @@ class HuronContour:
             return "concave"
         else:
             return "unclassified"
+
+
+    @property
+    def class_label(self) -> str:
+        """The Huron contour classification for the melody.
+
+        Returns
+        -------
+        str
+            One of: 'ascending', 'descending', 'convex', 'concave', 'horizontal',
+            'ascending-horizontal', 'horizontal-ascending', 'descending-horizontal',
+            'horizontal-descending', or 'unclassified'.
+        """
+        return self._huron_contour
 
 
 def get_huron_contour(melody: Melody) -> str:

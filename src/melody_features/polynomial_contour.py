@@ -70,7 +70,19 @@ class PolynomialContour:
         """
         self.melody = melody
         onsets, pitches = self.get_onsets_and_pitches(melody)
-        self.coefficients = self.calculate_coefficients(onsets, pitches)
+        self._coefficients = self.calculate_coefficients(onsets, pitches)
+
+    @property
+    def coefficients(self) -> list[float]:
+        """The first 3 non-constant coefficients of the polynomial contour.
+
+        Returns
+        -------
+        list[float]
+            First 3 coefficients [c1, c2, c3] of the polynomial contour, with zeros
+            padded if needed. For melodies with fewer than 2 notes, returns [0.0, 0.0, 0.0].
+        """
+        return self._coefficients
 
     def calculate_coefficients(
         self, onsets: list[float], pitches: list[int]

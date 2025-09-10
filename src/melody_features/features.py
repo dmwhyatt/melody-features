@@ -2498,7 +2498,7 @@ def get_huron_contour_features(melody: Melody) -> str:
         Huron contour classification
     """
     hc = HuronContour(melody)
-    return hc.huron_contour
+    return hc.class_label
 
 @fantastic
 @jsymbolic
@@ -6941,10 +6941,8 @@ def get_ngram_document_frequency(ngram: tuple, corpus_stats: dict) -> int:
     # Look up the count directly
     return doc_freqs.get(ngram_str, {}).get("count", 0)
 
-@fantastic
-@complexity_feature
 class InverseEntropyWeighting:
-    """Calculate local weights for n-grams using an inverse-entropy measure.
+    """Calculate local weights for n-grams using an inverse-entropy measure. 
 
     Inverse-entropy weighting is implemented following the specification in 
     FANTASTIC and the Handbook of Latent Semantic Analysis (Landauer et al., 2007).
@@ -7177,7 +7175,6 @@ def compltrans(melody: Melody) -> float:
 @complexity_feature
 def complebm(melody: Melody, method: str = 'o') -> float:
     """Expectancy-based melodic complexity, according to Eerola & North (2000).
-    
     Calculated using an expectancy-based model that considers pitch patterns,
     rhythmic features, or both. The complexity score is normalized against the Essen folksong
     collection, where a score of 5 represents average complexity (standard deviation = 1).
@@ -7361,6 +7358,626 @@ def get_complexity_features(melody: Melody) -> Dict:
     features.update(get_narmour_features(melody))
     
     return features
+
+@fantastic
+@corpus_feature
+def tfdf_spearman(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate Spearman correlation between term frequency and document frequency.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Spearman correlation coefficient between TF and DF
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+
+    doc_freqs = corpus_stats.get("document_frequencies", {})
+    
+    all_tf = []
+    all_df = []
+    
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+
+        if not ngram_counts:
+            continue
+
+        for ngram, tf in ngram_counts.items():
+            ngram_str = str(ngram)
+            df = doc_freqs.get(ngram_str, {}).get("count", 0)
+            if df > 0:
+                all_tf.append(tf)
+                all_df.append(df)
+
+    if len(all_tf) >= 2:
+        try:
+            tf_variance = np.var(all_tf)
+            df_variance = np.var(all_df)
+            
+            if tf_variance == 0 or df_variance == 0:
+                return 0.0
+            else:
+                spearman = scipy.stats.spearmanr(all_tf, all_df)[0]
+                return float(spearman if not np.isnan(spearman) else 0.0)
+        except:
+            return 0.0
+    else:
+        return 0.0
+
+@fantastic
+@corpus_feature
+def tfdf_kendall(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate Kendall's tau correlation between term frequency and document frequency.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Kendall's tau correlation coefficient between TF and DF
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+
+    doc_freqs = corpus_stats.get("document_frequencies", {})
+    
+    all_tf = []
+    all_df = []
+    
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+
+        if not ngram_counts:
+            continue
+
+        for ngram, tf in ngram_counts.items():
+            ngram_str = str(ngram)
+            df = doc_freqs.get(ngram_str, {}).get("count", 0)
+            if df > 0:
+                all_tf.append(tf)
+                all_df.append(df)
+
+    if len(all_tf) >= 2:
+        try:
+            tf_variance = np.var(all_tf)
+            df_variance = np.var(all_df)
+            
+            if tf_variance == 0 or df_variance == 0:
+                return 0.0
+            else:
+                kendall = scipy.stats.kendalltau(all_tf, all_df)[0]
+                return float(kendall if not np.isnan(kendall) else 0.0)
+        except:
+            return 0.0
+    else:
+        return 0.0
+
+@fantastic
+@corpus_feature
+def mean_log_tfdf(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate mean log TF-DF score across all n-grams.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Mean log TF-DF score
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+
+    doc_freqs = corpus_stats.get("document_frequencies", {})
+    total_docs = len(doc_freqs)
+    
+    tfdf_values = []
+    
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+
+        if not ngram_counts:
+            continue
+
+        tf_values = []
+        df_values = []
+        total_tf = sum(ngram_counts.values())
+        
+        for ngram, tf in ngram_counts.items():
+            ngram_str = str(ngram)
+            df = doc_freqs.get(ngram_str, {}).get("count", 0)
+            if df > 0:
+                tf_values.append(tf)
+                df_values.append(df)
+
+        if tf_values and total_docs > 0:
+            tf_array = np.array(tf_values)
+            df_array = np.array(df_values)
+            tf_norm = tf_array / total_tf
+            df_norm = df_array / total_docs
+            tfdf = np.dot(tf_norm, df_norm)
+            tfdf_values.append(tfdf)
+
+    return float(np.mean(tfdf_values) if tfdf_values else 0.0)
+
+@fantastic
+@corpus_feature
+def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate normalized log distance between TF and DF distributions.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Normalized log distance
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+
+    doc_freqs = corpus_stats.get("document_frequencies", {})
+    total_docs = len(doc_freqs)
+    
+    distances = []
+    
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+
+        if not ngram_counts:
+            continue
+
+        tf_values = []
+        df_values = []
+        total_tf = sum(ngram_counts.values())
+        
+        for ngram, tf in ngram_counts.items():
+            ngram_str = str(ngram)
+            df = doc_freqs.get(ngram_str, {}).get("count", 0)
+            if df > 0:
+                tf_values.append(tf)
+                df_values.append(df)
+
+        if tf_values and total_docs > 0:
+            tf_array = np.array(tf_values)
+            df_array = np.array(df_values)
+            tf_norm = tf_array / total_tf
+            df_norm = df_array / total_docs
+            distances.extend(np.abs(tf_norm - df_norm))
+
+    return float(np.mean(distances) if distances else 0.0)
+
+@fantastic
+@corpus_feature
+def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate maximum log document frequency across all n-grams.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Maximum log document frequency
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+
+    doc_freqs = corpus_stats.get("document_frequencies", {})
+    
+    max_df = 0
+    
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+
+        if not ngram_counts:
+            continue
+
+        for ngram, tf in ngram_counts.items():
+            ngram_str = str(ngram)
+            df = doc_freqs.get(ngram_str, {}).get("count", 0)
+            if df > 0:
+                max_df = max(max_df, df)
+
+    return float(np.log1p(max_df) if max_df > 0 else 0.0)
+
+@fantastic
+@corpus_feature
+def min_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate minimum log document frequency across all n-grams.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Minimum log document frequency
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+
+    doc_freqs = corpus_stats.get("document_frequencies", {})
+    
+    min_df = float("inf")
+    
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+
+        if not ngram_counts:
+            continue
+
+        for ngram, tf in ngram_counts.items():
+            ngram_str = str(ngram)
+            df = doc_freqs.get(ngram_str, {}).get("count", 0)
+            if df > 0:
+                min_df = min(min_df, df)
+
+    return float(np.log1p(min_df) if min_df < float("inf") else 0.0)
+
+@fantastic
+@corpus_feature
+def mean_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate mean log document frequency across all n-grams.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Mean log document frequency
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+
+    doc_freqs = corpus_stats.get("document_frequencies", {})
+    
+    total_log_df = 0.0
+    df_count = 0
+    
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+
+        if not ngram_counts:
+            continue
+
+        df_values = []
+        for ngram, tf in ngram_counts.items():
+            ngram_str = str(ngram)
+            df = doc_freqs.get(ngram_str, {}).get("count", 0)
+            if df > 0:
+                df_values.append(df)
+
+        if df_values:
+            df_array = np.array(df_values)
+            total_log_df += np.sum(np.log1p(df_array))
+            df_count += len(df_array)
+
+    return float(total_log_df / df_count if df_count > 0 else 0.0)
+
+@fantastic
+@corpus_feature
+def mean_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate mean global-local weight using inverse entropy weighting.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Mean global-local weight
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+
+    all_ngram_counts = {}
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+
+        for ngram, tf in ngram_counts.items():
+            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
+
+    if all_ngram_counts and len(corpus_stats.get("document_frequencies", {})) > 0:
+        weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
+        combined_weights = weights.combined_weights
+        return float(np.mean(combined_weights) if combined_weights else 0.0)
+    else:
+        return 0.0
+
+@fantastic
+@corpus_feature
+def std_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate standard deviation of global-local weight using inverse entropy weighting.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Standard deviation of global-local weight
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+
+    all_ngram_counts = {}
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+
+        for ngram, tf in ngram_counts.items():
+            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
+
+    if all_ngram_counts and len(corpus_stats.get("document_frequencies", {})) > 0:
+        weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
+        combined_weights = weights.combined_weights
+        return float(np.std(combined_weights, ddof=1) if len(combined_weights) > 1 else 0.0)
+    else:
+        return 0.0
+
+@fantastic
+@corpus_feature
+def mean_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate mean global weight using inverse entropy weighting.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Mean global weight
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+
+    all_ngram_counts = {}
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+
+        for ngram, tf in ngram_counts.items():
+            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
+
+    if all_ngram_counts and len(corpus_stats.get("document_frequencies", {})) > 0:
+        weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
+        global_weights = weights.global_weights
+        return float(np.mean(global_weights) if global_weights else 0.0)
+    else:
+        return 0.0
+
+@fantastic
+@corpus_feature
+def std_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
+    """Calculate standard deviation of global weight using inverse entropy weighting.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+    corpus_stats : dict
+        Dictionary containing corpus statistics
+    phrase_gap : float
+        Gap threshold for phrase segmentation
+    max_ngram_order : int
+        Maximum n-gram order to consider
+        
+    Returns
+    -------
+    float
+        Standard deviation of global weight
+    """
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+
+    all_tokens = []
+    for segment in segments:
+        segment_tokens = tokenizer.tokenize_melody(
+            segment.pitches, segment.starts, segment.ends
+        )
+        all_tokens.extend(segment_tokens)
+
+    all_ngram_counts = {}
+    for n in range(1, max_ngram_order):
+        ngram_counts = {}
+        for i in range(len(all_tokens) - n + 1):
+            ngram = tuple(all_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+
+        for ngram, tf in ngram_counts.items():
+            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
+
+    if all_ngram_counts and len(corpus_stats.get("document_frequencies", {})) > 0:
+        weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
+        global_weights = weights.global_weights
+        return float(np.std(global_weights, ddof=1) if len(global_weights) > 1 else 0.0)
+    else:
+        return 0.0
 
 def get_corpus_features(
     melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int
@@ -7815,6 +8432,286 @@ def get_duration_features(melody: Melody) -> Dict:
     
     return features
 
+@fantastic
+@tonality_feature
+def tonalness(melody: Melody) -> float:
+    """Calculate the tonalness of a melody.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    float
+        The tonalness value (absolute correlation with strongest key)
+    """
+    pitches = melody.pitches
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+    return abs(correlations[0][1]) if correlations else 0.0
+
+@fantastic
+@tonality_feature
+def tonal_clarity(melody: Melody) -> float:
+    """Calculate the tonal clarity of a melody.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    float
+        The tonal clarity (ratio of strongest to second strongest key correlation)
+    """
+    pitches = melody.pitches
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+    
+    if len(correlations) >= 2:
+        abs_corr_values = [abs(val) for _, val in correlations]
+        return abs_corr_values[0] / abs_corr_values[1] if abs_corr_values[1] != 0 else 1.0
+    else:
+        return -1.0
+
+@fantastic
+@tonality_feature
+def tonal_spike(melody: Melody) -> float:
+    """Calculate the tonal spike of a melody.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    float
+        The tonal spike (ratio of strongest key to sum of all other key correlations)
+    """
+    pitches = melody.pitches
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+    
+    if len(correlations) >= 2:
+        abs_corr_values = [abs(val) for _, val in correlations]
+        other_sum = sum(abs_corr_values[1:])
+        return abs_corr_values[0] / other_sum if other_sum != 0 else 1.0
+    else:
+        return -1.0
+
+@novel
+@tonality_feature
+def tonal_entropy(melody: Melody) -> float:
+    """Calculate the tonal entropy of a melody.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    float
+        The tonal entropy (Shannon entropy of key correlations)
+    """
+    pitches = melody.pitches
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+    
+    if correlations:
+        abs_corr_values = [abs(val) for _, val in correlations]
+        return shannon_entropy(abs_corr_values)
+    else:
+        return -1.0
+
+@idyom
+@tonality_feature
+def referent(melody: Melody) -> int:
+    """Calculate the referent (root note) of a melody.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    int
+        The referent (root note) of the strongest key
+    """
+    pitches = melody.pitches
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+    
+    if correlations:
+        key_name = correlations[0][0].split()[0]
+        key_distances = _get_key_distances()
+        return key_distances[key_name]
+    else:
+        return -1
+
+@idyom
+@tonality_feature
+def inscale(melody: Melody) -> list[int]:
+    """Calculate which pitches are in the estimated key's scale.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    list[int]
+        List of 0/1 values indicating if each pitch is in the estimated key's scale
+    """
+    pitches = melody.pitches
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+    
+    if correlations:
+        key_name = correlations[0][0].split()[0]
+        key_distances = _get_key_distances()
+        root = key_distances[key_name]
+        
+        # Determine scale type and pattern
+        is_major = "major" in correlations[0][0]
+        scale = [0, 2, 4, 5, 7, 9, 11] if is_major else [0, 2, 3, 5, 7, 8, 10]
+        scale = [(note + root) % 12 for note in scale]
+        
+        # For each pitch, indicate if it's in the estimated key's scale (1) or not (0)
+        return [1 if pc in scale else 0 for pc in pitch_classes]
+    else:
+        return []
+
+@novel
+@tonality_feature
+def longest_monotonic_conjunct_scalar_passage(melody: Melody) -> int:
+    """Calculate the longest monotonic conjunct scalar passage.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    int
+        Length of the longest monotonic conjunct scalar passage
+    """
+    pitches = melody.pitches
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+    return longest_monotonic_conjunct_scalar_passage(pitches, correlations)
+
+@novel
+@tonality_feature
+def longest_conjunct_scalar_passage(melody: Melody) -> int:
+    """Calculate the longest conjunct scalar passage.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    int
+        Length of the longest conjunct scalar passage
+    """
+    pitches = melody.pitches
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+    return longest_conjunct_scalar_passage(pitches, correlations)
+
+@novel
+@tonality_feature
+def proportion_conjunct_scalar(melody: Melody) -> float:
+    """Calculate the proportion of conjunct scalar motion.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    float
+        Proportion of conjunct scalar motion
+    """
+    pitches = melody.pitches
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+    return proportion_conjunct_scalar(pitches, correlations)
+
+@novel
+@tonality_feature
+def proportion_scalar(melody: Melody) -> float:
+    """Calculate the proportion of scalar motion.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    float
+        Proportion of scalar motion
+    """
+    pitches = melody.pitches
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+    return proportion_scalar(pitches, correlations)
+
+@novel
+@tonality_feature
+def tonalness_histogram(melody: Melody) -> int:
+    """Calculate the tonalness histogram bin.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    int
+        Histogram bin for the tonalness value
+    """
+    pitches = melody.pitches
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+    return histogram_bins(correlations[0][1], 24) if correlations else 0
+
+@fantastic
+@tonality_feature
+def mode(melody: Melody) -> str:
+    """Calculate the mode (major/minor) of a melody.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    str
+        The mode: "major" or "minor"
+    """
+    pitches = melody.pitches
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+    
+    if correlations:
+        is_major = "major" in correlations[0][0]
+        return "major" if is_major else "minor"
+    else:
+        return "unknown"
 
 def get_tonality_features(melody: Melody) -> Dict:
     """Compute all tonality-based features for a melody.
@@ -7879,79 +8776,6 @@ def get_tonality_features(melody: Melody) -> Dict:
         tonality_features["referent"] = -1
         tonality_features["inscale"] = []
 
-    # Optimize temperley_likelihood calculation
-    if len(pitches) > 1:
-        # Pre-compute constant arrays
-        notes_ints = np.arange(0, 120)
-        central_pitch_profile = scipy.stats.norm.pdf(
-            notes_ints, loc=68, scale=np.sqrt(5.0)
-        )
-        central_pitch = np.random.choice(
-            notes_ints, p=central_pitch_profile / central_pitch_profile.sum()
-        )
-        range_profile = scipy.stats.norm.pdf(
-            notes_ints, loc=central_pitch, scale=np.sqrt(23.0)
-        )
-
-        # Pre-compute key profile
-        rpk = (
-            np.array(
-                [
-                    0.184,
-                    0.001,
-                    0.155,
-                    0.003,
-                    0.191,
-                    0.109,
-                    0.005,
-                    0.214,
-                    0.001,
-                    0.078,
-                    0.004,
-                    0.055,
-                ]
-                * 10
-            )
-            if is_major
-            else np.array(
-                [
-                    0.192,
-                    0.005,
-                    0.149,
-                    0.179,
-                    0.002,
-                    0.144,
-                    0.002,
-                    0.201,
-                    0.038,
-                    0.012,
-                    0.053,
-                    0.022,
-                ]
-                * 10
-            )
-        )
-
-        # Vectorize probability calculation
-        total_prob = 1.0
-        prev_pitches = np.array(pitches[:-1])
-        curr_pitches = np.array(pitches[1:])
-
-        # Calculate all proximity profiles at once
-        prox_profiles = scipy.stats.norm.pdf(
-            notes_ints[:, np.newaxis], loc=prev_pitches, scale=np.sqrt(10)
-        )
-
-        # Calculate probabilities for each note transition
-        for i in range(len(prev_pitches)):
-            rp = range_profile * prox_profiles[:, i]
-            rpk_combined = rp * rpk
-            rpk_normed = rpk_combined / np.sum(rpk_combined)
-            total_prob *= rpk_normed[curr_pitches[i]]
-
-        tonality_features["temperley_likelihood"] = total_prob
-    else:
-        tonality_features["temperley_likelihood"] = 0.0
 
     # Scalar passage features
     tonality_features["longest_monotonic_conjunct_scalar_passage"] = (
