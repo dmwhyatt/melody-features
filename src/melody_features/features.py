@@ -96,7 +96,7 @@ from melody_features.feature_histogram import (
     create_melodic_interval_histogram,
 )
 from melody_features.stats import (
-    mode,
+    get_mode,
     range_func,
     shannon_entropy,
     standard_deviation,
@@ -864,6 +864,7 @@ def mean_pitch_class(pitches: list[int]) -> float:
     return float(np.mean([pitch % 12 for pitch in pitches]))
 
 @jsymbolic
+@pitch_feature
 def most_common_pitch(pitches: list[int]) -> int:
     """The most frequently occurring pitch number in the melody.
 
@@ -877,7 +878,7 @@ def most_common_pitch(pitches: list[int]) -> int:
     int
         Most common pitch value
     """
-    return int(mode(pitches))
+    return int(get_mode(pitches))
 
 @jsymbolic
 @pitch_feature
@@ -896,7 +897,7 @@ def most_common_pitch_class(pitches: list[int]) -> int:
     """
     if not pitches:
         return 0
-    return int(mode([pitch % 12 for pitch in pitches]))
+    return int(get_mode([pitch % 12 for pitch in pitches]))
 
 @jsymbolic
 @pitch_feature
@@ -1563,7 +1564,7 @@ def modal_interval(pitches: list[int]) -> int:
     intervals_abs = [abs(x) for x in pitch_interval(pitches)]
     if not intervals_abs:
         return 0
-    return int(mode(intervals_abs))
+    return int(get_mode(intervals_abs))
 
 
 # Alias for modal_interval / FANTASTIC vs jSymbolic
@@ -2715,7 +2716,7 @@ def modal_duration(starts: list[float], ends: list[float], tempo: float = 120.0)
     if not durations:
         return 0.0
     
-    return float(mode(durations))
+    return float(get_mode(durations))
 
 @fantastic
 @duration_feature
@@ -6941,6 +6942,7 @@ def get_ngram_document_frequency(ngram: tuple, corpus_stats: dict) -> int:
     # Look up the count directly
     return doc_freqs.get(ngram_str, {}).get("count", 0)
 
+@fantastic
 class InverseEntropyWeighting:
     """Calculate local weights for n-grams using an inverse-entropy measure. 
 
@@ -8603,10 +8605,11 @@ def longest_monotonic_conjunct_scalar_passage(melody: Melody) -> int:
     int
         Length of the longest monotonic conjunct scalar passage
     """
+    from .algorithms import longest_monotonic_conjunct_scalar_passage as _longest_monotonic_conjunct_scalar_passage
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
-    return longest_monotonic_conjunct_scalar_passage(pitches, correlations)
+    return _longest_monotonic_conjunct_scalar_passage(pitches, correlations)
 
 @novel
 @tonality_feature
@@ -8623,10 +8626,11 @@ def longest_conjunct_scalar_passage(melody: Melody) -> int:
     int
         Length of the longest conjunct scalar passage
     """
+    from .algorithms import longest_conjunct_scalar_passage as _longest_conjunct_scalar_passage
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
-    return longest_conjunct_scalar_passage(pitches, correlations)
+    return _longest_conjunct_scalar_passage(pitches, correlations)
 
 @novel
 @tonality_feature
@@ -8643,10 +8647,11 @@ def proportion_conjunct_scalar(melody: Melody) -> float:
     float
         Proportion of conjunct scalar motion
     """
+    from .algorithms import proportion_conjunct_scalar as _proportion_conjunct_scalar
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
-    return proportion_conjunct_scalar(pitches, correlations)
+    return _proportion_conjunct_scalar(pitches, correlations)
 
 @novel
 @tonality_feature
@@ -8663,30 +8668,11 @@ def proportion_scalar(melody: Melody) -> float:
     float
         Proportion of scalar motion
     """
+    from .algorithms import proportion_scalar as _proportion_scalar
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
-    return proportion_scalar(pitches, correlations)
-
-@novel
-@tonality_feature
-def tonalness_histogram(melody: Melody) -> int:
-    """Calculate the tonalness histogram bin.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    int
-        Histogram bin for the tonalness value
-    """
-    pitches = melody.pitches
-    pitch_classes = [pitch % 12 for pitch in pitches]
-    correlations = compute_tonality_vector(pitch_classes)
-    return histogram_bins(correlations[0][1], 24) if correlations else 0
+    return _proportion_scalar(pitches, correlations)
 
 @fantastic
 @tonality_feature
@@ -8778,16 +8764,20 @@ def get_tonality_features(melody: Melody) -> Dict:
 
 
     # Scalar passage features
+    from .algorithms import longest_monotonic_conjunct_scalar_passage as _longest_monotonic_conjunct_scalar_passage
+    from .algorithms import longest_conjunct_scalar_passage as _longest_conjunct_scalar_passage
     tonality_features["longest_monotonic_conjunct_scalar_passage"] = (
-        longest_monotonic_conjunct_scalar_passage(pitches, correlations)
+        _longest_monotonic_conjunct_scalar_passage(pitches, correlations)
     )
     tonality_features["longest_conjunct_scalar_passage"] = (
-        longest_conjunct_scalar_passage(pitches, correlations)
+        _longest_conjunct_scalar_passage(pitches, correlations)
     )
-    tonality_features["proportion_conjunct_scalar"] = proportion_conjunct_scalar(
+    from .algorithms import proportion_conjunct_scalar as _proportion_conjunct_scalar
+    from .algorithms import proportion_scalar as _proportion_scalar
+    tonality_features["proportion_conjunct_scalar"] = _proportion_conjunct_scalar(
         pitches, correlations
     )
-    tonality_features["proportion_scalar"] = proportion_scalar(pitches, correlations)
+    tonality_features["proportion_scalar"] = _proportion_scalar(pitches, correlations)
 
     # Histogram using cached correlations
     tonality_features["tonalness_histogram"] = histogram_bins(correlations[0][1], 24)

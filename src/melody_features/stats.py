@@ -77,7 +77,7 @@ def shannon_entropy(values) -> float:
     return -np.sum(probs * np.log2(probs))
 
 
-def mode(values) -> float:
+def get_mode(values) -> float:
     """Find most common value.
 
     Parameters

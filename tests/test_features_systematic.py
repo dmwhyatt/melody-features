@@ -411,7 +411,7 @@ def test_feature_completeness():
                 )
             },
             fantastic=FantasticConfig(max_ngram_order=3, phrase_gap=1.5),
-            corpus=None
+            corpus="src/melody_features/corpora/Essen_Corpus"
         )
         
         df = get_all_features(temp_path, config=config, skip_idyom=True)
