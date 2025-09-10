@@ -22,7 +22,7 @@ into a single place, in a single language.
 
 ## Melody Features Summary
 
-This table provides an overview of all 230 melody features available in this package.
+This table provides an overview of all 231 melody features available in this package.
 
 </div>
 
@@ -1025,6 +1025,14 @@ This table provides an overview of all 230 melody features available in this pac
       <td></td>
     </tr>
     <tr>
+      <td>Most Common Pitch</td>
+      <td>Jsymbolic</td>
+      <td></td>
+      <td>The most frequently occurring pitch number in the melody.</td>
+      <td>Descriptor</td>
+      <td></td>
+    </tr>
+    <tr>
       <td>Most Common Pitch Class</td>
       <td>Jsymbolic</td>
       <td></td>
@@ -1819,9 +1827,9 @@ This table provides an overview of all 230 melody features available in this pac
     <tr>
       <td>Tonalness Histogram</td>
       <td>Novel</td>
-      <td></td>
-      <td>Calculate the tonalness histogram bin.</td>
-      <td>Descriptor</td>
+      <td>Krumhansl (1990)</td>
+      <td>A histogram of Krumhansl-Schmuckler correlation values.</td>
+      <td>Sequence</td>
       <td></td>
     </tr>
     <tr>
