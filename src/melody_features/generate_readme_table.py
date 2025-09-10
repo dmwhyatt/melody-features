@@ -44,9 +44,9 @@ def generate_readme_table():
     styled_html = f"""
 <div align="center">
 
-## 📊 Melody Features Summary
+## Melody Features Summary
 
-This table provides a comprehensive overview of all {len(df)} melody features available in this package.
+This table provides an overview of all {len(df)} melody features available in this package.
 
 </div>
 
@@ -56,22 +56,9 @@ This table provides a comprehensive overview of all {len(df)} melody features av
 
 </div>
 
-<div align="center">
-
 ### Feature Types
 - **Descriptor**: Returns a single scalar value (int, float, bool)
 - **Sequence**: Returns a collection (list, tuple, dict, etc.)
-
-### Sources
-- **FANTASTIC**: Müllensiefen, D. (2009). Feature ANalysis Technology Accessing STatistics
-- **jSymbolic**: McKay, C., & Fujinaga, I. (2006). jSymbolic: A Feature Extractor for MIDI Files
-- **IDyOM**: Pearce, M. T. (2005). The construction and evaluation of statistical models of melodic structure
-- **MIDI Toolbox**: Eerola, T., & Toiviainen, P. (2004). MIDI Toolbox: MATLAB Tools for Music Research
-- **Melsim**: Silas, S., & Frieler, K. (n.d.). Melsim: Framework for calculating tons of melodic similarities
-- **Simile**: Müllensiefen, D., & Frieler, K. (2004). The Simile algorithms documentation
-- **Novel**: Custom features introduced in this package
-
-</div>
 """
     
     return styled_html
