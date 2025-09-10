@@ -173,4 +173,4 @@ def get_huron_contour(melody: Melody) -> str:
     'descending'
     """
     hc = HuronContour(melody)
-    return hc.huron_contour
+    return hc.class_label
