@@ -427,6 +427,10 @@ def test_feature_completeness():
                 if feature_type in category_mapping:
                     expected_categories.add(category_mapping[feature_type])
         
+        # Remove corpus features from expected categories since no corpus is provided
+        if config.corpus is None:
+            expected_categories.discard('corpus_features')
+        
         # Check that we have all expected feature categories
         feature_categories = set()
         for col in df.columns:
