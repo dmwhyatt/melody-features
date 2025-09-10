@@ -36,9 +36,9 @@ Included in the package are contributions from:
 
 ## Melody Features Summary
 
-This package provides **231 melody features** from various computational music analysis frameworks. For a comprehensive, interactive table with search and sorting capabilities, refer to the table at:
+This package provides over **200 features** from various computational melody analysis frameworks. For a comprehensive, interactive table with search and sorting capabilities, refer to:
 
-**[Interactive Features Table](https://dmwhyatt.github.io/feature_set/)**
+**[Interactive Features Table](https://dmwhyatt.github.io/melody-features/)**
 
 The interactive table allows you to:
 - **Search** features by name, implementation, or description
