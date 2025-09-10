@@ -8,8 +8,10 @@ import os
 import pandas as pd
 from pathlib import Path
 
-# Add src to path for imports
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+# Add src directory to path for imports
+script_dir = Path(__file__).parent
+src_dir = script_dir.parent  # Go up one level from melody_features to src
+sys.path.insert(0, str(src_dir))
 
 from melody_features.quarto_table_build import build_table
 
