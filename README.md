@@ -28,12 +28,6 @@ Included in the package are contributions from:
 - **IDyOM** (Pearce, 2005)
 - **MIDI Toolbox** (Eerola & Toiviainen, 2004)
 
-## Feature Types
-
-- **Descriptor**: Returns a single scalar value (int, float, bool)
-- **Sequence**: Returns a collection (list, tuple, dict, etc.)
-
-
 ## Melody Features Summary
 
 This package provides over **200 features** from various computational melody analysis frameworks. For a comprehensive, interactive table with search and sorting capabilities, refer to:

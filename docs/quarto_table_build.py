@@ -454,9 +454,6 @@ def main():
             f.write("</script>\n")
             f.write("'''))\n")
             f.write("```\n\n")
-            f.write("## Feature Types\n\n")
-            f.write("- **Descriptor**: Returns a single scalar value (int, float, bool)\n")
-            f.write("- **Sequence**: Returns a collection (list, tuple, dict, etc.)\n\n")
             f.write("## Sources\n\n")
             f.write("- **FANTASTIC**: Müllensiefen, D. (2009). Feature ANalysis Technology Accessing STatistics\n")
             f.write("- **jSymbolic**: McKay, C., & Fujinaga, I. (2006). jSymbolic: A Feature Extractor for MIDI Files\n")
@@ -464,7 +461,10 @@ def main():
             f.write("- **MIDI Toolbox**: Eerola, T., & Toiviainen, P. (2004). MIDI Toolbox: MATLAB Tools for Music Research\n")
             f.write("- **Melsim**: Silas, S., & Frieler, K. (n.d.). Melsim: Framework for calculating tons of melodic similarities\n")
             f.write("- **Simile**: Müllensiefen, D., & Frieler, K. (2004). The Simile algorithms documentation\n")
-            f.write("- **Novel**: Custom features introduced in this package\n")
+            f.write("- **Novel**: Custom features introduced in this package\n\n")
+            f.write("## Feature Types\n\n")
+            f.write("- **Descriptor**: Returns a single scalar value (int, float, bool)\n")
+            f.write("- **Sequence**: Returns a collection (list, tuple, dict, etc.)\n")
 
 
 if __name__ == "__main__":
