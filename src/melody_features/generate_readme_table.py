@@ -64,7 +64,7 @@ This table provides an overview of all {len(df)} melody features available in th
     return styled_html
 
 def update_readme_with_table():
-    """Update README.md with the features table."""
+    """Update README.md with the features table only if content has changed."""
     
     # Read current README
     readme_path = Path("README.md")
@@ -86,6 +86,9 @@ def update_readme_with_table():
         start_idx = readme_content.find(start_marker)
         end_idx = readme_content.find(end_marker) + len(end_marker)
         
+        # Extract current table content
+        current_table_content = readme_content[start_idx + len(start_marker):end_idx - len(end_marker)].strip()
+        
         new_content = (
             readme_content[:start_idx] + 
             start_marker + "\n" + 
@@ -93,6 +96,11 @@ def update_readme_with_table():
             end_marker + 
             readme_content[end_idx:]
         )
+        
+        # Check if content has actually changed
+        if current_table_content == table_html.strip():
+            print("Features table is already up to date - no changes needed")
+            return False
     else:
         # Add table after Overview section
         overview_end = readme_content.find("Included in the package are contributions from:")
