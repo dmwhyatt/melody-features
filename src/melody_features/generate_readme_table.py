@@ -42,23 +42,15 @@ def generate_readme_table():
     
     # Add inline CSS for styling (GitHub supports basic CSS)
     styled_html = f"""
-<div align="center">
-
 ## Melody Features Summary
 
 This table provides an overview of all {len(df)} melody features available in this package.
-
-</div>
 
 <div style="overflow-x: auto;">
 
 {html_table}
 
 </div>
-
-### Feature Types
-- **Descriptor**: Returns a single scalar value (int, float, bool)
-- **Sequence**: Returns a collection (list, tuple, dict, etc.)
 """
     
     return styled_html
@@ -108,18 +100,18 @@ def update_readme_with_table():
             if current_table_content == table_html.strip():
                 return True, False, "Features table is already up to date - no changes needed"
         else:
-            # Add table after Overview section
-            overview_end = readme_content.find("Included in the package are contributions from:")
-            if overview_end == -1:
+            # Add table after Feature Types section
+            feature_types_end = readme_content.find("<!-- FEATURES_TABLE_START -->")
+            if feature_types_end == -1:
                 # Fallback: add at the end
                 new_content = readme_content + "\n\n<!-- FEATURES_TABLE_START -->\n" + table_html + "\n<!-- FEATURES_TABLE_END -->"
             else:
                 new_content = (
-                    readme_content[:overview_end] + 
-                    "\n\n<!-- FEATURES_TABLE_START -->\n" + 
+                    readme_content[:feature_types_end] + 
+                    "\n<!-- FEATURES_TABLE_START -->\n" + 
                     table_html + 
-                    "\n<!-- FEATURES_TABLE_END -->\n\n" + 
-                    readme_content[overview_end:]
+                    "\n<!-- FEATURES_TABLE_END -->\n" + 
+                    readme_content[feature_types_end:]
                 )
         
         # Write updated README
