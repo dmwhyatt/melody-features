@@ -23,12 +23,11 @@ import inspect
 import re
 import sys
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Iterable
 from pathlib import Path
 
 import pandas as pd
 
-# Add src directory to path for imports
 script_dir = Path(__file__).parent
 src_dir = script_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
@@ -63,7 +62,6 @@ def capitalize_ioi(text: str) -> str:
     """Capitalize 'IOI' in text while preserving other formatting."""
     if not text:
         return text
-    # Use word boundaries to avoid partial matches
     return re.sub(r'\bioi\b', 'IOI', text, flags=re.IGNORECASE)
 
 
@@ -71,20 +69,16 @@ def extract_sections_from_docstring(doc: str) -> dict[str, str]:
     """Parse simple NumPy-style sections (Parameters, Returns, Notes, Citation, etc.)."""
     if not doc:
         return {}
-    # Normalize newlines and strip trailing spaces
     text = inspect.cleandoc(doc)
-    # Find section headings (lines followed by dashes)
     sections: dict[str, str] = {}
     matches = list(SECTION_RE.finditer(text))
     if not matches:
         sections["Preamble"] = text.strip()
         return sections
-    # Preamble before first section
     first_start = matches[0].start()
     preamble = text[:first_start].strip()
     if preamble:
         sections["Preamble"] = preamble
-    # Each section content until next heading
     for idx, m in enumerate(matches):
         title = m.group(1).strip()
         start = m.end()
@@ -95,7 +89,6 @@ def extract_sections_from_docstring(doc: str) -> dict[str, str]:
 
 
 def determine_type_from_return_annotation(obj) -> str:
-    # Default to Descriptor if no annotation available
     try:
         ann = inspect.signature(obj).return_annotation
     except (TypeError, ValueError):
@@ -104,16 +97,12 @@ def determine_type_from_return_annotation(obj) -> str:
     if ann is inspect.Signature.empty:
         return "Descriptor"
 
-    # Builtin scalars considered descriptors
     scalar_types = (int, float, bool)
-    # Common sequence-like types considered sequences
     sequence_type_names = {"list", "tuple", "dict", "set", "ndarray", "Series", "DataFrame"}
 
-    # Direct type objects
     if isinstance(ann, type):
         return "Descriptor" if issubclass(ann, scalar_types) else "Sequence"
 
-    # String annotations like 'list[int]' or 'float'
     if isinstance(ann, str):
         lowered = ann.lower()
         if any(t in lowered for t in ("int", "float", "bool")) and not any(t in lowered for t in ("list", "tuple", "dict", "set")):
@@ -122,7 +111,6 @@ def determine_type_from_return_annotation(obj) -> str:
             return "Sequence"
         return "Descriptor"
 
-    # Typing objects (e.g., list[int])
     name = getattr(getattr(ann, "__origin__", None), "__name__", "") or getattr(ann, "_name", "") or str(ann)
     for seq_name in sequence_type_names:
         if seq_name in str(name):
@@ -132,21 +120,34 @@ def determine_type_from_return_annotation(obj) -> str:
 
 def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]:
     rows: list[FeatureRow] = []
+    
+    def format_source_name(raw_name: str) -> str:
+        """Return canonical display names for pre-existing implementations.
+        Falls back to Title Case when not explicitly mapped.
+        """
+        if not raw_name:
+            return ""
+        normalized = raw_name.replace("_", " ").strip().lower()
+        mapping = {
+            "fantastic": "FANTASTIC",
+            "jsymbolic": "jSymbolic",
+            "midi toolbox": "MIDI Toolbox",
+            "midi_toolbox": "MIDI Toolbox",
+            "simile": "SIMILE",
+            "idyom": "IDyOM",
+        }
+        return mapping.get(normalized, raw_name.replace("_", " ").strip().title())
     for name, obj in objs:
-        # Skip get_ methods (these are wrapper functions)
         if name.startswith("get_"):
             continue
             
-        # Include if it has a feature type decorator OR is a property (class feature)
         feature_types = getattr(obj, "_feature_types", None)
         is_property = isinstance(obj, property)
         if not feature_types and not is_property:
             continue
 
-        # Name (handle class.property format)
         if "." in name:
             class_name, prop_name = name.split(".", 1)
-            # Class display name adjustments
             class_display = class_name
             if class_name == "StepContour":
                 class_display = "Step Contour"
@@ -157,49 +158,42 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
             elif class_name == "HuronContour":
                 class_display = "Huron Contour"
             elif class_name == "NGramCounter":
-                class_display = ""  # Hide class name
+                class_display = ""
             class_part = f"{class_display} " if class_display else ""
             pretty_name = f"{class_part}{snake_to_title(prop_name)}".strip()
         else:
             pretty_name = snake_to_title(name)
 
-        # Implementations (from source decorators if present). For properties, try mapping by class name
         feature_sources = getattr(obj, "_feature_sources", [])
         if feature_sources:
-            implementations = ", ".join(sorted({s.replace("_", " ").title() for s in feature_sources}))
+            implementations = ", ".join(sorted({format_source_name(s) for s in feature_sources}))
         else:
             implementations = ""
             if is_property and "." in name:
                 class_name = name.split(".", 1)[0]
                 class_source_map = {
-                    "StepContour": "fantastic",
-                    "InterpolationContour": "fantastic",
-                    "PolynomialContour": "fantastic",
-                    "HuronContour": "fantastic",
-                    "NGramCounter": "fantastic",
+                    "StepContour": "FANTASTIC",
+                    "InterpolationContour": "FANTASTIC",
+                    "PolynomialContour": "FANTASTIC",
+                    "HuronContour": "FANTASTIC",
+                    "NGramCounter": "FANTASTIC",
                 }
                 mapped = class_source_map.get(class_name)
                 if mapped:
-                    implementations = mapped.title()
+                    implementations = mapped
 
-        # Docstring sections
-        # For properties, read the fget function docstring
         doc_string = inspect.getdoc(obj.fget) if is_property else inspect.getdoc(obj)
         sections = extract_sections_from_docstring(doc_string or "")
         description = capitalize_ioi(" ".join(sections.get("Preamble", "").split()))
         notes = capitalize_ioi(" ".join(sections.get("Note", "").split()))
 
-        # Further References: only from Citation section in docstring (not decorator citations)
         citation_section = sections.get("Citation", "").strip()
         if citation_section:
-            # Split by blank lines to avoid huge blocks, then normalize whitespace
             references = capitalize_ioi(" | ".join([" ".join(p.split()) for p in re.split(r"\n\s*\n", citation_section) if p.strip()]))
         else:
             references = ""
 
-        # Type: Descriptor vs Sequence; for known properties, override
         if is_property:
-            # Default
             type_label = "Descriptor"
             if "." in name:
                 class_name, prop_name = name.split(".", 1)
@@ -210,7 +204,6 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         else:
             type_label = determine_type_from_return_annotation(obj)
 
-        # Get category for this feature
         category = _get_feature_category(obj)
         
         
@@ -230,9 +223,6 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
 
 def to_dataframe(rows: list[FeatureRow]) -> pd.DataFrame:
     df = pd.DataFrame([r.__dict__ for r in rows])
-    
-    # The category is already in the FeatureRow, no need to re-compute it
-    # Sort by category first, then by name within each category
     df = df.sort_values(['category', 'name']).reset_index(drop=True)
     
     return df
@@ -241,9 +231,7 @@ def _get_feature_category(obj) -> str:
     """Determine the feature category based on the actual feature type decorator."""
     feature_types = getattr(obj, "_feature_types", None)
     if feature_types and len(feature_types) > 0:
-        # Use the first feature type as the category
         feature_type = feature_types[0]
-        # Map feature types to display names
         type_mapping = {
             'pitch': 'Pitch',
             'interval': 'Interval', 
@@ -260,10 +248,8 @@ def _get_feature_category(obj) -> str:
     # handle class based featurs
     if hasattr(obj, '__name__'):
         name = obj.__name__
-        # NGramCounter complexity measures
         if name in ['honores_h', 'yules_k', 'simpsons_d', 'sichels_s', 'mean_entropy', 'mean_productivity']:
             return 'Complexity'
-        # Contour-related class property names
         elif name in ['class_label', 'global_variation', 'global_direction', 'local_variation', 'coefficients']:
             return 'Contour'
     
@@ -285,15 +271,11 @@ def _get_feature_category(obj) -> str:
 def build_table() -> pd.DataFrame:
     members = inspect.getmembers(features_module)
     
-    # Collect functions and class properties with feature type decorators
     all_features = []
     
-    # Add functions
     functions = [(n, o) for n, o in members if inspect.isfunction(o)]
     all_features.extend(functions)
     
-    # Add class properties
-    # Explicitly inspect known feature classes whose properties should be exposed
     feature_classes = [StepContour, InterpolationContour, PolynomialContour, HuronContour, NGramCounter]
     excluded_properties = {"count_values", "freq_spec", "total_tokens"}
     
@@ -327,8 +309,7 @@ def main():
             }
         ).to_csv(args.out, index=False)
     else:
-        # Quarto Markdown file with interactive table
-        qmd_df = df.rename(
+        _ = df.rename(
             columns={
                 "name": "Name",
                 "implementations": "Pre-existing Implementations",
@@ -342,6 +323,7 @@ def main():
         with open(args.out, "w", encoding="utf-8") as f:
             f.write("---\n")
             f.write("title: \"Melody Features Summary\"\n")
+            f.write("page-layout: full\n")
             f.write("format:\n")
             f.write("  html:\n")
             f.write("    theme: cosmo\n")
@@ -395,19 +377,45 @@ def main():
             f.write("            # This is a data row, add the data-category attribute\n")
             f.write("            if data_row_index < len(df_with_categories):\n")
             f.write("                category = df_with_categories.iloc[data_row_index]['category']\n")
-            f.write("                line = line.replace('<tr>', f'<tr data-category=\"{category}\">')\n")
+            f.write("                impls = df_with_categories.iloc[data_row_index].get('Pre-existing Implementations', '') or ''\n")
+            f.write("                ftype = df_with_categories.iloc[data_row_index].get('Type', '') or ''\n")
+            f.write("                line = line.replace('<tr>', f'<tr data-category=\"{category}\" data-impl=\"{impls}\" data-type=\"{ftype}\">')\n")
             f.write("                data_row_index += 1\n")
             f.write("        result_lines.append(line)\n")
             f.write("    \n")
             f.write("    return '\\n'.join(result_lines)\n")
             f.write("\n")
             f.write("table_html = add_data_category_attributes(table_html, df_renamed)\n\n")
-            f.write("# Generate category options for the dropdown\n")
+            f.write("# Generate dropdown options for filters\n")
             f.write("categories = sorted(df['category'].unique())\n")
             f.write("category_options = '\\n'.join([f'        <option value=\"{cat}\">{cat}</option>' for cat in categories])\n\n")
+            f.write("# Implementations: split comma-separated values and deduplicate\n")
+            f.write("impl_tokens = set()\n")
+            f.write("for v in df['implementations'].fillna(''):\n")
+            f.write("    for token in [t.strip() for t in str(v).split(',') if t.strip()]:\n")
+            f.write("        # Normalize tokens to canonical display forms to avoid duplicates\n")
+            f.write("        token_low = token.lower()\n")
+            f.write("        if token_low in ['fantastic']:\n")
+            f.write("            impl_tokens.add('FANTASTIC')\n")
+            f.write("        elif token_low in ['jsymbolic']:\n")
+            f.write("            impl_tokens.add('jSymbolic')\n")
+            f.write("        elif token_low in ['midi toolbox', 'midi_toolbox']:\n")
+            f.write("            impl_tokens.add('MIDI Toolbox')\n")
+            f.write("        elif token_low in ['simile']:\n")
+            f.write("            impl_tokens.add('SIMILE')\n")
+            f.write("        elif token_low in ['idyom']:\n")
+            f.write("            impl_tokens.add('IDyOM')\n")
+            f.write("        else:\n")
+            f.write("            impl_tokens.add(token)\n")
+            f.write("implementation_options = '\\n'.join([f'        <option value=\"{opt}\">{opt}</option>' for opt in sorted(impl_tokens)])\n\n")
+            f.write("# Types (Descriptor/Sequence)\n")
+            f.write("type_options = '\\n'.join([f'        <option value=\"{opt}\">{opt}</option>' for opt in sorted(df['type_label'].unique())])\n\n")
             f.write("# Add custom CSS and JavaScript for interactivity\n")
             f.write("interactive_html = '''\n")
             f.write("<style>\n")
+            f.write("/* Make Quarto content span full page width */\n")
+            f.write(":where(.quarto-container, main.content, .page-content, .content){max-width:100% !important;width:100% !important;padding-left:0 !important;padding-right:0 !important;}\n")
+            f.write("body{margin-left:0;margin-right:0;}\n")
             f.write(".filter-container {\n")
             f.write("    display: flex;\n")
             f.write("    gap: 15px;\n")
@@ -488,11 +496,22 @@ def main():
             f.write("        <option value=''>All Categories</option>\n")
             f.write("        {category_options}\n")
             f.write("    </select>\n")
+            f.write("    <select class='category-filter' id='implementationFilter'>\n")
+            f.write("        <option value=''>All Implementations</option>\n")
+            f.write("        {implementation_options}\n")
+            f.write("    </select>\n")
+            f.write("    <select class='category-filter' id='typeFilter'>\n")
+            f.write("        <option value=''>All Types</option>\n")
+            f.write("        {type_options}\n")
+            f.write("    </select>\n")
             f.write("</div>\n")
             f.write("<div class='table-container'>\n")
             f.write("'''\n\n")
             f.write("# Format the HTML with category options\n")
-            f.write("formatted_html = interactive_html.replace('{category_options}', category_options)\n")
+            f.write("formatted_html = (interactive_html\n")
+            f.write("                    .replace('{category_options}', category_options)\n")
+            f.write("                    .replace('{implementation_options}', implementation_options)\n")
+            f.write("                    .replace('{type_options}', type_options))\n")
             f.write("display(HTML(formatted_html + table_html + '</div>'))\n\n")
             f.write("# Add JavaScript for search and sort functionality\n")
             f.write("display(HTML('''\n")
@@ -501,6 +520,8 @@ def main():
             f.write("    const table = document.getElementById('features-table');\n")
             f.write("    const searchInput = document.getElementById('searchInput');\n")
             f.write("    const categoryFilter = document.getElementById('categoryFilter');\n")
+            f.write("    const implementationFilter = document.getElementById('implementationFilter');\n")
+            f.write("    const typeFilter = document.getElementById('typeFilter');\n")
             f.write("    const tbody = table.querySelector('tbody');\n")
             f.write("    const rows = Array.from(tbody.querySelectorAll('tr'));\n")
             f.write("    \n")
@@ -515,21 +536,29 @@ def main():
             f.write("    function filterRows() {\n")
             f.write("        const searchTerm = searchInput.value.toLowerCase();\n")
             f.write("        const selectedCategory = categoryFilter.value;\n")
+            f.write("        const selectedImplementation = implementationFilter.value;\n")
+            f.write("        const selectedType = typeFilter.value;\n")
             f.write("        \n")
             f.write("        rows.forEach(row => {\n")
             f.write("            const text = row.textContent.toLowerCase();\n")
             f.write("            const category = row.getAttribute('data-category') || '';\n")
+            f.write("            const impl = row.getAttribute('data-impl') || '';\n")
+            f.write("            const ftype = row.getAttribute('data-type') || '';\n")
             f.write("            \n")
             f.write("            const matchesSearch = text.includes(searchTerm);\n")
             f.write("            const matchesCategory = !selectedCategory || category === selectedCategory;\n")
+            f.write("            const matchesImplementation = !selectedImplementation || impl.split(',').map(s => s.trim()).includes(selectedImplementation);\n")
+            f.write("            const matchesType = !selectedType || ftype === selectedType;\n")
             f.write("            \n")
-            f.write("            row.style.display = (matchesSearch && matchesCategory) ? '' : 'none';\n")
+            f.write("            row.style.display = (matchesSearch && matchesCategory && matchesImplementation && matchesType) ? '' : 'none';\n")
             f.write("        });\n")
             f.write("    }\n")
             f.write("    \n")
             f.write("    // Add event listeners\n")
             f.write("    searchInput.addEventListener('input', filterRows);\n")
             f.write("    categoryFilter.addEventListener('change', filterRows);\n")
+            f.write("    implementationFilter.addEventListener('change', filterRows);\n")
+            f.write("    typeFilter.addEventListener('change', filterRows);\n")
             f.write("    \n")
             f.write("    // Sort functionality\n")
             f.write("    let sortColumn = -1;\n")
@@ -589,5 +618,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
