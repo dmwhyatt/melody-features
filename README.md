@@ -37,7 +37,6 @@ This package provides over **200 features** from various computational melody an
 The interactive table allows you to:
 - **Search** features by name, implementation, or description
 - **Sort** by any column (Name, Implementation, Type, etc.)
-- **Filter** by feature type (Descriptor vs Sequence)
 - **Browse** all features with detailed descriptions and references
 
 ## Installation
