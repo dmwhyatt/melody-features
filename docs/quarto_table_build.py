@@ -49,6 +49,7 @@ class FeatureRow:
     description: str
     type_label: str
     notes: str
+    category: str
 
 
 SECTION_RE = re.compile(r"^([A-Za-z ]+)\n[-]+$", re.MULTILINE)
@@ -209,6 +210,10 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         else:
             type_label = determine_type_from_return_annotation(obj)
 
+        # Get category for this feature
+        category = _get_feature_category(obj)
+        
+        
         rows.append(
             FeatureRow(
                 name=pretty_name,
@@ -217,6 +222,7 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
                 description=description,
                 type_label=type_label,
                 notes=notes,
+                category=category,
             )
         )
     return rows
@@ -224,8 +230,56 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
 
 def to_dataframe(rows: list[FeatureRow]) -> pd.DataFrame:
     df = pd.DataFrame([r.__dict__ for r in rows])
-    # Sort by Name
-    return df.sort_values("name").reset_index(drop=True)
+    
+    # The category is already in the FeatureRow, no need to re-compute it
+    # Sort by category first, then by name within each category
+    df = df.sort_values(['category', 'name']).reset_index(drop=True)
+    
+    return df
+
+def _get_feature_category(obj) -> str:
+    """Determine the feature category based on the actual feature type decorator."""
+    feature_types = getattr(obj, "_feature_types", None)
+    if feature_types and len(feature_types) > 0:
+        # Use the first feature type as the category
+        feature_type = feature_types[0]
+        # Map feature types to display names
+        type_mapping = {
+            'pitch': 'Pitch',
+            'interval': 'Interval', 
+            'contour': 'Contour',
+            'duration': 'Duration',
+            'complexity': 'Complexity',
+            'tonality': 'Tonality',
+            'mtype': 'Patterns',
+            'corpus': 'Corpus',
+            'melodic_movement': 'Melodic Movement'
+        }
+        return type_mapping.get(feature_type, feature_type.title())
+    
+    # handle class based featurs
+    if hasattr(obj, '__name__'):
+        name = obj.__name__
+        # NGramCounter complexity measures
+        if name in ['honores_h', 'yules_k', 'simpsons_d', 'sichels_s', 'mean_entropy', 'mean_productivity']:
+            return 'Complexity'
+        # Contour-related class property names
+        elif name in ['class_label', 'global_variation', 'global_direction', 'local_variation', 'coefficients']:
+            return 'Contour'
+    
+    # get properties
+    if isinstance(obj, property):
+
+        if hasattr(obj, 'fget') and obj.fget:
+            if hasattr(obj.fget, '__qualname__'):
+                qualname = obj.fget.__qualname__
+                if 'NGramCounter' in qualname:
+                    return 'Complexity'
+                elif any(cls in qualname for cls in ['HuronContour', 'StepContour', 'InterpolationContour', 'PolynomialContour']):
+                    return 'Contour'
+        return 'Other'
+    
+    return 'Other'
 
 
 def build_table() -> pd.DataFrame:
@@ -321,19 +375,67 @@ def main():
             f.write("from IPython.display import display, HTML\n")
             f.write("import json\n\n")
             f.write("# Create a simple interactive table with search and sort\n")
-            f.write("table_html = df_renamed.to_html(classes='table table-striped table-hover', table_id='features-table', escape=False, index=False)\n\n")
+            f.write("# Add category data to each row for filtering\n")
+            f.write("df_renamed['data-category'] = df_renamed.index.map(lambda i: df.iloc[i]['category'])\n")
+            f.write("\n")
+            f.write("# Create a single table with category data for filtering (exclude category columns from display)\n")
+            f.write("df_display = df_renamed.drop(columns=['category', 'data-category'])\n")
+            f.write("table_html = df_display.to_html(classes='table table-striped table-hover', table_id='features-table', escape=False, index=False)\n")
+            f.write("\n")
+            f.write("# Add data-category attributes to table rows using a more robust approach\n")
+            f.write("import re\n")
+            f.write("def add_data_category_attributes(html, df_with_categories):\n")
+            f.write("    # Split HTML into lines for easier processing\n")
+            f.write("    lines = html.split('\\n')\n")
+            f.write("    result_lines = []\n")
+            f.write("    data_row_index = 0\n")
+            f.write("    \n")
+            f.write("    for line in lines:\n")
+            f.write("        if '<tr>' in line and 'thead' not in line:\n")
+            f.write("            # This is a data row, add the data-category attribute\n")
+            f.write("            if data_row_index < len(df_with_categories):\n")
+            f.write("                category = df_with_categories.iloc[data_row_index]['category']\n")
+            f.write("                line = line.replace('<tr>', f'<tr data-category=\"{category}\">')\n")
+            f.write("                data_row_index += 1\n")
+            f.write("        result_lines.append(line)\n")
+            f.write("    \n")
+            f.write("    return '\\n'.join(result_lines)\n")
+            f.write("\n")
+            f.write("table_html = add_data_category_attributes(table_html, df_renamed)\n\n")
+            f.write("# Generate category options for the dropdown\n")
+            f.write("categories = sorted(df['category'].unique())\n")
+            f.write("category_options = '\\n'.join([f'        <option value=\"{cat}\">{cat}</option>' for cat in categories])\n\n")
             f.write("# Add custom CSS and JavaScript for interactivity\n")
             f.write("interactive_html = '''\n")
             f.write("<style>\n")
-            f.write(".search-container {\n")
+            f.write(".filter-container {\n")
+            f.write("    display: flex;\n")
+            f.write("    gap: 15px;\n")
             f.write("    margin-bottom: 20px;\n")
+            f.write("    flex-wrap: wrap;\n")
             f.write("}\n")
             f.write(".search-input {\n")
-            f.write("    width: 100%;\n")
+            f.write("    flex: 1;\n")
+            f.write("    min-width: 200px;\n")
             f.write("    padding: 10px;\n")
             f.write("    border: 1px solid #ddd;\n")
             f.write("    border-radius: 4px;\n")
             f.write("    font-size: 16px;\n")
+            f.write("}\n")
+            f.write(".category-filter {\n")
+            f.write("    padding: 10px;\n")
+            f.write("    border: 1px solid #ddd;\n")
+            f.write("    border-radius: 4px;\n")
+            f.write("    font-size: 16px;\n")
+            f.write("    background-color: white;\n")
+            f.write("    min-width: 150px;\n")
+            f.write("}\n")
+            f.write("/* Visual grouping within the table */\n")
+            f.write(".table tr[data-category] {\n")
+            f.write("    border-top: 2px solid #e9ecef;\n")
+            f.write("}\n")
+            f.write(".table tr[data-category]:first-child {\n")
+            f.write("    border-top: 3px solid #007bff;\n")
             f.write("}\n")
             f.write(".sortable {\n")
             f.write("    cursor: pointer;\n")
@@ -380,18 +482,25 @@ def main():
             f.write("}\n")
             f.write("/* Dynamic column sizing - let content determine width */\n")
             f.write("</style>\n")
-            f.write("<div class='search-container'>\n")
+            f.write("<div class='filter-container'>\n")
             f.write("    <input type='text' class='search-input' id='searchInput' placeholder='Search features...'>\n")
+            f.write("    <select class='category-filter' id='categoryFilter'>\n")
+            f.write("        <option value=''>All Categories</option>\n")
+            f.write("        {category_options}\n")
+            f.write("    </select>\n")
             f.write("</div>\n")
             f.write("<div class='table-container'>\n")
             f.write("'''\n\n")
-            f.write("display(HTML(interactive_html + table_html + '</div>'))\n\n")
+            f.write("# Format the HTML with category options\n")
+            f.write("formatted_html = interactive_html.replace('{category_options}', category_options)\n")
+            f.write("display(HTML(formatted_html + table_html + '</div>'))\n\n")
             f.write("# Add JavaScript for search and sort functionality\n")
             f.write("display(HTML('''\n")
             f.write("<script>\n")
             f.write("document.addEventListener('DOMContentLoaded', function() {\n")
             f.write("    const table = document.getElementById('features-table');\n")
             f.write("    const searchInput = document.getElementById('searchInput');\n")
+            f.write("    const categoryFilter = document.getElementById('categoryFilter');\n")
             f.write("    const tbody = table.querySelector('tbody');\n")
             f.write("    const rows = Array.from(tbody.querySelectorAll('tr'));\n")
             f.write("    \n")
@@ -402,14 +511,25 @@ def main():
             f.write("        header.addEventListener('click', () => sortTable(index));\n")
             f.write("    });\n")
             f.write("    \n")
-            f.write("    // Search functionality\n")
-            f.write("    searchInput.addEventListener('input', function() {\n")
-            f.write("        const searchTerm = this.value.toLowerCase();\n")
+            f.write("    // Filter functionality\n")
+            f.write("    function filterRows() {\n")
+            f.write("        const searchTerm = searchInput.value.toLowerCase();\n")
+            f.write("        const selectedCategory = categoryFilter.value;\n")
+            f.write("        \n")
             f.write("        rows.forEach(row => {\n")
             f.write("            const text = row.textContent.toLowerCase();\n")
-            f.write("            row.style.display = text.includes(searchTerm) ? '' : 'none';\n")
+            f.write("            const category = row.getAttribute('data-category') || '';\n")
+            f.write("            \n")
+            f.write("            const matchesSearch = text.includes(searchTerm);\n")
+            f.write("            const matchesCategory = !selectedCategory || category === selectedCategory;\n")
+            f.write("            \n")
+            f.write("            row.style.display = (matchesSearch && matchesCategory) ? '' : 'none';\n")
             f.write("        });\n")
-            f.write("    });\n")
+            f.write("    }\n")
+            f.write("    \n")
+            f.write("    // Add event listeners\n")
+            f.write("    searchInput.addEventListener('input', filterRows);\n")
+            f.write("    categoryFilter.addEventListener('change', filterRows);\n")
             f.write("    \n")
             f.write("    // Sort functionality\n")
             f.write("    let sortColumn = -1;\n")
