@@ -22,9 +22,11 @@ import argparse
 import inspect
 import re
 import sys
+import os
 from dataclasses import dataclass
 from typing import Iterable
 from pathlib import Path
+from urllib.parse import quote
 
 import pandas as pd
 
@@ -49,6 +51,7 @@ class FeatureRow:
     type_label: str
     notes: str
     category: str
+    sort_name: str
 
 
 SECTION_RE = re.compile(r"^([A-Za-z ]+)\n[-]+$", re.MULTILINE)
@@ -120,6 +123,72 @@ def determine_type_from_return_annotation(obj) -> str:
 
 def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]:
     rows: list[FeatureRow] = []
+    repo_root = script_dir.parent
+
+    def detect_repo_info() -> tuple[str, str]:
+        """Return (repo_url, branch). Tries env, then pyproject, falls back to defaults."""
+        repo_url = os.getenv("REPO_URL") or os.getenv("FEATURES_REPO_URL")
+        branch = os.getenv("REPO_BRANCH") or os.getenv("FEATURES_REPO_BRANCH") or "main"
+        if not repo_url:
+            try:
+                import tomllib
+            except ImportError:
+                tomllib = None
+            if tomllib is not None:
+                pyproj = repo_root / "pyproject.toml"
+                if pyproj.exists():
+                    try:
+                        with open(pyproj, "rb") as f:
+                            data = tomllib.load(f)
+                        repo_url = (
+                            data.get("project", {})
+                            .get("urls", {})
+                            .get("Homepage")
+                            or data.get("project", {})
+                            .get("urls", {})
+                            .get("Repository")
+                            or ""
+                        )
+                    except (OSError, tomllib.TOMLDecodeError):
+                        repo_url = None
+        if not repo_url:
+            repo_url = "https://github.com/dmwhyatt/melody-features"
+        return repo_url.rstrip("/"), branch
+
+    REPO_URL, REPO_BRANCH = detect_repo_info()
+
+    def build_source_url(obj: object) -> str:
+        target = obj.fget if isinstance(obj, property) else obj
+
+        try:
+            target_unwrapped = inspect.unwrap(target)
+        except (AttributeError, ValueError):
+            target_unwrapped = target
+        try:
+            file_path_str = inspect.getsourcefile(target_unwrapped) or inspect.getfile(target_unwrapped)
+            if not file_path_str:
+                return ""
+            file_path = Path(file_path_str)
+            _, start_line = inspect.getsourcelines(target_unwrapped)
+        except (OSError, TypeError):
+            return ""
+
+        try:
+            rel_path = file_path.relative_to(repo_root)
+        except ValueError:
+            parts = file_path.parts
+            rel_path = None
+            if "src" in parts:
+                idx = parts.index("src")
+                rel_path = Path(*parts[idx:])
+            elif "melody_features" in parts:
+                idx = parts.index("melody_features")
+                rel_path = Path("src") / Path(*parts[idx:])
+            if rel_path is None:
+                return ""
+
+        quoted_path = quote(rel_path.as_posix())
+        return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}#L{start_line}"
     
     def format_source_name(raw_name: str) -> str:
         """Return canonical display names for pre-existing implementations.
@@ -163,6 +232,13 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
             pretty_name = f"{class_part}{snake_to_title(prop_name)}".strip()
         else:
             pretty_name = snake_to_title(name)
+
+        source_url = build_source_url(obj)
+        display_name = (
+            f'<a href="{source_url}" target="_blank" rel="noopener noreferrer">{pretty_name}</a>'
+            if source_url
+            else pretty_name
+        )
 
         feature_sources = getattr(obj, "_feature_sources", [])
         if feature_sources:
@@ -209,13 +285,14 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         
         rows.append(
             FeatureRow(
-                name=pretty_name,
+                name=display_name,
                 implementations=implementations,
                 references=references,
                 description=description,
                 type_label=type_label,
                 notes=notes,
                 category=category,
+                sort_name=pretty_name,
             )
         )
     return rows
@@ -223,7 +300,8 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
 
 def to_dataframe(rows: list[FeatureRow]) -> pd.DataFrame:
     df = pd.DataFrame([r.__dict__ for r in rows])
-    df = df.sort_values(['category', 'name']).reset_index(drop=True)
+    sort_cols = ['category', 'sort_name'] if 'sort_name' in df.columns else ['category', 'name']
+    df = df.sort_values(sort_cols).reset_index(drop=True)
     
     return df
 
@@ -245,7 +323,7 @@ def _get_feature_category(obj) -> str:
         }
         return type_mapping.get(feature_type, feature_type.title())
     
-    # handle class based featurs
+    # handle class based features
     if hasattr(obj, '__name__'):
         name = obj.__name__
         if name in ['honores_h', 'yules_k', 'simpsons_d', 'sichels_s', 'mean_entropy', 'mean_productivity']:
@@ -361,7 +439,7 @@ def main():
             f.write("df_renamed['data-category'] = df_renamed.index.map(lambda i: df.iloc[i]['category'])\n")
             f.write("\n")
             f.write("# Create a single table with category data for filtering (exclude category columns from display)\n")
-            f.write("df_display = df_renamed.drop(columns=['category', 'data-category'])\n")
+            f.write("df_display = df_renamed.drop(columns=['category', 'data-category', 'sort_name'], errors='ignore')\n")
             f.write("table_html = df_display.to_html(classes='table table-striped table-hover', table_id='features-table', escape=False, index=False)\n")
             f.write("\n")
             f.write("# Add data-category attributes to table rows using a more robust approach\n")
@@ -486,6 +564,16 @@ def main():
             f.write("    background-color: #f8f9fa;\n")
             f.write("    font-weight: bold;\n")
             f.write("    text-align: left;\n")
+            f.write("    hyphens: auto;\n")
+            f.write("}\n")
+            f.write("/* Feature name column sizing and wrapping */\n")
+            f.write("#features-table td:first-child {\n")
+            f.write("    min-width: 220px;\n")
+            f.write("    width: 26%;\n")
+            f.write("}\n")
+            f.write("#features-table td:first-child a {\n")
+            f.write("    white-space: normal;\n")
+            f.write("    word-break: keep-all;\n")
             f.write("    hyphens: auto;\n")
             f.write("}\n")
             f.write("/* Dynamic column sizing - let content determine width */\n")
