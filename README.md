@@ -42,7 +42,11 @@ The interactive table allows you to:
 ## Installation
 
 ```bash
-# Clone the repository
+
+# using pip
+pip install melody-features
+
+# or clone the repository
 git clone https://github.com/dmwhyatt/melody-features.git
 cd melody-features
 
