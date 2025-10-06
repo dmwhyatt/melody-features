@@ -2520,8 +2520,9 @@ def initial_tempo(melody: Melody) -> float:
     """
     return melody.tempo
 
-# Alias - but don't return again with get_all_features()
-_get_tempo = initial_tempo
+# Undecorated helper for internal use only
+def _get_tempo(melody: Melody) -> float:
+    return initial_tempo(melody)
 
 @jsymbolic
 @duration_feature
@@ -8424,15 +8425,53 @@ def get_duration_features(melody: Melody) -> Dict:
                 print(f"Warning: Could not compute {name}: {e}")
                 features[name] = None
     
-    # Add melody-specific features that aren't functions
-    features["meter_numerator"] = melody.meter[0]
-    features["meter_denominator"] = melody.meter[1]
-    features["metric_stability"] = melody.metric_stability
-    
     # Add metric accent features
     features.update(get_metric_accent_features(melody))
     
     return features
+
+@jsymbolic
+@duration_feature
+def meter_numerator(melody: Melody) -> int:
+    """Time signature numerator for the melody.
+
+    Returns
+    -------
+    int
+        The numerator of the notated meter.
+    """
+    return melody.meter[0]
+
+
+@jsymbolic
+@duration_feature
+def meter_denominator(melody: Melody) -> int:
+    """Time signature denominator for the melody.
+
+    Returns
+    -------
+    int
+        The denominator of the notated meter.
+    """
+    return melody.meter[1]
+
+
+@jsymbolic
+@duration_feature
+def metric_stability(melody: Melody) -> float:
+    """The proportion of time spent in the first time signature.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        The proportion of time spent in the first time signature.
+    """
+    return melody.metric_stability
 
 @fantastic
 @tonality_feature

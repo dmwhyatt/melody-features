@@ -15,6 +15,8 @@ The actual feature calculations are handled in features.py.
 import json
 import logging
 from collections import Counter
+import os
+import multiprocessing as mp
 from importlib import resources
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -86,7 +88,7 @@ def process_melody_ngrams(args) -> set:
 
 
 def compute_corpus_ngrams(
-    melodies: List[Melody], n_range: Tuple[int, int] = (1, 6)
+    melodies: List[Melody], n_range: Tuple[int, int] = (1, 6), njobs: int | None = -1
 ) -> Dict:
     """Compute n-gram frequencies across the entire corpus using multiprocessing.
 
@@ -113,11 +115,34 @@ def compute_corpus_ngrams(
         "ignore", category=UserWarning, message=".*pkg_resources is deprecated.*"
     )
 
-    # Process melodies sequentially
-    results = []
-    for melody in tqdm(melodies, desc="Computing n-grams sequentially"):
-        result = process_melody_ngrams((melody, n_range))
-        results.append(result)
+    # Determine number of processes
+    if njobs in (None, 0, -1):
+        processes = os.cpu_count() or 1
+    else:
+        processes = max(1, int(njobs))
+
+    # Prepare arguments for worker function
+    args = [(melody, n_range) for melody in melodies]
+
+    results: list[set] = []
+    try:
+        context = mp.get_context("fork")
+    except ValueError:
+        # Fallback for platforms without 'fork'
+        context = mp.get_context()
+
+    try:
+        with context.Pool(processes=processes) as pool:
+            for res in tqdm(
+                pool.imap_unordered(process_melody_ngrams, args),
+                total=len(args),
+                desc="Computing n-grams",
+            ):
+                results.append(res)
+    except (OSError, RuntimeError, AttributeError):
+        # Fallback to sequential processing
+        for a in tqdm(args, total=len(args), desc="Computing n-grams (seq)"):
+            results.append(process_melody_ngrams(a))
 
     # Count document frequency (number of melodies containing each n-gram)
     doc_freq = Counter()
@@ -238,8 +263,27 @@ def load_midi_melody(midi_path: str) -> Melody:
         return None
 
 
+def _load_melody_index(args: Tuple[int, str]) -> Melody:
+    """Helper to load a melody by index from a JSON file (for multiprocessing)."""
+    idx, filename = args
+    return load_melody(idx, filename)
+
+
+def _determine_processes(njobs: int | None) -> int:
+    if njobs in (None, 0, -1):
+        return os.cpu_count() or 1
+    return max(1, int(njobs))
+
+
+def _get_mp_context():
+    try:
+        return mp.get_context("fork")
+    except ValueError:
+        return mp.get_context()
+
+
 def load_melodies_from_directory(
-    directory: str, file_type: str = "json"
+    directory: str, file_type: str = "json", njobs: int | None = -1
 ) -> List[Melody]:
     """Load melodies from a directory containing either JSON or MIDI files.
 
@@ -274,11 +318,23 @@ def load_melodies_from_directory(
         num_melodies = len(melody_data)
         logger.info(f"Found {num_melodies} melodies in {json_files[0]}")
 
-        # Load melodies sequentially
+        indices = list(range(num_melodies))
+        args = [(i, str(json_files[0])) for i in indices]
         melodies = []
-        for i in tqdm(range(num_melodies), desc="Loading melodies sequentially"):
-            melody = load_melody(i, str(json_files[0]))
-            melodies.append(melody)
+        context = _get_mp_context()
+        processes = _determine_processes(njobs)
+        try:
+            with context.Pool(processes=processes) as pool:
+                for melody in tqdm(
+                    pool.imap_unordered(_load_melody_index, args),
+                    total=len(args),
+                    desc="Loading melodies",
+                ):
+                    melodies.append(melody)
+        except (OSError, RuntimeError, AttributeError):
+            # Fallback to sequential loading
+            for a in tqdm(args, total=len(args), desc="Loading melodies (seq)"):
+                melodies.append(_load_melody_index(a))
 
     elif file_type == "midi":
         # For MIDI, we expect multiple files, each containing one melody
@@ -288,11 +344,21 @@ def load_melodies_from_directory(
 
         logger.info(f"Found {len(midi_files)} MIDI files")
 
-        # Load melodies sequentially
+        context = _get_mp_context()
+        processes = _determine_processes(njobs)
         melodies = []
-        for midi_file in tqdm(midi_files, desc="Loading MIDI files sequentially"):
-            melody = load_midi_melody(str(midi_file))
-            melodies.append(melody)
+        try:
+            with context.Pool(processes=processes) as pool:
+                for melody in tqdm(
+                    pool.imap_unordered(load_midi_melody, [str(p) for p in midi_files]),
+                    total=len(midi_files),
+                    desc="Loading MIDI files",
+                ):
+                    melodies.append(melody)
+        except (OSError, RuntimeError, AttributeError):
+            # Fallback to sequential loading
+            for p in tqdm(midi_files, total=len(midi_files), desc="Loading MIDI files (seq)"):
+                melodies.append(load_midi_melody(str(p)))
     else:
         raise ValueError("file_type must be either 'json' or 'midi'")
 
@@ -321,7 +387,7 @@ def make_corpus_stats(midi_dir: str, output_file: str) -> None:
     logger.info(f"Processing {len(melodies)} valid melodies")
 
     # Compute corpus statistics
-    corpus_stats = compute_corpus_ngrams(melodies)
+    corpus_stats = compute_corpus_ngrams(melodies, njobs=-1)
 
     # Save to JSON
     save_corpus_stats(corpus_stats, output_file)
