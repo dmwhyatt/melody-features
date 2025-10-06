@@ -19,7 +19,7 @@ import os
 import multiprocessing as mp
 from importlib import resources
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional, Set
 
 from natsort import natsorted
 from tqdm import tqdm
@@ -88,7 +88,7 @@ def process_melody_ngrams(args) -> set:
 
 
 def compute_corpus_ngrams(
-    melodies: List[Melody], n_range: Tuple[int, int] = (1, 6), njobs: int | None = -1
+    melodies: List[Melody], n_range: Tuple[int, int] = (1, 6), njobs: Optional[int] = -1
 ) -> Dict:
     """Compute n-gram frequencies across the entire corpus using multiprocessing.
 
@@ -124,7 +124,7 @@ def compute_corpus_ngrams(
     # Prepare arguments for worker function
     args = [(melody, n_range) for melody in melodies]
 
-    results: list[set] = []
+    results: List[Set] = []
     try:
         context = mp.get_context("fork")
     except ValueError:
@@ -269,7 +269,7 @@ def _load_melody_index(args: Tuple[int, str]) -> Melody:
     return load_melody(idx, filename)
 
 
-def _determine_processes(njobs: int | None) -> int:
+def _determine_processes(njobs: Optional[int]) -> int:
     if njobs in (None, 0, -1):
         return os.cpu_count() or 1
     return max(1, int(njobs))
@@ -283,7 +283,7 @@ def _get_mp_context():
 
 
 def load_melodies_from_directory(
-    directory: str, file_type: str = "json", njobs: int | None = -1
+    directory: str, file_type: str = "json", njobs: Optional[int] = -1
 ) -> List[Melody]:
     """Load melodies from a directory containing either JSON or MIDI files.
 
