@@ -68,6 +68,42 @@ def capitalize_ioi(text: str) -> str:
     return re.sub(r'\bioi\b', 'IOI', text, flags=re.IGNORECASE)
 
 
+def normalize_feature_text(text: str) -> str:
+    """Normalize acronyms and tokens in free text.
+    - IOI -> IOI
+    - df -> DF (word-boundary)
+    - tfdf -> TFDF (word-boundary)
+    - npvi -> NPVI (word-boundary)
+    """
+    if not text:
+        return text
+    # First, handle IOI via existing helper
+    text = capitalize_ioi(text)
+    # Then other acronyms
+    text = re.sub(r"\btfdf\b", "TFDF", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bdf\b", "DF", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bnpvi\b", "NPVI", text, flags=re.IGNORECASE)
+    return text
+
+
+def fix_possessive_feature_names(text: str) -> str:
+    """Fix known feature name possessives that are lost by title-casing.
+    E.g., 'Honores H' -> "Honore's H", 'Sichels S' -> "Sichel's S", etc.
+    """
+    if not text:
+        return text
+    replacements = [
+        (r"\bHonores H\b", "Honore's H"),
+        (r"\bSichels S\b", "Sichel's S"),
+        (r"\bSimpsons D\b", "Simpson's D"),
+        (r"\bYules K\b", "Yule's K"),
+    ]
+    result = text
+    for pattern, repl in replacements:
+        result = re.sub(pattern, repl, result, flags=re.IGNORECASE)
+    return result
+
+
 def extract_sections_from_docstring(doc: str) -> dict[str, str]:
     """Parse simple NumPy-style sections (Parameters, Returns, Notes, Citation, etc.)."""
     if not doc:
@@ -233,6 +269,9 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         else:
             pretty_name = snake_to_title(name)
 
+        # Apply possessive fixes and acronym normalization to the display name
+        pretty_name = fix_possessive_feature_names(normalize_feature_text(pretty_name))
+
         source_url = build_source_url(obj)
         display_name = (
             f'<a href="{source_url}" target="_blank" rel="noopener noreferrer">{pretty_name}</a>'
@@ -260,12 +299,14 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
 
         doc_string = inspect.getdoc(obj.fget) if is_property else inspect.getdoc(obj)
         sections = extract_sections_from_docstring(doc_string or "")
-        description = capitalize_ioi(" ".join(sections.get("Preamble", "").split()))
-        notes = capitalize_ioi(" ".join(sections.get("Note", "").split()))
+        description = normalize_feature_text(" ".join(sections.get("Preamble", "").split()))
+        notes = normalize_feature_text(" ".join(sections.get("Note", "").split()))
 
         citation_section = sections.get("Citation", "").strip()
         if citation_section:
-            references = capitalize_ioi(" | ".join([" ".join(p.split()) for p in re.split(r"\n\s*\n", citation_section) if p.strip()]))
+            references = normalize_feature_text(
+                " | ".join([" ".join(p.split()) for p in re.split(r"\n\s*\n", citation_section) if p.strip()])
+            )
         else:
             references = ""
 
@@ -300,8 +341,8 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
 
 def to_dataframe(rows: list[FeatureRow]) -> pd.DataFrame:
     df = pd.DataFrame([r.__dict__ for r in rows])
-    sort_cols = ['category', 'sort_name'] if 'sort_name' in df.columns else ['category', 'name']
-    df = df.sort_values(sort_cols).reset_index(drop=True)
+    sort_cols = ['sort_name'] if 'sort_name' in df.columns else ['name']
+    df = df.sort_values(sort_cols, kind='mergesort').reset_index(drop=True)
     
     return df
 
