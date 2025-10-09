@@ -8549,6 +8549,27 @@ def inscale(melody: Melody) -> list[int]:
 
 @novel
 @tonality_feature
+def proportion_inscale(melody: Melody) -> float:
+    """The proportion of notes in the melody that are in the scale of the
+    estimated key.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    float
+        Proportion of notes in the scale
+    """
+    inscale_vals = inscale(melody)
+    if not inscale_vals:
+        return -1.0
+    return sum(inscale_vals) / len(inscale_vals)
+
+@novel
+@tonality_feature
 def longest_monotonic_conjunct_scalar_passage(melody: Melody) -> int:
     """The longest sequence of consecutive notes that fit within the estimated key's scale
     that move in the same direction. 
@@ -8743,6 +8764,8 @@ def get_tonality_features(melody: Melody) -> Dict:
     tonality_features["tonalness_histogram"] = histogram_bins(correlations[0][1], 24)
 
     tonality_features["mode"] = "major" if is_major else "minor"
+
+    tonality_features["proportion_inscale"] = proportion_inscale(melody)
 
     return tonality_features
 
