@@ -120,7 +120,11 @@ class HuronContour:
 
     @property
     def class_label(self) -> str:
-        """The Huron contour classification for the melody.
+        """The contour classification for the melody, according to Huron's system.
+
+        Citation
+        --------
+        Huron (1996)
 
         Returns
         -------

@@ -5872,6 +5872,11 @@ def tonalness(pitches: list[int]) -> float:
 def tonal_clarity(pitches: list[int]) -> float:
     """The ratio between the top two key correlation values.
 
+
+    Citation
+    ------------------
+    Temperley (2007)
+
     Parameters
     ----------
     pitches : list[int]
@@ -6449,13 +6454,17 @@ def stepwise_motion(pitches: list[int]) -> float:
 @midi_toolbox
 @complexity_feature
 def gradus(pitches: list[int]) -> int:
-    """The degree of melodiousness based on Euler's gradus suavitatis (1739).
+    """The degree of melodiousness based on Euler's gradus suavitatis.
     
     Parameters
     ----------
     pitches : list[int]
         List of MIDI pitch values
-        
+    
+    Citation
+    --------
+    Euler (1739)
+
     Returns
     -------
     int
@@ -6657,6 +6666,10 @@ def melodic_attraction(pitches: list[int]) -> list[float]:
     ----------
     pitches : list[int]
         List of MIDI pitch values
+
+    Citation
+    --------
+    Lerdahl (1996)
         
     Returns
     -------
@@ -8473,101 +8486,6 @@ def metric_stability(melody: Melody) -> float:
     """
     return melody.metric_stability
 
-@fantastic
-@tonality_feature
-def tonalness(melody: Melody) -> float:
-    """Calculate the tonalness of a melody.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    float
-        The tonalness value (absolute correlation with strongest key)
-    """
-    pitches = melody.pitches
-    pitch_classes = [pitch % 12 for pitch in pitches]
-    correlations = compute_tonality_vector(pitch_classes)
-    return abs(correlations[0][1]) if correlations else 0.0
-
-@fantastic
-@tonality_feature
-def tonal_clarity(melody: Melody) -> float:
-    """Calculate the tonal clarity of a melody.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    float
-        The tonal clarity (ratio of strongest to second strongest key correlation)
-    """
-    pitches = melody.pitches
-    pitch_classes = [pitch % 12 for pitch in pitches]
-    correlations = compute_tonality_vector(pitch_classes)
-    
-    if len(correlations) >= 2:
-        abs_corr_values = [abs(val) for _, val in correlations]
-        return abs_corr_values[0] / abs_corr_values[1] if abs_corr_values[1] != 0 else 1.0
-    else:
-        return -1.0
-
-@fantastic
-@tonality_feature
-def tonal_spike(melody: Melody) -> float:
-    """Calculate the tonal spike of a melody.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    float
-        The tonal spike (ratio of strongest key to sum of all other key correlations)
-    """
-    pitches = melody.pitches
-    pitch_classes = [pitch % 12 for pitch in pitches]
-    correlations = compute_tonality_vector(pitch_classes)
-    
-    if len(correlations) >= 2:
-        abs_corr_values = [abs(val) for _, val in correlations]
-        other_sum = sum(abs_corr_values[1:])
-        return abs_corr_values[0] / other_sum if other_sum != 0 else 1.0
-    else:
-        return -1.0
-
-@novel
-@tonality_feature
-def tonal_entropy(melody: Melody) -> float:
-    """Calculate the tonal entropy of a melody.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    float
-        The tonal entropy (Shannon entropy of key correlations)
-    """
-    pitches = melody.pitches
-    pitch_classes = [pitch % 12 for pitch in pitches]
-    correlations = compute_tonality_vector(pitch_classes)
-    
-    if correlations:
-        abs_corr_values = [abs(val) for _, val in correlations]
-        return shannon_entropy(abs_corr_values)
-    else:
-        return -1.0
 
 @idyom
 @tonality_feature
@@ -8632,7 +8550,8 @@ def inscale(melody: Melody) -> list[int]:
 @novel
 @tonality_feature
 def longest_monotonic_conjunct_scalar_passage(melody: Melody) -> int:
-    """Calculate the longest monotonic conjunct scalar passage.
+    """The longest sequence of consecutive notes that fit within the estimated key's scale
+    that move in the same direction. 
     
     Parameters
     ----------
@@ -8653,7 +8572,9 @@ def longest_monotonic_conjunct_scalar_passage(melody: Melody) -> int:
 @novel
 @tonality_feature
 def longest_conjunct_scalar_passage(melody: Melody) -> int:
-    """Calculate the longest conjunct scalar passage.
+    """The longest sequence of consecutive notes that fit within the estimated key's scale.
+    For example, a melody estimated to be in C major with notes C, D, E, F, G would have a 
+    longest conjunct scalar passage of 5.
     
     Parameters
     ----------
@@ -8674,7 +8595,7 @@ def longest_conjunct_scalar_passage(melody: Melody) -> int:
 @novel
 @tonality_feature
 def proportion_conjunct_scalar(melody: Melody) -> float:
-    """Calculate the proportion of conjunct scalar motion.
+    """The proportion of notes that form conjunct scalar sequences.
     
     Parameters
     ----------
@@ -8695,8 +8616,8 @@ def proportion_conjunct_scalar(melody: Melody) -> float:
 @novel
 @tonality_feature
 def proportion_scalar(melody: Melody) -> float:
-    """Calculate the proportion of scalar motion.
-    
+    """The proportion of all notes that form scalar sequences.
+
     Parameters
     ----------
     melody : Melody
