@@ -173,7 +173,7 @@ pitch_spelling_vals = [('D', 0, 4), ('D', 0, 4), ('G', 0, 4), ('G', 0, 4), ('B',
 
 
 def _load_appenzel_melody() -> Melody:
-    midi_path = "/Users/davidwhyatt/feature_set/src/melody_features/corpora/Essen_Corpus/appenzel.mid"
+    midi_path = "src/melody_features/corpora/Essen_Corpus/appenzel.mid"
     midi_data = import_midi(midi_path)
     assert midi_data is not None, f"Failed to import MIDI at {midi_path}"
     return Melody(midi_data)
