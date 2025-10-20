@@ -15,6 +15,7 @@ class FeatureSource:
     MELSIM = "melsim"
     SIMILE = "simile"
     NOVEL = "novel"
+    PARTITURA = "partitura"
 
 
 class FeatureType:
@@ -103,6 +104,11 @@ simile = _create_feature_decorator(
 novel = _create_feature_decorator(
     FeatureSource.NOVEL,
     "Novel features do not appear in any of the referenced literature. We introduce them here to extend the contributions of existing feature sets."
+)
+
+partitura = _create_feature_decorator(
+    FeatureSource.PARTITURA,
+    "Cancino-Chacón, C. E., et al., (2022) Partitura: A Python package for symbolic music processing."
 )
 
 

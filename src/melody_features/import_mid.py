@@ -74,7 +74,7 @@ def import_midi(midi_file: str) -> dict:
         total_duration = mid.length
 
         return {
-            "ID": os.path.basename(midi_file),
+            "ID": midi_file,
             "MIDI Sequence": midi_sequence,
             "pitches": pitches,
             "starts": starts,

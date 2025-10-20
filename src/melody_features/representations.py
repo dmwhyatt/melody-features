@@ -43,6 +43,15 @@ class Melody:
         self._tempo_changes = midi_data.get("tempo_changes", [(0.0, self._tempo)])
 
     @property
+    def id(self) -> str:
+        """Get the ID (file path) of the MIDI file.
+
+        Returns:
+            str: File path or ID of the MIDI file
+        """
+        return self._midi_data.get("ID", "")
+    
+    @property
     def pitches(self) -> list[int]:
         """Extract pitch values from MIDI sequence.
 
@@ -135,8 +144,22 @@ class Melody:
             return time_sig_info["first_time_signature"]
         return (4, 4)  # Default to 4/4 if no information available
 
+    @property
+    def time_signatures(self) -> list[tuple[float, int, int]]:
+        """Get all time signatures present in the melody.
+        
+        Returns:
+            list[tuple[float, int, int]]: List of tuples (time_in_seconds, numerator, denominator).
+                If none are available, falls back to a single entry using the first meter at time 0.0.
+        """
+        time_sig_info = self._midi_data.get("time_signature_info")
+        if time_sig_info and "all_time_signatures" in time_sig_info:
+            return time_sig_info["all_time_signatures"]
+        num, den = self.meter
+        return [(0.0, num, den)]
+
     @property  
-    def metric_stability(self) -> float:
+    def proportion_of_time_in_first_meter(self) -> float:
         """Calculate the proportion of time spent in the first time signature.
         
         Returns:
@@ -145,9 +168,9 @@ class Melody:
                    one time signature throughout.
         """
         time_sig_info = self._midi_data.get("time_signature_info")
-        if time_sig_info and "metric_stability" in time_sig_info:
-            return time_sig_info["metric_stability"]
-        return 0.0  # Default to unstable if no information available
+        if time_sig_info and "proportion_of_time_in_first_meter" in time_sig_info:
+            return time_sig_info["proportion_of_time_in_first_meter"]
+        return 0.0
 
     @property
     def total_duration(self) -> float:
@@ -160,6 +183,7 @@ class Melody:
         """
         return self._midi_data.get("total_duration", 0.0)
 
+    
 
 def read_midijson(file_path: str) -> dict:
     with open(file_path, "r", encoding="utf-8") as file:

@@ -5,6 +5,7 @@ Tests IDyOM integration, installation checking, and configuration validation
 that's used by features.py but not covered in our main tests.
 """
 
+from importlib import resources
 import pytest
 import tempfile
 import os
@@ -413,6 +414,161 @@ class TestIDyOMIntegration:
             stat = script_path.stat()
             # Check if any execute bit is set
             assert stat.st_mode & 0o111, "install_idyom.sh should be executable"
+
+
+class TestKeyEstimationStrategies:
+    """Test key estimation strategies for IDyOM processing."""
+
+    def test_always_read_from_file_with_key_signature(self):
+        """Test always_read_from_file strategy with a file that has key signature."""
+        from melody_features.features import create_temp_midi_with_key_signature
+        from mido import MidiFile
+        
+        # Use a file from the Essen corpus that has a key signature
+        midi_path = resources.files("melody_features") / "corpora/Essen_Corpus/appenzel.mid"
+        
+        with tempfile.TemporaryDirectory() as input_dir:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Copy the MIDI file to input directory
+                import shutil
+                shutil.copy2(str(midi_path), input_dir)
+                
+                # Process with always_read_from_file strategy
+                output_dir = create_temp_midi_with_key_signature(
+                    input_dir, temp_dir, key_estimation="always_read_from_file"
+                )
+                
+                # Verify the output file exists and has the original key signature
+                output_files = list(Path(output_dir).glob("*.mid"))
+                assert len(output_files) == 1, "Should create one output file"
+                
+                mid = MidiFile(output_files[0])
+                has_key_sig = False
+                for track in mid.tracks:
+                    for msg in track:
+                        if msg.type == "key_signature":
+                            has_key_sig = True
+                            break
+                    if has_key_sig:
+                        break
+                
+                assert has_key_sig, "Should preserve key signature from original file"
+
+    def test_always_infer_overrides_key_signature(self):
+        """Test always_infer strategy estimates key even when file has key signature."""
+        from melody_features.features import create_temp_midi_with_key_signature
+        from melody_features.import_mid import import_midi
+        from melody_features.representations import Melody
+        from melody_features.algorithms import compute_tonality_vector
+        from mido import MidiFile
+
+        midi_path = resources.files("melody_features") / "corpora/Essen_Corpus/appenzel.mid"
+
+        with tempfile.TemporaryDirectory() as input_dir:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Copy the MIDI file to input directory
+                import shutil
+                shutil.copy2(str(midi_path), input_dir)
+                
+                # Process with always_infer strategy
+                output_dir = create_temp_midi_with_key_signature(
+                    input_dir, temp_dir, key_estimation="always_infer"
+                )
+                
+                # Verify the output file exists
+                output_files = list(Path(output_dir).glob("*.mid"))
+                assert len(output_files) == 1, "Should create one output file"
+                # Check that it has a key signature, and it should be D major (estimated)
+                mid = MidiFile(output_files[0])
+                estimated_key = None
+                for track in mid.tracks:
+                    for msg in track:
+                        if msg.type == "key_signature":
+                            estimated_key = msg.key
+                            break
+                    if estimated_key:
+                        break
+
+                assert estimated_key is not None, "Should have key signature (estimated from pitch content)"
+                assert estimated_key.lower() == "d", f"Estimated key should be D major, got: {estimated_key}"
+
+    def test_infer_if_necessary_preserves_existing(self):
+        """Test infer_if_necessary strategy preserves existing key signatures."""
+        from melody_features.features import create_temp_midi_with_key_signature
+        from mido import MidiFile
+        
+        midi_path = resources.files("melody_features") / "corpora/Essen_Corpus/appenzel.mid"
+        
+        with tempfile.TemporaryDirectory() as input_dir:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Copy the MIDI file to input directory
+                import shutil
+                shutil.copy2(str(midi_path), input_dir)
+                
+                # Process with infer_if_necessary strategy
+                output_dir = create_temp_midi_with_key_signature(
+                    input_dir, temp_dir, key_estimation="infer_if_necessary"
+                )
+                
+                # Verify the output file exists and preserves the key signature
+                output_files = list(Path(output_dir).glob("*.mid"))
+                assert len(output_files) == 1, "Should create one output file"
+                
+                # Check key signature matches original
+                mid = MidiFile(output_files[0])
+                output_key = None
+                for track in mid.tracks:
+                    for msg in track:
+                        if msg.type == "key_signature":
+                            output_key = msg.key
+                            break
+                    if output_key:
+                        break
+                
+                assert output_key is not None, "Should have key signature (inferred from pitch content)"
+                assert output_key.lower() == "g", f"Estimated key should be G major, got: {output_key}"
+
+    def test_key_estimation_integration_with_get_idyom_results(self):
+        """Test that key_estimation parameter is passed through to get_idyom_results."""
+        from melody_features.features import get_idyom_results
+        
+        # Create a temporary directory with a MIDI file
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create a simple MIDI file
+            from mido import MidiFile, MidiTrack, Message, MetaMessage
+            
+            mid = MidiFile()
+            track = MidiTrack()
+            mid.tracks.append(track)
+            
+            # Add key signature
+            track.append(MetaMessage('key_signature', key='C'))
+            track.append(Message('note_on', note=60, velocity=64, time=0))
+            track.append(Message('note_off', note=60, velocity=64, time=480))
+            track.append(MetaMessage('end_of_track', time=0))
+            
+            midi_path = os.path.join(temp_dir, "test.mid")
+            mid.save(midi_path)
+            
+            # Mock run_idyom to avoid actual IDyOM execution
+            with patch('melody_features.features.run_idyom') as mock_run_idyom:
+                mock_run_idyom.return_value = None  # Simulate no output
+                
+                # Call get_idyom_results with key_estimation parameter
+                result = get_idyom_results(
+                    temp_dir,
+                    idyom_target_viewpoints=["cpitch"],
+                    idyom_source_viewpoints=["cpint"],
+                    models=":both",
+                    ppm_order=1,
+                    corpus_path=None,
+                    experiment_name="test_experiment",
+                    key_estimation="always_infer"
+                )
+                
+                # The function should handle the key_estimation parameter without error
+                # Result will be empty dict because run_idyom returned None
+                assert isinstance(result, dict), "Should return a dictionary"
 
 
 if __name__ == "__main__":

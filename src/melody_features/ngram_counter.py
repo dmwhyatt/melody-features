@@ -86,7 +86,12 @@ class NGramCounter:
     def yules_k(self) -> float:
         """Yule's K measure of lexical richness. This feature measures the rate
         at which m-types are repeated in a sequence. Higher values indicate more
-        repetitive sequences."""
+        repetitive sequences.
+        
+        Citation
+        --------
+        Yule (1944)
+        """
         try:
             if len(self.count_values) <= 1:
                 import warnings
@@ -114,7 +119,12 @@ class NGramCounter:
     @property
     def simpsons_d(self) -> float:
         """Simpson's D measure of diversity. This feature measures the rate of m-type
-        repetition in a similar way to Yule's K."""
+        repetition in a similar way to Yule's K.
+        
+        Citation
+        --------
+        Simpson (1949)
+        """
         try:
             if len(self.count_values) <= 1:
                 import warnings
@@ -139,7 +149,12 @@ class NGramCounter:
     @property
     def sichels_s(self) -> float:
         """Sichel's S measure corresponds to the proportion of m-types that occur exactly twice in a sequence.
-        Higher values indicate a greater amount of m-types that occur exactly twice."""
+        Higher values indicate a greater amount of m-types that occur exactly twice.
+        
+        Citation
+        --------
+        Sichel (1975)
+        """
         try:
             if len(self.count_values) <= 1:
                 import warnings
@@ -162,7 +177,12 @@ class NGramCounter:
     @property
     def honores_h(self) -> float:
         """Honoré's H measure corresponds to the observation that the number of tokens occuring exactly once 
-        in a sequence is logarithmically related to the total number of tokens in the sequence."""
+        in a sequence is logarithmically related to the total number of tokens in the sequence.
+        
+        Citation
+        --------
+        Honoré (1979)
+        """
         try:
             if len(self.count_values) <= 1:
                 import warnings

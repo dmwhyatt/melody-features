@@ -1,6 +1,6 @@
 [project]
 name = "melody-features"
-version = "1.0.4"
+version = "1.0.5"
 authors = [
   { name="David Whyatt", email="dmw56@cam.ac.uk" },
 ]
@@ -23,7 +23,6 @@ dependencies = [
     "tenacity",
     "tqdm",
     "PyYAML",
-    "jupyter",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

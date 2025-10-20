@@ -9,7 +9,7 @@ import warnings
 from importlib import resources
 
 from .feature_decorators import (
-    fantastic, idyom, midi_toolbox, melsim, jsymbolic, novel, simile,
+    fantastic, idyom, midi_toolbox, melsim, jsymbolic, novel, simile, partitura,
     FeatureType, feature_type,
     pitch_feature, interval_feature, contour_feature,
     tonality_feature, duration_feature, complexity_feature, corpus_feature,
@@ -37,7 +37,7 @@ import glob
 import logging
 import time
 from random import choices
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Literal
 
 import mido
 import numpy as np
@@ -107,6 +107,10 @@ from melody_features.meter_estimation import (
     melodic_accent,
     metric_hierarchy
 )
+from melody_features.pitch_spelling import (
+    estimate_spelling_from_melody as _estimate_spelling_from_melody,
+)
+from melody_features.tonal_tension import estimate_tonaltension
 
 VALID_VIEWPOINTS = {
     "onset",
@@ -388,11 +392,19 @@ class Config:
     corpus : Optional[os.PathLike]
         Path to the corpus to use for the feature set. This can be overridden by the corpus parameter in the IDyOMConfig and FantasticConfig classes.
         If None, no corpus-dependent features will be computed unless specified in individual configs.
+    key_estimation: str
+        The key estimation method to use. Can be 
+        `always_read_from_file`, `infer_if_necessary` or `always_infer`:
+        - When set to `always_read_from_file`, the key will be read from the MIDI file, 
+        and if key signature information is not present, an error will be raised.
+        - When set to `infer_if_necessary`, the key will be inferred from the melody if key signature information is not present in the file.
+        - When set to `always_infer`, the key will be inferred from the melody regardless of whether key signature information is present.
     """
 
     idyom: dict[str, IDyOMConfig]
     fantastic: FantasticConfig
     corpus: Optional[os.PathLike] = None
+    key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary"
 
     def __post_init__(self):
         """Validate the configuration after initialization."""
@@ -423,6 +435,9 @@ class Config:
             raise ValueError(
                 f"fantastic must be a FantasticConfig object, got {type(self.fantastic)}"
             )
+
+        if self.key_estimation not in ["always_read_from_file", "infer_if_necessary", "always_infer"]:
+            raise ValueError(f"key_estimation must be one of ['always_read_from_file', 'infer_if_necessary', 'always_infer'], got {self.key_estimation}")
 
 @fantastic
 @jsymbolic
@@ -991,7 +1006,7 @@ def tessitura(pitches: list[int]) -> list[float]:
 
     Citation
     ---------
-    von Hippel, C. (2000).
+    von Hippel (2000).
     
     """
     if len(pitches) < 2:
@@ -1015,6 +1030,7 @@ def tessitura(pitches: list[int]) -> list[float]:
             tessitura_val = (current_pitch - median_prev) / std_prev
             tessitura_values.append(abs(tessitura_val))
     
+    tessitura_values = [float(val) for val in tessitura_values]
     return tessitura_values
 
 @novel
@@ -1470,6 +1486,51 @@ def importance_of_high_register(pitches: list[int]) -> float:
     """
     return float(sum(1 for pitch in pitches if 73 <= pitch <= 127) / len(pitches))
 
+
+@partitura
+@pitch_feature
+def pitch_spelling(melody: Melody) -> list[str]:
+    """Pitch spelling using the ps13s1 algorithm.
+    
+    Parameters
+    ----------
+    melody : Melody
+        A melody-features Melody object.
+
+    Returns
+    -------
+    list[str]
+        List of pitch spellings.
+
+    Citation
+    ----------
+    Meredith (2006)
+    """
+    return _estimate_spelling_from_melody(melody)
+
+@partitura
+@pitch_feature
+def tonal_tension(melody: Melody) -> dict:
+    """Computes tension ribbons using the tonal tension algorithm. 
+    Provides a means of comparing Chew's spiral array and the tonal tension 
+    profiles produced from Herremans and Chew's tension ribbons.
+    
+    Parameters
+    ----------
+    melody : Melody
+        A melody-features Melody object.
+
+    Returns
+    -------
+    dict
+        Dictionary containing the tonal tension features: `cloud_diameter`, 
+        `cloud_momentum`, `tensile_strain`, ordered by `onset`.
+
+    Citation
+    --------
+    Herremans & Chew (2016)
+    """
+    return estimate_tonaltension(melody)
 
 @simile
 @interval_feature
@@ -2761,7 +2822,7 @@ def length(starts: list[float]) -> float:
 @novel
 @duration_feature
 def number_of_unique_durations(starts: list[float], ends: list[float], tempo: float = 120.0) -> int:
-    """The number of unique note durations.
+    """The number of unique note durations, measured in quarter notes.
 
     Parameters
     ----------
@@ -5673,6 +5734,10 @@ def mean_duration_accent(starts: list[float], ends: list[float], tau: float = 0.
     -------
     float
         Mean duration accent value
+    
+    Citation
+    --------
+    Parncutt (1994)
     """
     accents = duration_accent(starts, ends, tau, accent_index)
     if not accents:
@@ -5700,6 +5765,10 @@ def duration_accent_std(starts: list[float], ends: list[float], tau: float = 0.5
     -------
     float
         Standard deviation of duration accent values
+
+    Citation
+    --------
+    Parncutt (1994)
     """
     accents = duration_accent(starts, ends, tau, accent_index)
     if not accents:
@@ -5726,6 +5795,10 @@ def npvi(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
     -------
     float
         nPVI index value (higher values indicate greater durational variability)
+
+    Citation
+    --------
+    Patel & Daniele (2003)
     """
     durations = _get_durations(starts, ends, tempo)
     if len(durations) < 2:
@@ -5843,6 +5916,33 @@ def onset_autocorr_peak(starts: list[float], ends: list[float], divisions_per_qu
     return float(max(autocorr_values[1:]))
 
 # Tonality Features
+@novel
+@tonality_feature
+def key(pitches: list[int]) -> str:
+    """The estimated key of the melody, according to the Krumhansl-Schmuckler
+    key finding algorithm.
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    str
+        The estimated key of the melody, in the format "key name major/minor"
+    
+    Citation
+    ----------
+    Krumhansl (1990)
+    """
+    pitch_classes = [pitch % 12 for pitch in pitches]
+    correlations = compute_tonality_vector(pitch_classes)
+    name = correlations[0][0].split()[0]
+    is_major = "major" in correlations[0][0]
+    return name + " " + ("major" if is_major else "minor")
+
+
 @fantastic
 @tonality_feature
 def tonalness(pitches: list[int]) -> float:
@@ -6535,6 +6635,10 @@ def mobility(pitches: list[int]) -> list[float]:
     -------
     list[float]
         Absolute mobility value for each note in the sequence
+
+    Citation
+    --------
+    von Hippel (2000)
     """
     if len(pitches) < 2:
         return [0.0] if len(pitches) == 1 else []
@@ -7158,6 +7262,10 @@ def compltrans(melody: Melody) -> float:
     -------
     float
         Originality score scaled 0-10 (higher = more original/unexpected)
+
+    Citation
+    --------
+    Simonton (1984)
     """
     if not melody.pitches or len(melody.pitches) < 2:
         return 5.0  # Return neutral originality for edge cases
@@ -7206,6 +7314,10 @@ def complebm(melody: Melody, method: str = 'o') -> float:
     -------
     float
         Complexity value calibrated to Essen collection (higher = more complex)
+
+    Citation
+    --------
+    Eerola & North (2000)
     """
     if not melody.pitches or len(melody.pitches) < 2:
         return 5.0  # Return neutral complexity for edge cases
@@ -8469,9 +8581,9 @@ def meter_denominator(melody: Melody) -> int:
     return melody.meter[1]
 
 
-@jsymbolic
+@novel
 @duration_feature
-def metric_stability(melody: Melody) -> float:
+def proportion_of_time_in_first_meter(melody: Melody) -> float:
     """The proportion of time spent in the first time signature.
 
     Parameters
@@ -8484,8 +8596,179 @@ def metric_stability(melody: Melody) -> float:
     float
         The proportion of time spent in the first time signature.
     """
-    return melody.metric_stability
+    return melody.proportion_of_time_in_first_meter
 
+@jsymbolic
+@duration_feature
+def number_of_unique_time_signatures(melody: Melody) -> int:
+    """The number of unique time signatures in the melody.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    int
+        The number of unique time signatures in the melody.
+
+    Note
+    -----
+    This feature is named "Metrical Diversity" in jSymbolic.
+    """
+    return len(set(melody.time_signatures))
+
+@novel
+@duration_feature
+def syncopation(melody: Melody) -> float:
+    """Calculate the mean syncopation value based on the Longuet-Higgins and Lee (1984) model.
+    This syncopation model assigns metrical weights to each
+    note position based on its position in the metric hierarchy. Syncopation occurs when
+    a rest or tied note is preceded by a sounded note of lower metrical weight. The 
+    syncopation value is the difference between the rest weight and the preceding note weight.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    float
+        The mean syncopation value across all syncopation events (0.0 if no syncopation)
+        
+    Citation
+    --------
+    Longuet-Higgins & Lee (1984)
+    """
+    if not melody.starts or len(melody.starts) < 2:
+        return 0.0
+
+    hierarchy_values = metric_hierarchy(
+        melody.starts, 
+        melody.ends, 
+        time_signature=melody.meter, 
+        tempo=melody.tempo, 
+        pitches=melody.pitches
+    )
+
+    if not hierarchy_values or len(hierarchy_values) != len(melody.starts):
+        return 0.0
+
+    # Hierarchy 5 (downbeat/measure start) -> weight 0 (strongest)
+    # Hierarchy 4 (beat) -> weight -1
+    # Hierarchy 3 (half-beat) -> weight -2
+    # Hierarchy 2 (quarter-beat) -> weight -3
+    # Hierarchy 1 (weakest offbeat) -> weight -4
+    weights = [5 - h for h in hierarchy_values]
+
+    syncopation_values = []
+
+    for i in range(len(melody.starts) - 1):
+        current_note_end = melody.ends[i]
+        next_note_start = melody.starts[i + 1]
+
+        gap_duration = next_note_start - current_note_end
+
+        if gap_duration > 0.001:
+            rest_weight = weights[i + 1]
+            preceding_note_weight = weights[i]
+
+            syncopation_value = rest_weight - preceding_note_weight
+
+            if syncopation_value > 0:
+                syncopation_values.append(syncopation_value)
+
+    if not syncopation_values:
+        return 0.0
+    
+    return float(np.mean(syncopation_values))
+
+@simile
+@duration_feature
+def syncopicity(melody: Melody) -> float:
+    """Calculates the sum syncopicity of a melody across metric levels.
+    Syncopicity measures the degree to which notes occur off the main metrical grid
+    but are long enough to span across metric boundaries. This calculates syncopations at 
+    four metric levels:
+    1) Half bar level
+    2) Beat level  
+    3) First subdivision (half-beat)
+    4) Second subdivision (quarter-beat)
+    
+    An event is considered syncopated at a given level if:
+    1) It does not fall on a grid point of this level
+    2) It falls on a grid point of the next lower level
+    3) Its IOI extends beyond the lower level time unit (or it's the last note)
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    float
+        The sum of syncopicity values across all metric levels
+    """
+    if not melody.starts or len(melody.starts) < 2:
+        return 0.0
+
+    numerator, denominator = melody.meter
+    tempo = melody.tempo
+
+    quarter_note_duration = 60.0 / tempo
+
+    beat_duration = (4.0 / denominator) * quarter_note_duration
+
+    measure_duration = numerator * beat_duration
+
+    levels = [
+        measure_duration / 2.0,  # Half bar
+        beat_duration,           # Beat
+        beat_duration / 2.0,     # First subdivision
+        beat_duration / 4.0      # Second subdivision
+    ]
+
+    n_notes = len(melody.starts)
+    total_syncopicity = 0.0
+
+    iois = []
+    for i in range(n_notes - 1):
+        iois.append(melody.starts[i + 1] - melody.starts[i])
+    iois.append(0)
+
+    for level_idx in range(len(levels) - 1):
+        level_duration = levels[level_idx]
+        next_lower_duration = levels[level_idx + 1]
+
+        syncopation_count = 0
+        tolerance = 0.01
+
+        for note_idx, start_time in enumerate(melody.starts):
+            position_in_level = start_time % level_duration
+            on_current_grid = position_in_level < tolerance or position_in_level > (level_duration - tolerance)
+
+            if on_current_grid:
+                continue
+
+            position_in_lower = start_time % next_lower_duration
+            on_lower_grid = position_in_lower < tolerance or position_in_lower > (next_lower_duration - tolerance)
+
+            if not on_lower_grid:
+                continue
+
+            is_last_note = note_idx == n_notes - 1
+            ioi_extends = iois[note_idx] > (next_lower_duration + tolerance)
+            
+            if is_last_note or ioi_extends:
+                syncopation_count += 1
+
+        level_syncopicity = syncopation_count / n_notes if n_notes > 0 else 0.0
+        total_syncopicity += level_syncopicity
+
+    return float(total_syncopicity)
 
 @idyom
 @tonality_feature
@@ -8680,7 +8963,7 @@ def mode(melody: Melody) -> str:
     else:
         return "unknown"
 
-def get_tonality_features(melody: Melody) -> Dict:
+def get_tonality_features(melody: Melody, key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary") -> Dict:
     """Compute all tonality-based features for a melody.
 
     Parameters
@@ -8696,11 +8979,9 @@ def get_tonality_features(melody: Melody) -> Dict:
     """
     tonality_features = {}
 
-    # Pre-compute pitch classes and tonality vector once
-    pitches = melody.pitches
-    pitch_classes = [pitch % 12 for pitch in pitches]
-    correlations = compute_tonality_vector(pitch_classes)
-
+    pcs = [pitch % 12 for pitch in melody.pitches]
+    correlations = compute_tonality_vector(pcs)
+    
     # Pre-compute absolute correlation values
     abs_correlations = [(key, abs(val)) for key, val in correlations]
     abs_corr_values = [val for _, val in abs_correlations]
@@ -8724,48 +9005,87 @@ def get_tonality_features(melody: Melody) -> Dict:
     tonality_features["tonal_entropy"] = (
         shannon_entropy(abs_corr_values) if correlations else -1.0
     )
+    
+    # Histogram using cached correlations
+    tonality_features["tonalness_histogram"] = histogram_bins(correlations[0][1], 24)
 
-    # Key-based features using cached correlations
-    if correlations:
-        key_name = correlations[0][0].split()[0]
+    # Determine the key to use for key-dependent features based on strategy
+    key_for_features = None
+    
+    if key_estimation == "always_infer":
+        # Use the inferred key from correlations
+        if correlations:
+            key_for_features = correlations[0][0]
+    else:
+        # Try to read from MIDI file
+        from .tonal_tension import extract_key_signature_from_midi
+        key_from_midi = None
+        if melody.id:
+            key_from_midi = extract_key_signature_from_midi(melody.id)
+        
+        if key_estimation == "always_read_from_file":
+            if key_from_midi is None:
+                raise ValueError(f"No key signature found in MIDI file: {melody.id}")
+            # Convert MIDI key signature to key name
+            fifths, mode = key_from_midi
+            key_map = {0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', -1: 'F', 
+                       -2: 'Bb', -3: 'Eb', -4: 'Ab', -5: 'Db', -6: 'Gb'}
+            midi_key_name = key_map.get(fifths, 'C')
+            mode_str = "major" if mode >= 0 else "minor"
+            key_for_features = f"{midi_key_name} {mode_str}"
+        else:
+            if key_from_midi is not None:
+                fifths, mode = key_from_midi
+                key_map = {0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', -1: 'F', 
+                           -2: 'Bb', -3: 'Eb', -4: 'Ab', -5: 'Db', -6: 'Gb'}
+                midi_key_name = key_map.get(fifths, 'C')
+                mode_str = "major" if mode >= 0 else "minor"
+                key_for_features = f"{midi_key_name} {mode_str}"
+            else:
+                if correlations:
+                    key_for_features = correlations[0][0]
+
+    if key_for_features:
+        key_name = key_for_features.split()[0]
         key_distances = _get_key_distances()
         root = key_distances[key_name]
         tonality_features["referent"] = root
 
         # Determine scale type and pattern
-        is_major = "major" in correlations[0][0]
+        is_major = "major" in key_for_features
         scale = [0, 2, 4, 5, 7, 9, 11] if is_major else [0, 2, 3, 5, 7, 8, 10]
         scale = [(note + root) % 12 for note in scale]
 
         # For each pitch, indicate if it's in the estimated key's scale (1) or not (0)
-        tonality_features["inscale"] = [1 if pc in scale else 0 for pc in pitch_classes]
+        tonality_features["inscale"] = [1 if pc in scale else 0 for pc in pcs]
+        tonality_features["key"] = key_for_features
+        tonality_features["mode"] = "major" if is_major else "minor"
     else:
         tonality_features["referent"] = -1
         tonality_features["inscale"] = []
+        tonality_features["key"] = "unknown"
+        tonality_features["mode"] = "unknown"
 
 
     # Scalar passage features
     from .algorithms import longest_monotonic_conjunct_scalar_passage as _longest_monotonic_conjunct_scalar_passage
     from .algorithms import longest_conjunct_scalar_passage as _longest_conjunct_scalar_passage
     tonality_features["longest_monotonic_conjunct_scalar_passage"] = (
-        _longest_monotonic_conjunct_scalar_passage(pitches, correlations)
+        _longest_monotonic_conjunct_scalar_passage(melody.pitches, correlations)
     )
     tonality_features["longest_conjunct_scalar_passage"] = (
-        _longest_conjunct_scalar_passage(pitches, correlations)
+        _longest_conjunct_scalar_passage(melody.pitches, correlations)
     )
     from .algorithms import proportion_conjunct_scalar as _proportion_conjunct_scalar
     from .algorithms import proportion_scalar as _proportion_scalar
     tonality_features["proportion_conjunct_scalar"] = _proportion_conjunct_scalar(
-        pitches, correlations
+        melody.pitches, correlations
     )
-    tonality_features["proportion_scalar"] = _proportion_scalar(pitches, correlations)
-
-    # Histogram using cached correlations
-    tonality_features["tonalness_histogram"] = histogram_bins(correlations[0][1], 24)
-
-    tonality_features["mode"] = "major" if is_major else "minor"
-
+    tonality_features["proportion_scalar"] = _proportion_scalar(melody.pitches, correlations)
     tonality_features["proportion_inscale"] = proportion_inscale(melody)
+    
+    # Tonal tension features
+    tonality_features["tonal_tension"] = estimate_tonaltension(melody, key_estimation=key_estimation)
 
     return tonality_features
 
@@ -8803,7 +9123,7 @@ def process_melody(args):
     Parameters
     ----------
     args : tuple
-        Tuple containing (melody_data, corpus_stats, idyom_features, phrase_gap, max_ngram_order)
+        Tuple containing (melody_data, corpus_stats, idyom_features, phrase_gap, max_ngram_order, key_estimation)
 
     Returns
     -------
@@ -8823,7 +9143,7 @@ def process_melody(args):
 
     start_total = time.time()
 
-    melody_data, corpus_stats, idyom_results_dict, phrase_gap, max_ngram_order = args
+    melody_data, corpus_stats, idyom_results_dict, phrase_gap, max_ngram_order, key_estimation = args
     mel = Melody(melody_data)
 
     # Time each feature category
@@ -8846,7 +9166,7 @@ def process_melody(args):
     timings["duration"] = time.time() - start
 
     start = time.time()
-    tonality_features = get_tonality_features(mel)
+    tonality_features = get_tonality_features(mel, key_estimation=key_estimation)
     timings["tonality"] = time.time() - start
 
     start = time.time()
@@ -8911,10 +9231,16 @@ def get_idyom_results(
     ppm_order,
     corpus_path,
     experiment_name="IDyOM_Feature_Set_Results",
+    key_estimation="infer_if_necessary",
 ) -> dict:
     logger = logging.getLogger("melody_features")
     """Run IDyOM on the input MIDI directory and return mean information content for each melody.
     Uses the parameters supplied from Config dataclass to control IDyOM behaviour.
+
+    Parameters
+    ----------
+    key_estimation : str, optional
+        Key estimation strategy: "always_read_from_file", "infer_if_necessary", or "always_infer"
 
     Returns
     -------
@@ -8931,11 +9257,11 @@ def get_idyom_results(
         idyom_source_viewpoints = [("cpint", "cpintfref")]
 
     logger.info(
-        "Creating temporary MIDI files with detected key signatures for IDyOM processing..."
+        f"Creating temporary MIDI files with key_estimation='{key_estimation}' for IDyOM processing..."
     )
     temp_dir = tempfile.mkdtemp(prefix="idyom_key_")
     original_input_dir = input_directory
-    input_directory = create_temp_midi_with_key_signature(input_directory, temp_dir)
+    input_directory = create_temp_midi_with_key_signature(input_directory, temp_dir, key_estimation)
 
     temp_files = glob.glob(os.path.join(input_directory, "*.mid"))
     temp_files.extend(glob.glob(os.path.join(input_directory, "*.midi")))
@@ -9061,7 +9387,7 @@ def to_mido_key_string(key_name):
         return root
 
 
-def create_temp_midi_with_key_signature(input_directory: str, temp_dir: str) -> str:
+def create_temp_midi_with_key_signature(input_directory: str, temp_dir: str, key_estimation: str = "infer_if_necessary") -> str:
     """
     Create temporary MIDI files with key signatures for IDyOM processing.
 
@@ -9071,6 +9397,8 @@ def create_temp_midi_with_key_signature(input_directory: str, temp_dir: str) -> 
         Path to the input directory containing MIDI files
     temp_dir : str
         Path to the temporary directory to create the modified MIDI files
+    key_estimation : str, optional
+        Key estimation strategy: "always_read_from_file", "infer_if_necessary", or "always_infer"
 
     Returns
     -------
@@ -9088,7 +9416,7 @@ def create_temp_midi_with_key_signature(input_directory: str, temp_dir: str) -> 
     midi_files.extend(glob.glob(os.path.join(input_directory, "*.midi")))
 
     logger.info(
-        f"Processing {len(midi_files)} MIDI files for key signature detection..."
+        f"Processing {len(midi_files)} MIDI files with key_estimation='{key_estimation}'..."
     )
 
     successful_copies = 0
@@ -9102,41 +9430,70 @@ def create_temp_midi_with_key_signature(input_directory: str, temp_dir: str) -> 
             shutil.copy2(midi_file, output_path)
             successful_copies += 1
 
-            # Now try to modify it with key signature detection
+            # Handle key signature based on key_estimation strategy
             try:
-                midi_dict = import_midi(midi_file)
-                if midi_dict is None:
-                    logger.warning(f"Could not import {midi_file}, using original file")
-                    continue
-
-                melody = Melody(midi_dict)
-                if not melody.pitches:  # Skip if no pitches
-                    logger.warning(
-                        f"No pitches found in {midi_file}, using original file"
-                    )
-                    continue
-
-                pitch_classes = [pitch % 12 for pitch in melody.pitches]
-
-                key_correlations = compute_tonality_vector(pitch_classes)
-                detected_key = key_correlations[0][0]  # Get the most likely key
-
-                mido_key = to_mido_key_string(detected_key)
-
                 mid = MidiFile(midi_file)
-
-                # Remove existing key signatures and add new one
+                
+                # Check if key signature exists in file
+                has_key_signature = False
                 for track in mid.tracks:
-                    track[:] = [
-                        msg for msg in track if not (msg.type == "key_signature")
-                    ]
+                    for msg in track:
+                        if msg.type == "key_signature":
+                            has_key_signature = True
+                            break
+                    if has_key_signature:
+                        break
 
-                # Add new key signature at the beginning
-                key_msg = MetaMessage("key_signature", key=mido_key, time=0)
-                mid.tracks[0].insert(0, key_msg)
+                # Determine whether to apply estimated key signature
+                should_apply_estimated_key = False
+                
+                if key_estimation == "always_read_from_file":
+                    # Just use the file as-is
+                    if not has_key_signature:
+                        raise ValueError(f"No key signature found in MIDI file: {midi_file}")
+                    # No modification needed, already copied
+                    continue
+                elif key_estimation == "infer_if_necessary":
+                    # Apply estimated key only if no key signature exists
+                    should_apply_estimated_key = not has_key_signature
+                elif key_estimation == "always_infer":
+                    # Always apply estimated key signature
+                    should_apply_estimated_key = True
+                else:
+                    raise ValueError(f"Invalid key_estimation value: {key_estimation}")
 
-                # Save the modified MIDI file with .mid extension
-                mid.save(output_path)
+                # Apply estimated key signature if needed
+                if should_apply_estimated_key:
+                    midi_dict = import_midi(midi_file)
+                    if midi_dict is None:
+                        logger.warning(f"Could not import {midi_file}, using original file")
+                        continue
+
+                    melody = Melody(midi_dict)
+                    if not melody.pitches:  # Skip if no pitches
+                        logger.warning(
+                            f"No pitches found in {midi_file}, using original file"
+                        )
+                        continue
+
+                    pitch_classes = [pitch % 12 for pitch in melody.pitches]
+                    key_correlations = compute_tonality_vector(pitch_classes)
+                    detected_key = key_correlations[0][0]  # Get the most likely key
+
+                    mido_key = to_mido_key_string(detected_key)
+
+                    # Remove existing key signatures and add new estimated one
+                    for track in mid.tracks:
+                        track[:] = [
+                            msg for msg in track if not (msg.type == "key_signature")
+                        ]
+
+                    # Add new key signature at the beginning
+                    key_msg = MetaMessage("key_signature", key=mido_key, time=0)
+                    mid.tracks[0].insert(0, key_msg)
+
+                    # Save the modified MIDI file with .mid extension
+                    mid.save(output_path)
 
             except Exception as e:
                 logger.warning(
@@ -9186,9 +9543,7 @@ def _setup_default_config(config: Optional[Config]) -> Config:
     """
     if config is None:
         config = Config(
-            # I hate this so much
             corpus=resources.files("melody_features") / "corpora/Essen_Corpus",
-            # corpus=str(Path(__file__).parent.parent.parent / "corpora/Essen_Corpus"),
             idyom={
                 "default_pitch": IDyOMConfig(
                     target_viewpoints=["cpitch"],
@@ -9199,6 +9554,7 @@ def _setup_default_config(config: Optional[Config]) -> Config:
                 )
             },
             fantastic=FantasticConfig(max_ngram_order=6, phrase_gap=1.5, corpus=None),
+            key_estimation="infer_if_necessary",
         )
     return config
 
@@ -9470,6 +9826,7 @@ def _run_idyom_analysis(
                 idyom_config.ppm_order,
                 idyom_corpus,
                 f"IDyOM_{idyom_name}_Results",
+                config.key_estimation,
             )
             idyom_results_dict[idyom_name] = idyom_results
         except Exception as e:
@@ -9530,7 +9887,7 @@ def _setup_parallel_processing(
         "interval_features": get_interval_features(mel),
         "contour_features": get_contour_features(mel),
         "duration_features": get_duration_features(mel),
-        "tonality_features": get_tonality_features(mel),
+        "tonality_features": get_tonality_features(mel, key_estimation=config.key_estimation),
         "melodic_movement_features": get_melodic_movement_features(mel),
         "mtype_features": get_mtype_features(
             mel,
@@ -9578,6 +9935,7 @@ def _setup_parallel_processing(
             idyom_results_dict,
             config.fantastic.phrase_gap,
             config.fantastic.max_ngram_order,
+            config.key_estimation,
         )
         for melody_data in melody_data_list
     ]

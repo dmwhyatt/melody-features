@@ -82,7 +82,7 @@ class MelodyTokenizer:
         ratios.extend([iois[i] / iois[i - 1] for i in range(1, len(iois))])
         return ratios
 
-    def _classify_pitch_interval(self, interval: int) -> int:
+    def _classify_pitch_interval(self, interval: int, scheme: str = "FANTASTIC") -> int:
         """Classify a pitch interval into a category.
 
         Parameters
@@ -90,38 +90,72 @@ class MelodyTokenizer:
         interval : int
             The pitch interval in semitones
 
+        scheme : str, optional
+            The scheme to use for classification, by default "FANTASTIC"
+            Options: "FANTASTIC", "SIMILE"
+
         Returns
         -------
         int
             The interval classification
+
+        Note
+        -----
+        The SIMILE scheme for interval classification is the same as the approach taken by
+        melfeature, though the named used for each class differ slightly.
         """
         abs_interval = abs(interval)
-        if abs_interval == 0:
-            return 0  # Unison
-        elif abs_interval == 1:
-            return 1  # Minor second
-        elif abs_interval == 2:
-            return 2  # Major second
-        elif abs_interval == 3:
-            return 3  # Minor third
-        elif abs_interval == 4:
-            return 4  # Major third
-        elif abs_interval == 5:
-            return 5  # Perfect fourth
-        elif abs_interval == 7:
-            return 6  # Perfect fifth
-        elif abs_interval == 8:
-            return 7  # Minor sixth
-        elif abs_interval == 9:
-            return 8  # Major sixth
-        elif abs_interval == 10:
-            return 9  # Minor seventh
-        elif abs_interval == 11:
-            return 10  # Major seventh
-        elif abs_interval == 12:
-            return 11  # Octave
-        else:
-            return 12  # Larger than octave
+
+        if scheme == "FANTASTIC":
+            if abs_interval == 0:
+                return 0  # Unison
+            elif abs_interval == 1:
+                return 1  # Minor second
+            elif abs_interval == 2:
+                return 2  # Major second
+            elif abs_interval == 3:
+                return 3  # Minor third
+            elif abs_interval == 4:
+                return 4  # Major third
+            elif abs_interval == 5:
+                return 5  # Perfect fourth
+            elif abs_interval == 7:
+                return 6  # Perfect fifth
+            elif abs_interval == 8:
+                return 7  # Minor sixth
+            elif abs_interval == 9:
+                return 8  # Major sixth
+            elif abs_interval == 10:
+                return 9  # Minor seventh
+            elif abs_interval == 11:
+                return 10  # Major seventh
+            elif abs_interval == 12:
+                return 11  # Octave
+            else:
+                return 12  # Larger than octave
+
+        elif scheme == "SIMILE":
+            if interval == 0:
+                return 0  # repetition
+            elif interval >= 1 and interval <= 2:
+                return 1  # step up
+            elif interval >= 3 and interval <= 4:
+                return 2  # leap up
+            elif interval >= 5 and interval <= 7:
+                return 3  # jump up
+            elif interval > 7:
+                return 4  # large jump up
+            elif interval <= -1 and interval >= -2:
+                return -1  # step down
+            elif interval <= -3 and interval >= -4:
+                return -2  # leap down
+            elif interval <= -5 and interval >= -7:
+                return -3  # jump down
+            elif interval < -7:
+                return -4  # large jump down
+            else:
+                # Interval doesn't fit into any defined bin
+                return None
 
     def _classify_ioi_ratio(self, ratio: float) -> float:
         """Classify an IOI ratio into a category.
@@ -205,14 +239,23 @@ class MelodyTokenizer:
 
 
 class FantasticTokenizer(MelodyTokenizer):
-    """A tokenizer that implements the FANTASTIC melody tokenization scheme."""
+    """A tokenizer that implements melody tokenization with configurable interval classification schemes,
+    following the approach taken by FANTASTIC."""
 
-    def __init__(self):
-        """Initialize the FANTASTIC tokenizer."""
+    def __init__(self, scheme: str = "FANTASTIC"):
+        """Initialize the tokenizer with a specific interval classification scheme.
+
+        Parameters
+        ----------
+        scheme : str, optional
+            The scheme to use for pitch interval classification, by default "FANTASTIC"
+            Options: "FANTASTIC", "SIMILE"
+        """
         super().__init__()
+        self.scheme = scheme
 
     def _classify_pitch_interval(self, interval: int) -> int:
-        """Classify a pitch interval according to FANTASTIC scheme.
+        """Classify a pitch interval according to the configured scheme.
 
         Parameters
         ----------
@@ -224,33 +267,7 @@ class FantasticTokenizer(MelodyTokenizer):
         int
             The interval classification
         """
-        abs_interval = abs(interval)
-        if abs_interval == 0:
-            return 0  # Unison
-        elif abs_interval == 1:
-            return 1  # Minor second
-        elif abs_interval == 2:
-            return 2  # Major second
-        elif abs_interval == 3:
-            return 3  # Minor third
-        elif abs_interval == 4:
-            return 4  # Major third
-        elif abs_interval == 5:
-            return 5  # Perfect fourth
-        elif abs_interval == 7:
-            return 6  # Perfect fifth
-        elif abs_interval == 8:
-            return 7  # Minor sixth
-        elif abs_interval == 9:
-            return 8  # Major sixth
-        elif abs_interval == 10:
-            return 9  # Minor seventh
-        elif abs_interval == 11:
-            return 10  # Major seventh
-        elif abs_interval == 12:
-            return 11  # Octave
-        else:
-            return 12  # Larger than octave
+        return super()._classify_pitch_interval(interval, scheme=self.scheme)
 
     def _classify_ioi_ratio(self, ratio: float) -> float:
         """Classify an IOI ratio according to FANTASTIC scheme.
