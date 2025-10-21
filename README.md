@@ -27,6 +27,7 @@ Included in the package are contributions from:
 - **jSymbolic2** (McKay & Fujinaga, 2006)
 - **IDyOM** (Pearce, 2005)
 - **MIDI Toolbox** (Eerola & Toiviainen, 2004)
+- **Partitura** (Cancino-Chacón, 2022)
 
 ## Melody Features Summary
 
@@ -111,4 +112,4 @@ See https://github.com/music-computing/amads
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-Open-source code adapted from the Partitura Python package is licensed under the Apache-2.0 license, which can be found in the [LICENSE-APACHE](LICENSE-APACHE) file. All credit for the original code found in `pitch_spelling.py` and `tonal_tension.py` remains with the original authors - we have not modified their functionality, we have simply adapted their code to be compatible with our codebase.
+Open-source code adapted from the Partitura Python package is licensed under the Apache-2.0 license, which can be found in the [LICENSE-APACHE](LICENSE-APACHE) file. All credit for the original code found in `src/melody_features/pitch_spelling.py` and `src/melody_features/tonal_tension.py` remains with the original authors - we have not modified their functionality, we have simply adapted their code to be compatible with our codebase.
