@@ -182,6 +182,72 @@ class Melody:
                    DurationInSecondsFeature implementation.
         """
         return self._midi_data.get("total_duration", 0.0)
+    
+    @property
+    def key_signature(self) -> tuple:
+        """Get the first key signature in the melody.
+        
+        Returns:
+            tuple or None: (key_name, mode) where key_name is a string like 'C', 'Am', 'F#'
+                          and mode is either 'major' or 'minor'. Returns None if no key signature found.
+        """
+        key_sig_info = self._midi_data.get("key_signature_info")
+        if key_sig_info:
+            return key_sig_info.get("first_key_signature")
+        return None
+    
+    @property
+    def key_signatures(self) -> list:
+        """Get all key signatures present in the melody.
+        
+        Returns:
+            list[tuple]: List of tuples (key_name, mode) for all key signatures.
+                        Empty list if no key signatures are found.
+        """
+        key_sig_info = self._midi_data.get("key_signature_info")
+        if key_sig_info:
+            return key_sig_info.get("all_key_signatures", [])
+        return []
+    
+    @property
+    def has_key_signature(self) -> bool:
+        """Check if the MIDI file contains any key signature information.
+        
+        Returns:
+            bool: True if at least one key signature was found, False otherwise.
+        """
+        key_sig_info = self._midi_data.get("key_signature_info")
+        if key_sig_info:
+            return key_sig_info.get("has_key_signature", False)
+        return False
+    
+    @property
+    def key_fifths(self) -> int:
+        """Get the circle of fifths position of the first key signature.
+        
+        Returns:
+            int or None: Position on circle of fifths (-7 to 7) where:
+                        0 = C major / A minor
+                        Positive = sharps (G=1, D=2, A=3, E=4, B=5, F#=6, C#=7)
+                        Negative = flats (F=-1, Bb=-2, Eb=-3, Ab=-4, Db=-5, Gb=-6, Cb=-7)
+                        Returns None if no key signature found.
+        """
+        key_sig_info = self._midi_data.get("key_signature_info")
+        if key_sig_info:
+            return key_sig_info.get("fifths")
+        return None
+    
+    @property
+    def key_mode(self) -> int:
+        """Get the mode of the first key signature as an integer.
+        
+        Returns:
+            int or None: 1 for major, -1 for minor. Returns None if no key signature found.
+        """
+        key_sig_info = self._midi_data.get("key_signature_info")
+        if key_sig_info:
+            return key_sig_info.get("mode")
+        return None
 
     
 

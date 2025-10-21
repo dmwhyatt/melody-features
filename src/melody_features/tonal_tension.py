@@ -147,31 +147,15 @@ def extract_key_signature_from_midi(midi_path):
     tuple or None
         (fifths, mode) where mode is 1 for major, -1 for minor, or None if no key signature found
     """
-    import mido
+    # Use the more comprehensive function from import_mid
+    from .import_mid import extract_key_signatures_from_midi
     
-    if not os.path.exists(midi_path):
-        return None
-        
-    mid = mido.MidiFile(midi_path)
-    for track in mid.tracks:
-        for msg in track:
-            if msg.type == 'key_signature':
-                key_str = msg.key
-                
-                is_minor = key_str.endswith('m')
-                mode = -1 if is_minor else 1
-                
-                root = key_str[:-1] if is_minor else key_str
-                
-                pc = _keyname_to_pc(root)
-                
-                if is_minor:
-                    rel_maj_pc = (pc + 3) % 12
-                    fifths = _pc_to_fifths_major(rel_maj_pc)
-                else:
-                    fifths = _pc_to_fifths_major(pc)
-                
-                return int(fifths), int(mode)
+    key_sig_info = extract_key_signatures_from_midi(midi_path)
+    
+    if key_sig_info and key_sig_info.get('has_key_signature'):
+        return key_sig_info['fifths'], key_sig_info['mode']
+    
+    return None
 
 def e_distance(x, y):
     """
@@ -482,10 +466,13 @@ def prepare_note_array(note_info, tonality_vector=None, key_estimation="infer_if
     # Ensure pitch spelling fields
     pitch_spelling_fields = ("step", "alter", "octave")
     if len(set(pitch_spelling_fields).difference(note_array.dtype.names)) > 0:
+        # Only warn once per session to avoid spam
         warnings.warn(
             "No pitch spelling information! Estimating pitch spelling...",
             stacklevel=2,
+            category=UserWarning,
         )
+        warnings.filterwarnings('ignore', message='No pitch spelling information.*', category=UserWarning)
         spelling = estimate_spelling(note_array)
         note_array = add_field(note_array, spelling.dtype)
         for field in spelling.dtype.names:

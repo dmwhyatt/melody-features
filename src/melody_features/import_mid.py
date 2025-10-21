@@ -3,6 +3,7 @@ import os
 import warnings
 
 import pretty_midi
+import mido
 from mido.midifiles.meta import KeySignatureError
 
 from .meter_estimation import estimate_meter, meter_to_time_signature
@@ -68,6 +69,9 @@ def import_midi(midi_file: str) -> dict:
         tempo_changes = extract_tempo_changes_from_midi(midi_data)
         
         time_sig_info = extract_time_signatures_from_midi(midi_data, starts, ends, pitches)
+        
+        # Extract key signature information
+        key_sig_info = extract_key_signatures_from_midi(midi_file)
 
         import mido
         mid = mido.MidiFile(midi_file)
@@ -82,6 +86,7 @@ def import_midi(midi_file: str) -> dict:
             "tempo": tempo,
             "tempo_changes": tempo_changes,
             "time_signature_info": time_sig_info,
+            "key_signature_info": key_sig_info,
             "total_duration": total_duration,
         }
 
@@ -265,3 +270,112 @@ def extract_tempo_changes_from_midi(midi_data: pretty_midi.PrettyMIDI) -> list[t
         # Fallback to single tempo
         single_tempo = extract_tempo_from_midi(midi_data)
         return [(0.0, single_tempo)]
+
+
+def extract_key_signatures_from_midi(midi_path: str) -> dict:
+    """Extract key signature information from MIDI file using mido.
+    
+    Parameters
+    ----------
+    midi_path : str
+        Path to the MIDI file
+        
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - 'first_key_signature': tuple of (key_name, mode) for first key signature,
+          where mode is 'major' or 'minor'
+        - 'all_key_signatures': list of (key_name, mode) for all key signatures
+        - 'has_key_signature': bool indicating if any key signature was found
+        - 'fifths': int representing position on circle of fifths (-7 to 7)
+        - 'mode': int (1 for major, -1 for minor)
+        
+    Notes
+    -----
+    Uses mido library to read key signature meta messages.
+    """
+    logger = logging.getLogger("melody_features")
+    
+    if not os.path.exists(midi_path):
+        logger.warning(f"MIDI file not found: {midi_path}")
+        return {
+            'first_key_signature': None,
+            'all_key_signatures': [],
+            'has_key_signature': False,
+            'fifths': None,
+            'mode': None
+        }
+    
+    try:
+        mid = mido.MidiFile(midi_path)
+        
+        fifths_map = {
+            'C': 0, 'G': 1, 'D': 2, 'A': 3, 'E': 4, 'B': 5, 
+            'F#': 6, 'C#': 7, 'F': -1, 'Bb': -2, 'Eb': -3, 
+            'Ab': -4, 'Db': -5, 'Gb': -6, 'Cb': -7
+        }
+        
+        key_signatures = []
+        first_key_name = None
+        first_mode_str = None
+        first_fifths = None
+        first_mode = None
+        
+        for track in mid.tracks:
+            for msg in track:
+                if msg.type == 'key_signature':
+                    key_str = msg.key
+                    
+                    # Validate that we have a non-empty key string
+                    if not key_str:
+                        logger.warning(f"Empty key signature found in {midi_path}, skipping")
+                        continue
+                    
+                    is_minor = key_str.endswith('m')
+                    mode_str = 'minor' if is_minor else 'major'
+                    mode = -1 if is_minor else 1
+                    root = key_str[:-1] if is_minor else key_str
+                    
+                    # Validate that the root note is in our fifths map
+                    if root not in fifths_map:
+                        logger.warning(f"Unknown key root '{root}' in {midi_path}, skipping")
+                        continue
+                    
+                    fifths = fifths_map[root]
+
+                    if first_key_name is None:
+                        first_key_name = key_str
+                        first_mode_str = mode_str
+                        first_fifths = fifths
+                        first_mode = mode
+
+                    key_signatures.append((key_str, mode_str))
+
+        if not key_signatures:
+            logger.debug(f"No key signature found in MIDI file: {midi_path}")
+            return {
+                'first_key_signature': None,
+                'all_key_signatures': [],
+                'has_key_signature': False,
+                'fifths': None,
+                'mode': None
+            }
+
+        return {
+            'first_key_signature': (first_key_name, first_mode_str),
+            'all_key_signatures': key_signatures,
+            'has_key_signature': True,
+            'fifths': first_fifths,
+            'mode': first_mode
+        }
+
+    except Exception as e:
+        logger.warning(f"Error extracting key signatures from {midi_path}: {str(e)}")
+        return {
+            'first_key_signature': None,
+            'all_key_signatures': [],
+            'has_key_signature': False,
+            'fifths': None,
+            'mode': None
+        }

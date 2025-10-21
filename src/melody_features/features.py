@@ -1508,30 +1508,6 @@ def pitch_spelling(melody: Melody) -> list[str]:
     """
     return _estimate_spelling_from_melody(melody)
 
-@partitura
-@pitch_feature
-def tonal_tension(melody: Melody) -> dict:
-    """Computes tension ribbons using the tonal tension algorithm. 
-    Provides a means of comparing Chew's spiral array and the tonal tension 
-    profiles produced from Herremans and Chew's tension ribbons.
-    
-    Parameters
-    ----------
-    melody : Melody
-        A melody-features Melody object.
-
-    Returns
-    -------
-    dict
-        Dictionary containing the tonal tension features: `cloud_diameter`, 
-        `cloud_momentum`, `tensile_strain`, ordered by `onset`.
-
-    Citation
-    --------
-    Herremans & Chew (2016)
-    """
-    return estimate_tonaltension(melody)
-
 @simile
 @interval_feature
 def pitch_interval(pitches: list[int]) -> list[int]:
@@ -5918,29 +5894,59 @@ def onset_autocorr_peak(starts: list[float], ends: list[float], divisions_per_qu
 # Tonality Features
 @novel
 @tonality_feature
-def key(pitches: list[int]) -> str:
-    """The estimated key of the melody, according to the Krumhansl-Schmuckler
-    key finding algorithm.
+def key(melody: Melody, key_estimation: str = "infer_if_necessary") -> str:
+    """The key of the melody, either read from the MIDI file or estimated using
+    the Krumhansl-Schmuckler key finding algorithm, depending on the key estimation strategy.
     
     Parameters
     ----------
-    pitches : list[int]
-        List of MIDI pitch values
+    melody : Melody
+        A melody-features Melody object
+    key_estimation : str, optional
+        Key estimation strategy, default "infer_if_necessary"
+        Can be "always_read_from_file", "infer_if_necessary", or "always_infer"
         
     Returns
     -------
     str
-        The estimated key of the melody, in the format "key name major/minor"
+        The key of the melody, in the format "key name major/minor"
     
     Citation
     ----------
     Krumhansl (1990)
     """
-    pitch_classes = [pitch % 12 for pitch in pitches]
+    pitch_classes = [pitch % 12 for pitch in melody.pitches]
     correlations = compute_tonality_vector(pitch_classes)
-    name = correlations[0][0].split()[0]
-    is_major = "major" in correlations[0][0]
-    return name + " " + ("major" if is_major else "minor")
+    inferred_key = None
+    if correlations:
+        name = correlations[0][0].split()[0]
+        is_major = "major" in correlations[0][0]
+        inferred_key = name + " " + ("major" if is_major else "minor")
+    
+    # Determine which key to use based on strategy
+    if key_estimation == "always_infer":
+        # Always use inferred key
+        return inferred_key if inferred_key else "unknown"
+    else:
+        # Try to read from MIDI file
+        key_from_melody = None
+        if melody.has_key_signature:
+            key_sig = melody.key_signature
+            if key_sig:
+                key_from_melody = f"{key_sig[0]} {key_sig[1]}"
+        
+        if key_estimation == "always_read_from_file":
+            if key_from_melody is None:
+                raise ValueError(f"No key signature found in MIDI file: {melody.id}")
+            return key_from_melody
+        else:
+            # key_estimation == "infer_if_necessary"
+            if key_from_melody is not None:
+                # Use key from MIDI
+                return key_from_melody
+            else:
+                # Infer if no MIDI key available
+                return inferred_key if inferred_key else "unknown"
 
 
 @fantastic
@@ -6066,6 +6072,8 @@ def tonal_entropy(pitches: list[int]) -> float:
 
 def _get_key_distances() -> dict[str, int]:
     """Returns a dictionary mapping key names to their semitone distances from C.
+    
+    Includes both sharp and flat enharmonic equivalents.
 
     Returns
     -------
@@ -6074,29 +6082,30 @@ def _get_key_distances() -> dict[str, int]:
     """
     return {
         "C": 0,
-        "C#": 1,
+        "C#": 1, "Db": 1,
         "D": 2,
-        "D#": 3,
-        "E": 4,
-        "F": 5,
-        "F#": 6,
+        "D#": 3, "Eb": 3,
+        "E": 4, "Fb": 4,
+        "F": 5, "E#": 5,
+        "F#": 6, "Gb": 6,
         "G": 7,
-        "G#": 8,
+        "G#": 8, "Ab": 8,
         "A": 9,
-        "A#": 10,
-        "B": 11,
+        "A#": 10, "Bb": 10,
+        "B": 11, "Cb": 11,
+        # Minor keys (lowercase)
         "c": 0,
-        "c#": 1,
+        "c#": 1, "db": 1,
         "d": 2,
-        "d#": 3,
-        "e": 4,
-        "f": 5,
-        "f#": 6,
+        "d#": 3, "eb": 3,
+        "e": 4, "fb": 4,
+        "f": 5, "e#": 5,
+        "f#": 6, "gb": 6,
         "g": 7,
-        "g#": 8,
+        "g#": 8, "ab": 8,
         "a": 9,
-        "a#": 10,
-        "b": 11,
+        "a#": 10, "bb": 10,
+        "b": 11, "cb": 11,
     }
 
 @idyom
@@ -6169,6 +6178,213 @@ def inscale(pitches: list[int]) -> list[int]:
 
     # Check each pitch class against the scale
     return [1 if pc in scale else 0 for pc in pitch_classes]
+
+
+@partitura
+@tonality_feature
+def tonal_tension(melody: Melody) -> dict:
+    """Computes tension ribbons using the tonal tension algorithm. 
+    Provides a means of comparing Chew's spiral array and the tonal tension 
+    profiles produced from Herremans and Chew's tension ribbons. This returns a dictionary 
+    containing the cloud diameter, cloud momentum, tensile strain, ordered by onset.
+
+    Parameters
+    ----------
+    melody : Melody
+        A melody-features Melody object.
+
+    Returns
+    -------
+    dict
+        Dictionary containing the tonal tension features: `cloud_diameter`, 
+        `cloud_momentum`, `tensile_strain`, ordered by `onset`.
+
+    Citation
+    --------
+    Herremans & Chew (2016)
+    """
+    return estimate_tonaltension(melody)
+
+@partitura
+@novel
+@tonality_feature
+def mean_cloud_diameter(melody: Melody, key_estimation: str = "infer_if_necessary") -> float:
+    """Mean cloud diameter from the tonal tension model. Cloud Diameter provides a
+    measure of the maximal tonal distance of the notes in a chord, 
+    following the definition in Partitura.
+    
+    Parameters
+    ----------
+    melody : Melody
+        A melody-features Melody object
+    key_estimation : str, optional
+        Key estimation strategy, default "infer_if_necessary"
+        
+    Returns
+    -------
+    float
+        Mean cloud diameter value
+        
+    Citation
+    --------
+    Herremans & Chew (2016)
+    """
+    tension_dict = estimate_tonaltension(melody, key_estimation=key_estimation)
+    cloud_diameter = tension_dict.get("cloud_diameter", [])
+    if not cloud_diameter:
+        return 0.0
+    return float(np.mean(cloud_diameter))
+
+@partitura
+@novel
+@tonality_feature
+def std_cloud_diameter(melody: Melody, key_estimation: str = "infer_if_necessary") -> float:
+    """Standard deviation of cloud diameter from the tonal tension model. Cloud Diameter provides a
+    measure of the maximal tonal distance of the notes in a chord, 
+    following the definition in Partitura.
+    
+    Parameters
+    ----------
+    melody : Melody
+        A melody-features Melody object
+    key_estimation : str, optional
+        Key estimation strategy, default "infer_if_necessary"
+        
+    Returns
+    -------
+    float
+        Standard deviation of cloud diameter values
+        
+    Citation
+    --------
+    Herremans & Chew (2016)
+    """
+    tension_dict = estimate_tonaltension(melody, key_estimation=key_estimation)
+    cloud_diameter = tension_dict.get("cloud_diameter", [])
+    if len(cloud_diameter) < 2:
+        return 0.0
+    return float(np.std(cloud_diameter, ddof=1))
+
+@partitura
+@novel
+@tonality_feature
+def mean_cloud_momentum(melody: Melody, key_estimation: str = "infer_if_necessary") -> float:
+    """Mean cloud momentum from the tonal tension model.
+    
+    Cloud momentum captures movement of pitch sets in the spiral array 
+    space, weighted by note durations, following the definition in Partitura.
+    
+    Parameters
+    ----------
+    melody : Melody
+        A melody-features Melody object
+    key_estimation : str, optional
+        Key estimation strategy, default "infer_if_necessary"
+        
+    Returns
+    -------
+    float
+        Mean cloud momentum value
+        
+    Citation
+    --------
+    Herremans & Chew (2016)
+    """
+    tension_dict = estimate_tonaltension(melody, key_estimation=key_estimation)
+    cloud_momentum = tension_dict.get("cloud_momentum", [])
+    if not cloud_momentum:
+        return 0.0
+    return float(np.mean(cloud_momentum))
+
+@partitura
+@novel
+@tonality_feature
+def std_cloud_momentum(melody: Melody, key_estimation: str = "infer_if_necessary") -> float:
+    """Standard deviation of cloud momentum from the tonal tension model. Cloud Momentum provides a
+    measure of movement of pitch sets in the spiral array space, weighted by note durations, 
+    following the definition in Partitura.
+    
+    Parameters
+    ----------
+    melody : Melody
+        A melody-features Melody object
+    key_estimation : str, optional
+        Key estimation strategy, default "infer_if_necessary"
+        
+    Returns
+    -------
+    float
+        Standard deviation of cloud momentum values
+        
+    Citation
+    --------
+    Herremans & Chew (2016)
+    """
+    tension_dict = estimate_tonaltension(melody, key_estimation=key_estimation)
+    cloud_momentum = tension_dict.get("cloud_momentum", [])
+    if len(cloud_momentum) < 2:
+        return 0.0
+    return float(np.std(cloud_momentum, ddof=1))
+
+@partitura
+@novel
+@tonality_feature
+def mean_tensile_strain(melody: Melody, key_estimation: str = "infer_if_necessary") -> float:
+    """Mean tensile strain from the tonal tension model. Tensile strain provides a 
+    measure of the distance between the local and global tonal context, 
+    following the definition in Partitura.
+    
+    Parameters
+    ----------
+    melody : Melody
+        A melody-features Melody object
+    key_estimation : str, optional
+        Key estimation strategy, default "infer_if_necessary"
+        
+    Returns
+    -------
+    float
+        Mean tensile strain value
+        
+    Citation
+    --------
+    Herremans & Chew (2016)
+    """
+    tension_dict = estimate_tonaltension(melody, key_estimation=key_estimation)
+    tensile_strain = tension_dict.get("tensile_strain", [])
+    if not tensile_strain:
+        return 0.0
+    return float(np.mean(tensile_strain))
+
+@partitura
+@novel
+@tonality_feature
+def std_tensile_strain(melody: Melody, key_estimation: str = "infer_if_necessary") -> float:
+    """Standard deviation of tensile strain from the tonal tension model. Tensile strain provides a 
+    measure of the distance between the local and global tonal context, 
+    following the definition in Partitura.
+    
+    Parameters
+    ----------
+    melody : Melody
+        A melody-features Melody object
+    key_estimation : str, optional
+        Key estimation strategy, default "infer_if_necessary"
+        
+    Returns
+    -------
+    float
+        Standard deviation of tensile strain values
+        
+    Citation
+    --------
+    Herremans & Chew (2016)
+    """
+    tension_dict = estimate_tonaltension(melody, key_estimation=key_estimation)
+    tensile_strain = tension_dict.get("tensile_strain", [])
+    if len(tensile_strain) < 2:
+        return 0.0
+    return float(np.std(tensile_strain, ddof=1))
 
 # I still think this is cool and I like it a lot, but it's not included in any of the software
 # since this feature set is the result of a systematic review of toolboxes, we can't return it right now
@@ -8940,13 +9156,17 @@ def proportion_scalar(melody: Melody) -> float:
 
 @fantastic
 @tonality_feature
-def mode(melody: Melody) -> str:
-    """Calculate the mode (major/minor) of a melody.
+def mode(melody: Melody, key_estimation: str = "infer_if_necessary") -> str:
+    """Calculate the mode (major/minor) of a melody, either read from the MIDI file or
+    estimated using the Krumhansl-Schmuckler key finding algorithm.
     
     Parameters
     ----------
     melody : Melody
         The melody to analyze
+    key_estimation : str, optional
+        Key estimation strategy, default "infer_if_necessary"
+        Can be "always_read_from_file", "infer_if_necessary", or "always_infer"
         
     Returns
     -------
@@ -8956,12 +9176,35 @@ def mode(melody: Melody) -> str:
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
-    
+    inferred_mode = None
     if correlations:
         is_major = "major" in correlations[0][0]
-        return "major" if is_major else "minor"
+        inferred_mode = "major" if is_major else "minor"
+    
+    # Determine which mode to use based on strategy
+    if key_estimation == "always_infer":
+        # Always use inferred mode
+        return inferred_mode if inferred_mode else "unknown"
     else:
-        return "unknown"
+        # Try to read from MIDI file
+        mode_from_melody = None
+        if melody.has_key_signature:
+            key_sig = melody.key_signature
+            if key_sig and len(key_sig) >= 2:
+                mode_from_melody = key_sig[1]
+        
+        if key_estimation == "always_read_from_file":
+            if mode_from_melody is None:
+                raise ValueError(f"No key signature found in MIDI file: {melody.id}")
+            return mode_from_melody
+        else:
+            # key_estimation == "infer_if_necessary"
+            if mode_from_melody is not None:
+                # Use mode from MIDI
+                return mode_from_melody
+            else:
+                # Infer if no MIDI mode available
+                return inferred_mode if inferred_mode else "unknown"
 
 def get_tonality_features(melody: Melody, key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary") -> Dict:
     """Compute all tonality-based features for a melody.
@@ -9017,30 +9260,22 @@ def get_tonality_features(melody: Melody, key_estimation: Literal["always_read_f
         if correlations:
             key_for_features = correlations[0][0]
     else:
-        # Try to read from MIDI file
-        from .tonal_tension import extract_key_signature_from_midi
-        key_from_midi = None
-        if melody.id:
-            key_from_midi = extract_key_signature_from_midi(melody.id)
+        # Try to read from MIDI file using the already-extracted key signature info
+        key_from_melody = None
+        if melody.has_key_signature:
+            key_sig = melody.key_signature
+            if key_sig:
+                key_from_melody = f"{key_sig[0]} {key_sig[1]}"
         
         if key_estimation == "always_read_from_file":
-            if key_from_midi is None:
+            if key_from_melody is None:
                 raise ValueError(f"No key signature found in MIDI file: {melody.id}")
-            # Convert MIDI key signature to key name
-            fifths, mode = key_from_midi
-            key_map = {0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', -1: 'F', 
-                       -2: 'Bb', -3: 'Eb', -4: 'Ab', -5: 'Db', -6: 'Gb'}
-            midi_key_name = key_map.get(fifths, 'C')
-            mode_str = "major" if mode >= 0 else "minor"
-            key_for_features = f"{midi_key_name} {mode_str}"
+            key_for_features = key_from_melody
         else:
-            if key_from_midi is not None:
-                fifths, mode = key_from_midi
-                key_map = {0: 'C', 1: 'G', 2: 'D', 3: 'A', 4: 'E', 5: 'B', -1: 'F', 
-                           -2: 'Bb', -3: 'Eb', -4: 'Ab', -5: 'Db', -6: 'Gb'}
-                midi_key_name = key_map.get(fifths, 'C')
-                mode_str = "major" if mode >= 0 else "minor"
-                key_for_features = f"{midi_key_name} {mode_str}"
+            # key_estimation == "infer_if_necessary"
+            if key_from_melody is not None:
+                # Use key from MIDI
+                key_for_features = key_from_melody
             else:
                 if correlations:
                     key_for_features = correlations[0][0]
@@ -9084,8 +9319,35 @@ def get_tonality_features(melody: Melody, key_estimation: Literal["always_read_f
     tonality_features["proportion_scalar"] = _proportion_scalar(melody.pitches, correlations)
     tonality_features["proportion_inscale"] = proportion_inscale(melody)
     
-    # Tonal tension features
-    tonality_features["tonal_tension"] = estimate_tonaltension(melody, key_estimation=key_estimation)
+    tension_dict = estimate_tonaltension(melody, key_estimation=key_estimation)
+    
+    # Extract individual statistics
+    cloud_diameter = tension_dict.get("cloud_diameter", [])
+    if cloud_diameter:
+        tonality_features["mean_cloud_diameter"] = float(np.mean(cloud_diameter))
+        tonality_features["std_cloud_diameter"] = float(np.std(cloud_diameter, ddof=1)) if len(cloud_diameter) > 1 else 0.0
+    else:
+        tonality_features["mean_cloud_diameter"] = 0.0
+        tonality_features["std_cloud_diameter"] = 0.0
+    
+    cloud_momentum = tension_dict.get("cloud_momentum", [])
+    if cloud_momentum:
+        tonality_features["mean_cloud_momentum"] = float(np.mean(cloud_momentum))
+        tonality_features["std_cloud_momentum"] = float(np.std(cloud_momentum, ddof=1)) if len(cloud_momentum) > 1 else 0.0
+    else:
+        tonality_features["mean_cloud_momentum"] = 0.0
+        tonality_features["std_cloud_momentum"] = 0.0
+    
+    tensile_strain = tension_dict.get("tensile_strain", [])
+    if tensile_strain:
+        tonality_features["mean_tensile_strain"] = float(np.mean(tensile_strain))
+        tonality_features["std_tensile_strain"] = float(np.std(tensile_strain, ddof=1)) if len(tensile_strain) > 1 else 0.0
+    else:
+        tonality_features["mean_tensile_strain"] = 0.0
+        tonality_features["std_tensile_strain"] = 0.0
+    
+    # Keep the full dict for backward compatibility
+    tonality_features["tonal_tension"] = tension_dict
 
     return tonality_features
 
