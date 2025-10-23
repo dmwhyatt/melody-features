@@ -9595,6 +9595,9 @@ def get_tonality_features(
 
     if key_for_features:
         key_name = key_for_features.split()[0]
+        # Remove trailing 'm' if present (e.g., "G#m" -> "G#")
+        if key_name.endswith('m'):
+            key_name = key_name[:-1]
         key_distances = _get_key_distances()
         root = key_distances[key_name]
         tonality_features["referent"] = root
