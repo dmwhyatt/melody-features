@@ -10958,6 +10958,25 @@ def get_all_features(
     _validate_config(config)
 
     logger.info("Starting feature extraction job...")
+    
+    # Log configuration parameters
+    logger.info("Configuration Parameters:")
+    logger.info(f"  Key Estimation Strategy: {config.key_estimation}")
+    logger.info(f"  Key Finding Algorithm: {config.key_finding_algorithm}")
+    logger.info(f"  Corpus Path: {config.corpus if config.corpus else 'None (corpus features disabled)'}")
+    
+    logger.info(f"  IDyOM Configurations: {len(config.idyom)} config(s)")
+    for idyom_name, idyom_cfg in config.idyom.items():
+        logger.info(f"    [{idyom_name}]:")
+        logger.info(f"      Models: {idyom_cfg.models}")
+        logger.info(f"      Corpus: {idyom_cfg.corpus if idyom_cfg.corpus else 'Using Corpus Path from Config'}")
+        logger.info(f"      Target Viewpoints: {idyom_cfg.target_viewpoints}")
+        logger.info(f"      Source Viewpoints: {idyom_cfg.source_viewpoints}")
+        logger.info(f"      PPM Order: {idyom_cfg.ppm_order}")
+    
+    logger.info(f"  FANTASTIC Configuration:")
+    logger.info(f"    Max N-gram Order: {config.fantastic.max_ngram_order}")
+    logger.info(f"    Corpus: {config.fantastic.corpus if config.fantastic.corpus else 'Using Corpus Path from Config'}")
 
     # Use a temporary output file path for corpus statistics
     temp_output_file = "temp_corpus_stats.csv"

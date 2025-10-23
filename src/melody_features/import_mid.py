@@ -313,7 +313,14 @@ def extract_key_signatures_from_midi(midi_path: str) -> dict:
         fifths_map = {
             'C': 0, 'G': 1, 'D': 2, 'A': 3, 'E': 4, 'B': 5, 
             'F#': 6, 'C#': 7, 'F': -1, 'Bb': -2, 'Eb': -3, 
-            'Ab': -4, 'Db': -5, 'Gb': -6, 'Cb': -7
+            'Ab': -4, 'Db': -5, 'Gb': -6, 'Cb': -7,
+            # Enharmonic equivalents
+            'G#': -4,
+            'D#': -3,
+            'A#': -2,
+            'E#': -1,
+            'B#': 0,
+            'Fb': 4,
         }
         
         key_signatures = []
