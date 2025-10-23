@@ -1,0 +1,31 @@
+NOTICE
+
+This software contains code from multiple sources with different licenses.
+
+================================================================================
+Apache License 2.0 Components
+================================================================================
+
+The following files are adapted from Partitura (https://github.com/CPJKU/partitura)
+and are licensed under the Apache License 2.0:
+
+    src/melody_features/tonal_tension.py
+    src/melody_features/pitch_spelling.py
+
+Copyright 2022, Maarten Grachten, Carlos Cancino-Chacón, Silvan Peter, 
+Emmanouil Karystinaios, Francesco Foscarin
+
+See LICENSE-APACHE for the full Apache License 2.0.
+
+================================================================================
+MIT License Components
+================================================================================
+
+All other files are licensed under the MIT License.
+
+Copyright (c) 2025 David Mark Whyatt
+
+See LICENSE-MIT for the full MIT License.
+
+================================================================================
+

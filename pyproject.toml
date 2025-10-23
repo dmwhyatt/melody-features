@@ -1,8 +1,9 @@
 [project]
 name = "melody-features"
-version = "1.0.7"
+version = "1.0.8"
 authors = [
   { name="David Whyatt", email="dmw56@cam.ac.uk" },
+  { name="Peter Harrison", email="pmch2@cam.ac.uk" }
 ]
 description = "A Python package for computing tonnes of melodic features found in computational musicology literature."
 readme = "README.md"

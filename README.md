@@ -93,7 +93,10 @@ The package comes with an example corpus, a MIDI conversion of the well-known Es
 ### Running Tests
 
 ```bash
-# Run all tests
+# Simply run pytest
+pytest
+
+# or with Python, run all tests
 python tests/run_tests.py
 
 # Run specific test suites
@@ -104,12 +107,20 @@ python -m pytest tests/test_idyom_setup.py -v
 
 ## Contributing
 
-Contributions are welcomed, though this project is likely to be migrated into AMADS in the future...
+If you spot something you think ought to be included here, feel free to contribute it!
+Simply fork the repo, implement your feature, and submit a Pull Request that explains
+the proposed addition(s). If you seek to contribute features that relate to one another, 
+you may propose them in a single PR, otherwise, please submit separate PRs for each feature, 
+as this makes it simpler to review the code.
 
-See https://github.com/music-computing/amads
+Presently, we don't use a formalised style guide. However, we expect that your code will adhere to the following principles:
+- Each module should always include a docstring that succintly explains the purpose of the module
+- Each function within a module should have its own docstring and type hints. The docstring should include a citation to the relevant literature resource
+- Each top-level feature should return using a native Python type
+- New features should be accompanied by tests. Where it is possible, implemented features should be validated against their source implementation: see [tests/test_jsymbolic_validation.py](tests/test_jsymbolic_validation.py) for an example.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE-MIT](LICENSE-MIT) file for details.
 
-Open-source code adapted from the Partitura Python package is licensed under the Apache-2.0 license, which can be found in the [LICENSE-APACHE](LICENSE-APACHE) file. All credit for the original code found in `src/melody_features/pitch_spelling.py` and `src/melody_features/tonal_tension.py` remains with the original authors - we have not modified their functionality, we have simply adapted their code to be compatible with our codebase.
+Open-source code adapted from the Partitura Python package is licensed under the Apache-2.0 license, which can be found in the [LICENSE-APACHE](LICENSE-APACHE) file. More details can be found in [NOTICE](NOTICE).
