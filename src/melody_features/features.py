@@ -10739,20 +10739,37 @@ def _get_features_by_source(source: str) -> Dict[str, callable]:
     return source_features
 
 
-def get_fantastic_features(melody: Melody) -> Dict:
+def get_fantastic_features(
+    melody: Melody, 
+    corpus_stats: Optional[dict] = None,
+    phrase_gap: float = 1.5,
+    max_ngram_order: int = 6
+) -> Dict:
     """Get all FANTASTIC features for a melody.
     
     Parameters
     ----------
     melody : Melody
-        The melody to extract features from
+        The melody to analyze
+    corpus_stats : Optional[dict], optional
+        Corpus statistics for distributional features (default: None)
+    phrase_gap : float, optional
+        Gap threshold for phrase segmentation (default: 1.5)
+    max_ngram_order : int, optional
+        Maximum n-gram order (default: 6)
         
     Returns
     -------
     Dict
         Dictionary containing all FANTASTIC features
     """
-    return _compute_features_by_source(melody, "fantastic")
+    return _compute_features_by_source(
+        melody, 
+        "fantastic", 
+        corpus_stats=corpus_stats,
+        phrase_gap=phrase_gap,
+        max_ngram_order=max_ngram_order
+    )
 
 
 def get_jsymbolic_features(melody: Melody) -> Dict:
@@ -10835,7 +10852,13 @@ def get_novel_features(melody: Melody) -> Dict:
     return _compute_features_by_source(melody, "custom")
 
 
-def _compute_features_by_source(melody: Melody, source: str) -> Dict:
+def _compute_features_by_source(
+    melody: Melody, 
+    source: str, 
+    corpus_stats: Optional[dict] = None,
+    phrase_gap: float = 1.5,
+    max_ngram_order: int = 6
+) -> Dict:
     """Compute all features for a melody that are decorated with a specific source.
     
     Parameters
@@ -10844,6 +10867,12 @@ def _compute_features_by_source(melody: Melody, source: str) -> Dict:
         The melody to extract features from
     source : str
         The source label to filter by
+    corpus_stats : Optional[dict], optional
+        Corpus statistics for FANTASTIC features (default: None)
+    phrase_gap : float, optional
+        Gap threshold for phrase segmentation (default: 1.5)
+    max_ngram_order : int, optional
+        Maximum n-gram order for FANTASTIC features (default: 6)
         
     Returns
     -------
@@ -10874,10 +10903,12 @@ def _compute_features_by_source(melody: Melody, source: str) -> Dict:
                     args.append(melody.tempo)
                 elif param == "ppqn":
                     args.append(480)
+                elif param == "corpus_stats":
+                    args.append(corpus_stats)
                 elif param == "phrase_gap":
-                    args.append(1.5)
+                    args.append(phrase_gap)
                 elif param == "max_ngram_order":
-                    args.append(6)
+                    args.append(max_ngram_order)
                 else:
                     if param in sig.parameters and sig.parameters[param].default != inspect.Parameter.empty:
                         args.append(sig.parameters[param].default)
