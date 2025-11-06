@@ -137,19 +137,18 @@ def _get_feature_category_mapping():
         FeatureType.METRE: 'metre_features',
         FeatureType.EXPECTATION: 'expectation_features',
         FeatureType.COMPLEXITY: 'complexity_features',
-        # back compatible mappings for corpus and mtype
-        'mtype': 'mtype_features',
+        # back compatible mappings for corpus
         'corpus': 'corpus_features',
     }
 
 # Some features are actually allowed to be NaN
 NAN_ALLOWED_FEATURES = {
-    'mtype_features.yules_k',  
-    'mtype_features.simpsons_d',  
-    'mtype_features.sichels_s',  
-    'mtype_features.honores_h',  
-    'mtype_features.mean_entropy',  
-    'mtype_features.mean_productivity',  
+    'complexity_features.yules_k',  
+    'complexity_features.simpsons_d',  
+    'complexity_features.sichels_s',  
+    'complexity_features.honores_h',  
+    'complexity_features.mean_entropy',  
+    'complexity_features.mean_productivity',  
     'pitch_features.pitch_class_kurtosis_after_folding',  
     'pitch_features.pitch_class_skewness_after_folding',  
     'pitch_features.pitch_class_variability_after_folding',  

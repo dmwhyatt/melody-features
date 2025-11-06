@@ -8214,13 +8214,17 @@ def complebm(melody: Melody, method: str = 'o') -> float:
         return float(optimal_complexity)
 
 
-def get_complexity_features(melody: Melody) -> Dict:
+def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_order: int = 6) -> Dict:
     """Dynamically collect all complexity features for a melody.
     
     Parameters
     ----------
     melody : Melody
         The melody to analyze
+    phrase_gap : float, optional
+        Phrase gap for mtype features (default: 1.5)
+    max_ngram_order : int, optional
+        Maximum n-gram order for mtype features (default: 6)
         
     Returns
     -------
@@ -8274,8 +8278,10 @@ def get_complexity_features(melody: Melody) -> Dict:
             print(f"Warning: Could not compute {name}: {e}")
             features[name] = None
     
-    # Add Narmour features (they have their own collection function)
     features.update(get_narmour_features(melody))
+    
+    mtype_features = get_mtype_features(melody, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order)
+    features.update(mtype_features)
     
     return features
 
@@ -10105,13 +10111,7 @@ def process_melody(args):
     timings["expectation"] = time.time() - start
 
     start = time.time()
-    mtype_features = get_mtype_features(
-        mel, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
-    )
-    timings["mtype"] = time.time() - start
-
-    start = time.time()
-    complexity_features = get_complexity_features(mel)
+    complexity_features = get_complexity_features(mel, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order)
     timings["complexity"] = time.time() - start
 
     melody_features = {
@@ -10122,7 +10122,6 @@ def process_melody(args):
         "tonality_features": tonality_features,
         "metre_features": metre_features,
         "expectation_features": expectation_features,
-        "mtype_features": mtype_features,
         "complexity_features": complexity_features,
     }
 
@@ -10811,12 +10810,11 @@ def _setup_parallel_processing(
         "tonality_features": get_tonality_features(mel, key_estimation=config.key_estimation),
         "metre_features": get_metre_features(mel),
         "expectation_features": get_expectation_features(mel),
-        "mtype_features": get_mtype_features(
+        "complexity_features": get_complexity_features(
             mel,
             phrase_gap=config.fantastic.phrase_gap,
             max_ngram_order=config.fantastic.max_ngram_order,
         ),
-        "complexity_features": get_complexity_features(mel),
     }
 
     if corpus_stats:
@@ -10871,7 +10869,6 @@ def _setup_parallel_processing(
         "tonality": [],
         "metre": [],
         "expectation": [],
-        "mtype": [],
         "complexity": [],
         "corpus": [],
         "total": [],

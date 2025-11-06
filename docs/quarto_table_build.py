@@ -40,6 +40,7 @@ from melody_features.interpolation_contour import InterpolationContour
 from melody_features.polynomial_contour import PolynomialContour
 from melody_features.huron_contour import HuronContour
 from melody_features.ngram_counter import NGramCounter
+from melody_features.feature_decorators import idyom, expectation, pitch, rhythm
 
 
 @dataclass
@@ -51,6 +52,7 @@ class FeatureRow:
     type_label: str
     notes: str
     category: str
+    domain: str
     sort_name: str
 
 
@@ -245,9 +247,17 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
     for name, obj in objs:
         if name.startswith("get_"):
             continue
+        
+        # Skip InverseEntropyWeighting class
+        if name == "InverseEntropyWeighting":
+            continue
             
-        feature_types = getattr(obj, "_feature_types", None)
         is_property = isinstance(obj, property)
+        
+        if is_property and hasattr(obj, 'fget') and obj.fget is not None:
+            feature_types = getattr(obj.fget, "_feature_types", None)
+        else:
+            feature_types = getattr(obj, "_feature_types", None)
         if not feature_types and not is_property:
             continue
 
@@ -323,7 +333,14 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
 
         category = _get_feature_category(obj)
         
-        
+        # Determine domain from decorator if present
+        if is_property and hasattr(obj, 'fget') and obj.fget is not None:
+            domain_attr = getattr(obj.fget, "_feature_domain", None)
+        else:
+            domain_attr = getattr(obj, "_feature_domain", None)
+
+        domain_for_filter = domain_attr if domain_attr else ""
+
         rows.append(
             FeatureRow(
                 name=display_name,
@@ -333,6 +350,7 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
                 type_label=type_label,
                 notes=notes,
                 category=category,
+                domain=domain_for_filter,
                 sort_name=pretty_name,
             )
         )
@@ -348,19 +366,24 @@ def to_dataframe(rows: list[FeatureRow]) -> pd.DataFrame:
 
 def _get_feature_category(obj) -> str:
     """Determine the feature category based on the actual feature type decorator."""
-    feature_types = getattr(obj, "_feature_types", None)
+    is_property = isinstance(obj, property)
+    if is_property and hasattr(obj, 'fget') and obj.fget is not None:
+        feature_types = getattr(obj.fget, "_feature_types", None)
+    else:
+        feature_types = getattr(obj, "_feature_types", None)
     if feature_types and len(feature_types) > 0:
         feature_type = feature_types[0]
         type_mapping = {
             'pitch': 'Pitch',
             'interval': 'Interval', 
             'contour': 'Contour',
-            'duration': 'Duration',
+            'rhythm': 'Rhythm',
             'complexity': 'Complexity',
             'tonality': 'Tonality',
+            'metre': 'Metre',
+            'expectation': 'Expectation',
+            'corpus_prevalence': 'Corpus',
             'mtype': 'Patterns',
-            'corpus': 'Corpus',
-            'melodic_movement': 'Melodic Movement'
         }
         return type_mapping.get(feature_type, feature_type.title())
     
@@ -403,6 +426,28 @@ def build_table() -> pd.DataFrame:
         for prop_name, prop_obj in inspect.getmembers(cls):
             if isinstance(prop_obj, property) and prop_name not in excluded_properties:
                 all_features.append((f"{class_name}.{prop_name}", prop_obj))
+    
+    # Add placeholder function for IDyOM features that are dynamically generated
+    @idyom
+    @expectation
+    @pitch
+    @rhythm
+    def mean_information_content(_melody):
+        """The average information content across all notes in a melody,
+        calculated using IDyOM's prediction-by-partial-matching (PPM) algorithm. 
+        Information content is perceptually related to surprise, and can be calculated
+        for pitches or rhythms.
+        
+        Citation
+        --------
+        Pearce, M. (2005).
+        """
+        # Placeholder function for table generation
+    
+    # Manually set domain to indicate it appears in both Pitch and Rhythm filters
+    mean_information_content._feature_domain = "pitch,rhythm"  # noqa: SLF001
+    
+    all_features.append(("mean_information_content", mean_information_content))
     
     rows = collect_feature_rows(all_features)
     return to_dataframe(rows)
@@ -478,9 +523,10 @@ def main():
             f.write("# Create a simple interactive table with search and sort\n")
             f.write("# Add category data to each row for filtering\n")
             f.write("df_renamed['data-category'] = df_renamed.index.map(lambda i: df.iloc[i]['category'])\n")
+            f.write("df_renamed['data-domain'] = df_renamed.index.map(lambda i: df.iloc[i].get('domain', ''))\n")
             f.write("\n")
             f.write("# Create a single table with category data for filtering (exclude category columns from display)\n")
-            f.write("df_display = df_renamed.drop(columns=['category', 'data-category', 'sort_name'], errors='ignore')\n")
+            f.write("df_display = df_renamed.drop(columns=['category', 'domain', 'data-category', 'data-domain', 'sort_name'], errors='ignore')\n")
             f.write("table_html = df_display.to_html(classes='table table-striped table-hover', table_id='features-table', escape=False, index=False)\n")
             f.write("\n")
             f.write("# Add data-category attributes to table rows using a more robust approach\n")
@@ -498,7 +544,8 @@ def main():
             f.write("                category = df_with_categories.iloc[data_row_index]['category']\n")
             f.write("                impls = df_with_categories.iloc[data_row_index].get('Pre-existing Implementations', '') or ''\n")
             f.write("                ftype = df_with_categories.iloc[data_row_index].get('Type', '') or ''\n")
-            f.write("                line = line.replace('<tr>', f'<tr data-category=\"{category}\" data-impl=\"{impls}\" data-type=\"{ftype}\">')\n")
+            f.write("                domain = df_with_categories.iloc[data_row_index].get('domain', '') or ''\n")
+            f.write("                line = line.replace('<tr>', f'<tr data-category=\"{category}\" data-impl=\"{impls}\" data-type=\"{ftype}\" data-domain=\"{domain}\">')\n")
             f.write("                data_row_index += 1\n")
             f.write("        result_lines.append(line)\n")
             f.write("    \n")
@@ -508,6 +555,9 @@ def main():
             f.write("# Generate dropdown options for filters\n")
             f.write("categories = sorted(df['category'].unique())\n")
             f.write("category_options = '\\n'.join([f'        <option value=\"{cat}\">{cat}</option>' for cat in categories])\n\n")
+            f.write("# Domains (from decorators)\n")
+            f.write("domains = ['Pitch', 'Rhythm', 'Both']\n")
+            f.write("domain_options = '\\n'.join([f'        <option value=\"{opt}\">{opt}</option>' for opt in domains])\n\n")
             f.write("# Implementations: split comma-separated values and deduplicate\n")
             f.write("impl_tokens = set()\n")
             f.write("for v in df['implementations'].fillna(''):\n")
@@ -621,6 +671,10 @@ def main():
             f.write("</style>\n")
             f.write("<div class='filter-container'>\n")
             f.write("    <input type='text' class='search-input' id='searchInput' placeholder='Search features...'>\n")
+            f.write("    <select class='category-filter' id='domainFilter'>\n")
+            f.write("        <option value=''>All Domains</option>\n")
+            f.write("        {domain_options}\n")
+            f.write("    </select>\n")
             f.write("    <select class='category-filter' id='categoryFilter'>\n")
             f.write("        <option value=''>All Categories</option>\n")
             f.write("        {category_options}\n")
@@ -640,7 +694,8 @@ def main():
             f.write("formatted_html = (interactive_html\n")
             f.write("                    .replace('{category_options}', category_options)\n")
             f.write("                    .replace('{implementation_options}', implementation_options)\n")
-            f.write("                    .replace('{type_options}', type_options))\n")
+            f.write("                    .replace('{type_options}', type_options)\n")
+            f.write("                    .replace('{domain_options}', domain_options))\n")
             f.write("display(HTML(formatted_html + table_html + '</div>'))\n\n")
             f.write("# Add JavaScript for search and sort functionality\n")
             f.write("display(HTML('''\n")
@@ -651,6 +706,7 @@ def main():
             f.write("    const categoryFilter = document.getElementById('categoryFilter');\n")
             f.write("    const implementationFilter = document.getElementById('implementationFilter');\n")
             f.write("    const typeFilter = document.getElementById('typeFilter');\n")
+            f.write("    const domainFilter = document.getElementById('domainFilter');\n")
             f.write("    const tbody = table.querySelector('tbody');\n")
             f.write("    const rows = Array.from(tbody.querySelectorAll('tr'));\n")
             f.write("    \n")
@@ -667,19 +723,34 @@ def main():
             f.write("        const selectedCategory = categoryFilter.value;\n")
             f.write("        const selectedImplementation = implementationFilter.value;\n")
             f.write("        const selectedType = typeFilter.value;\n")
+            f.write("        const selectedDomain = domainFilter.value;\n")
             f.write("        \n")
             f.write("        rows.forEach(row => {\n")
             f.write("            const text = row.textContent.toLowerCase();\n")
             f.write("            const category = row.getAttribute('data-category') || '';\n")
             f.write("            const impl = row.getAttribute('data-impl') || '';\n")
             f.write("            const ftype = row.getAttribute('data-type') || '';\n")
+            f.write("            const domain = row.getAttribute('data-domain') || '';\n")
             f.write("            \n")
             f.write("            const matchesSearch = text.includes(searchTerm);\n")
             f.write("            const matchesCategory = !selectedCategory || category === selectedCategory;\n")
             f.write("            const matchesImplementation = !selectedImplementation || impl.split(',').map(s => s.trim()).includes(selectedImplementation);\n")
             f.write("            const matchesType = !selectedType || ftype === selectedType;\n")
+            f.write("            // Domain filtering: handle special case of 'pitch,rhythm' appearing in both filters\n")
+            f.write("            let matchesDomain = true;\n")
+            f.write("            if (selectedDomain) {\n")
+            f.write("                if (selectedDomain === 'Pitch') {\n")
+            f.write("                    matchesDomain = domain === 'pitch' || domain === 'both' || domain === 'pitch,rhythm';\n")
+            f.write("                } else if (selectedDomain === 'Rhythm') {\n")
+            f.write("                    matchesDomain = domain === 'rhythm' || domain === 'both' || domain === 'pitch,rhythm';\n")
+            f.write("                } else if (selectedDomain === 'Both') {\n")
+            f.write("                    matchesDomain = domain === 'both';\n")
+            f.write("                } else {\n")
+            f.write("                    matchesDomain = domain === selectedDomain.toLowerCase();\n")
+            f.write("                }\n")
+            f.write("            }\n")
             f.write("            \n")
-            f.write("            row.style.display = (matchesSearch && matchesCategory && matchesImplementation && matchesType) ? '' : 'none';\n")
+            f.write("            row.style.display = (matchesSearch && matchesCategory && matchesImplementation && matchesType && matchesDomain) ? '' : 'none';\n")
             f.write("        });\n")
             f.write("    }\n")
             f.write("    \n")
@@ -688,6 +759,7 @@ def main():
             f.write("    categoryFilter.addEventListener('change', filterRows);\n")
             f.write("    implementationFilter.addEventListener('change', filterRows);\n")
             f.write("    typeFilter.addEventListener('change', filterRows);\n")
+            f.write("    domainFilter.addEventListener('change', filterRows);\n")
             f.write("    \n")
             f.write("    // Sort functionality\n")
             f.write("    let sortColumn = -1;\n")

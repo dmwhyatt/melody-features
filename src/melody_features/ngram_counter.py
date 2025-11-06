@@ -2,6 +2,8 @@ import math
 from collections import Counter
 from typing import Dict, Optional
 
+from .feature_decorators import FeatureType, FeatureDomain
+
 
 class NGramCounter:
     """A stateful n-gram counter that accumulates counts across multiple sequences."""
@@ -254,3 +256,23 @@ class NGramCounter:
 
             warnings.warn(f"Error calculating mean productivity: {str(e)}")
             return float("nan")
+
+# add decorator attributes here
+mtype_properties = [
+    NGramCounter.yules_k,
+    NGramCounter.simpsons_d,
+    NGramCounter.sichels_s,
+    NGramCounter.honores_h,
+    NGramCounter.mean_entropy,
+    NGramCounter.mean_productivity,
+]
+
+for prop in mtype_properties:
+    fget = prop.fget
+    if fget is not None:
+        if not hasattr(fget, '_feature_types'):
+            fget._feature_types = []
+        if FeatureType.COMPLEXITY not in fget._feature_types:
+            fget._feature_types.append(FeatureType.COMPLEXITY)
+
+        fget._feature_domain = FeatureDomain.BOTH
