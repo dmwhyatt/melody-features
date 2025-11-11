@@ -20,8 +20,8 @@ class FeatureSource:
 
 class FeatureType:
     """Class for categorizing features by type."""
-    BASIC = "basic"
     INTERVAL = "interval"
+    CLASS_BASED = "class_based"
     CONTOUR = "contour"
     TONALITY = "tonality"
     METRE = "metre"
@@ -211,8 +211,8 @@ def domain(domain_value: str) -> Callable:
 
 
 # Feature type decorators - can be combined with source decorators
-basic = feature_type(FeatureType.BASIC)
 interval = feature_type(FeatureType.INTERVAL)
+class_based = feature_type(FeatureType.CLASS_BASED)
 contour = feature_type(FeatureType.CONTOUR)
 tonality = feature_type(FeatureType.TONALITY)
 metre = feature_type(FeatureType.METRE)

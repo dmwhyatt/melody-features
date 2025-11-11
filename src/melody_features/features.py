@@ -10,8 +10,8 @@ from importlib import resources
 
 from .feature_decorators import (
     fantastic, idyom, midi_toolbox, melsim, jsymbolic, novel, simile, partitura,
-    FeatureType, feature_type,
-    basic, interval, contour, tonality, metre, descriptives, corpus_prevalence, expectation, complexity,
+    FeatureType, feature_type, interval, class_based, contour, tonality, metre, descriptives, 
+    corpus_prevalence, expectation, complexity,
     pitch, rhythm, both
 )
 
@@ -36,14 +36,13 @@ import glob
 import logging
 import time
 from random import choices
-from typing import Dict, List, Optional, Tuple, Union, Literal
+from typing import Dict, List, Optional, Tuple, Union, Literal, Any
 
 import mido
 import numpy as np
 import pandas as pd
 import scipy
 from functools import lru_cache
-import time
 from natsort import natsorted
 from tqdm import tqdm
 
@@ -53,12 +52,8 @@ from melody_features.algorithms import (
     circle_of_fifths,
     compute_tonality_vector,
     get_duration_ratios,
-    longest_conjunct_scalar_passage,
-    longest_monotonic_conjunct_scalar_passage,
     melodic_embellishment_proportion,
     n_percent_significant_values,
-    proportion_conjunct_scalar,
-    proportion_scalar,
     rank_values,
     repeated_notes_proportion,
     stepwise_motion_proportion,
@@ -239,9 +234,9 @@ def _validate_viewpoints(viewpoints: list[str], name: str) -> None:
     all_viewpoints = set()
     for viewpoint in viewpoints:
         if isinstance(viewpoint, (list, tuple)):
-            if len(viewpoint) != 2:
+            if len(viewpoint) < 2:
                 raise ValueError(
-                    f"Linked viewpoints must be pairs, got {len(viewpoint)} elements: {viewpoint}"
+                    f"Linked viewpoints must have at least 2 elements, got {len(viewpoint)} elements: {viewpoint}"
                 )
             all_viewpoints.update(viewpoint)
         else:
@@ -299,12 +294,13 @@ class IDyOMConfig:
     source_viewpoints : list[str]
         List of source viewpoints to use for IDyOM analysis.
     ppm_order : int
-        Order of the PPM model.
+        Order of the PPM model. Set to None for unbounded order.
     models : str
         Models to use for IDyOM analysis. Can be ":stm", ":ltm" or ":both".
     corpus : Optional[os.PathLike]
         Path to the corpus to use for IDyOM analysis. If not provided, the corpus will be the one specified in the Config class.
         This will override the corpus specified in the Config class if both are provided.
+        This should be set to None if using :stm model, as the short term model does not use pretraining. 
     """
 
     target_viewpoints: list[str]
@@ -318,13 +314,6 @@ class IDyOMConfig:
         _validate_viewpoints(self.target_viewpoints, "target_viewpoints")
         _validate_viewpoints(self.source_viewpoints, "source_viewpoints")
 
-        if not isinstance(self.ppm_order, int):
-            raise ValueError(
-                f"ppm_order must be an integer, got {type(self.ppm_order)}"
-            )
-        if self.ppm_order < 0:
-            raise ValueError(f"ppm_order must be non-negative, got {self.ppm_order}")
-
         valid_models = {":stm", ":ltm", ":both"}
         if not isinstance(self.models, str):
             raise ValueError(f"models must be a string, got {type(self.models)}")
@@ -332,6 +321,11 @@ class IDyOMConfig:
             raise ValueError(f"models must be one of {valid_models}, got {self.models}")
 
         if self.corpus is not None:
+            if self.models == ":stm":
+                raise ValueError(
+                    "IDyOM short-term models (:stm) do not use a corpus. "
+                    "Set corpus=None for :stm configurations."
+                )
             if not isinstance(self.corpus, (str, os.PathLike)):
                 raise ValueError(
                     f"corpus must be a string or PathLike, got {type(self.corpus)}"
@@ -457,7 +451,7 @@ class Config:
 
 @fantastic
 @jsymbolic
-@basic
+@descriptives
 @pitch
 def pitch_range(pitches: list[int]) -> int:
     """Subtract the lowest pitch number in the melody from the highest.
@@ -477,7 +471,7 @@ def pitch_range(pitches: list[int]) -> int:
 
 @fantastic
 @jsymbolic
-@basic
+@descriptives
 @pitch
 def pitch_standard_deviation(pitches: list[int]) -> float:
     """Standard deviation of all pitch numbers in the melody.
@@ -500,7 +494,8 @@ def pitch_standard_deviation(pitches: list[int]) -> float:
 pitch_variability = pitch_standard_deviation
 
 @jsymbolic
-@basic
+@class_based
+@descriptives
 @pitch
 def pitch_class_variability(pitches: list[int]) -> float:
     """Standard deviation of all pitch classes in the melody.
@@ -521,7 +516,8 @@ def pitch_class_variability(pitches: list[int]) -> float:
     return float(np.std(pcs, ddof=1))
 
 @jsymbolic
-@basic
+@descriptives
+@class_based
 @pitch
 def pitch_class_variability_after_folding(pitches: list[int]) -> float:
     """Standard deviation of all pitch classes after arranging the pitch classes by perfect fifths.
@@ -548,7 +544,7 @@ def pitch_class_variability_after_folding(pitches: list[int]) -> float:
 
 
 @fantastic
-@basic
+@descriptives
 @pitch
 def pitch_entropy(pitches: list[int]) -> float:
     """The zeroth-order base-2 entropy of the pitch distribution.
@@ -566,7 +562,8 @@ def pitch_entropy(pitches: list[int]) -> float:
     return float(shannon_entropy(pitches))
 
 @midi_toolbox
-@basic
+@descriptives
+@class_based
 @pitch
 def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
     """The distribution of pitch classes in the melody, weighted by the duration of the notes.
@@ -603,7 +600,7 @@ def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
     return distribution_proportions(weighted_pitch_classes)
 
 @jsymbolic
-@basic
+@descriptives
 @pitch
 def first_pitch(pitches: list[int]) -> int:
     """The first pitch number in the melody.
@@ -623,7 +620,8 @@ def first_pitch(pitches: list[int]) -> int:
     return int(pitches[0])
 
 @jsymbolic
-@basic
+@descriptives
+@class_based
 @pitch
 def first_pitch_class(pitches: list[int]) -> int:
     """The first pitch class in the melody.
@@ -643,7 +641,7 @@ def first_pitch_class(pitches: list[int]) -> int:
     return int(pitches[0] % 12)
 
 @jsymbolic
-@basic
+@descriptives
 @pitch
 def last_pitch(pitches: list[int]) -> int:
     """The last pitch number in the melody.
@@ -663,7 +661,8 @@ def last_pitch(pitches: list[int]) -> int:
     return int(pitches[-1])
 
 @jsymbolic
-@basic
+@descriptives
+@class_based
 @pitch
 def last_pitch_class(pitches: list[int]) -> int:
     """The last pitch class in the melody.
@@ -682,7 +681,7 @@ def last_pitch_class(pitches: list[int]) -> int:
     return int(pitches[-1] % 12)
 
 @jsymbolic
-@basic
+@descriptives
 @pitch
 def basic_pitch_histogram(pitches: list[int]) -> dict:
     """A histogram of pitch values within the range of input pitches.
@@ -713,7 +712,7 @@ def basic_pitch_histogram(pitches: list[int]) -> dict:
     return histogram_bins(pitches, num_midi_notes)
 
 @jsymbolic
-@basic
+@descriptives
 @pitch
 def melodic_pitch_variety(pitches: list[int], starts: list[float], tempo: float = 120.0, ppqn: int = 480) -> float:
     """The average number of notes that pass before a pitch is repeated.
@@ -828,7 +827,8 @@ def _consecutive_fifths(pitch_classes: list[int]) -> list[int]:
     return longest_sequence
 
 @jsymbolic
-@basic
+@descriptives
+@class_based
 @pitch
 def dominant_spread(pitches: list[int]) -> int:
     """The longest sequence of pitch classes separated by perfect 5ths that each appear >9% of the time.
@@ -893,6 +893,7 @@ def mean_pitch(pitches: list[int]) -> int:
 
 @jsymbolic
 @descriptives
+@class_based
 @pitch
 def mean_pitch_class(pitches: list[int]) -> float:
     """The arithmetic mean of the pitch classes in the melody.
@@ -929,6 +930,7 @@ def most_common_pitch(pitches: list[int]) -> int:
 
 @jsymbolic
 @descriptives
+@class_based
 @pitch
 def most_common_pitch_class(pitches: list[int]) -> int:
     """The most frequently occurring pitch class in the melody.
@@ -949,6 +951,7 @@ def most_common_pitch_class(pitches: list[int]) -> int:
 
 @jsymbolic
 @descriptives
+@class_based
 @pitch
 def number_of_unique_pitch_classes(pitches: list[int]) -> int:
     """The number of unique pitch classes in the melody.
@@ -967,6 +970,7 @@ def number_of_unique_pitch_classes(pitches: list[int]) -> int:
 
 @jsymbolic
 @descriptives
+@class_based
 @pitch
 def number_of_common_pitches_classes(pitches: list[int]) -> int:
     """The number of pitch classes that appear in at least 20% of total notes.
@@ -1024,7 +1028,7 @@ def number_of_common_pitches(pitches: list[int]) -> int:
     return int(len(set(significant_pitches)))
 
 @midi_toolbox
-@basic
+@descriptives
 @pitch
 def tessitura(pitches: list[int]) -> list[float]:
     """Tessitura is based on standard deviation from median pitch height. The median range 
@@ -1134,6 +1138,7 @@ def prevalence_of_most_common_pitch(pitches: list[int]) -> float:
 
 @jsymbolic
 @descriptives
+@class_based
 @pitch
 def prevalence_of_most_common_pitch_class(pitches: list[int]) -> float:
     """The proportion of pitch classes that are the most common pitch class with regards to the
@@ -1188,6 +1193,7 @@ def relative_prevalence_of_top_pitches(pitches: list[int]) -> float:
 
 @jsymbolic
 @descriptives
+@class_based
 @pitch
 def relative_prevalence_of_top_pitch_classes(pitches: list[int]) -> float:
     """The ratio of the frequency of the second most common pitch class to the frequency of the most common pitch class.
@@ -1257,6 +1263,7 @@ def interval_between_most_prevalent_pitches(pitches: list[int]) -> int:
 
 @jsymbolic
 @descriptives
+@class_based
 @pitch
 def interval_between_most_prevalent_pitch_classes(pitches: list[int]) -> int:
     """The number of semitones between the two most prevalent pitch classes.
@@ -1290,7 +1297,8 @@ def interval_between_most_prevalent_pitch_classes(pitches: list[int]) -> int:
     return int(diff)
 
 @jsymbolic
-@basic
+@descriptives
+@class_based
 @pitch
 def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
     """A histogram of pitch classes arranged according to the circle of fifths.
@@ -1317,6 +1325,7 @@ def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
 
 @jsymbolic
 @descriptives
+@class_based
 @pitch
 def pitch_class_skewness(pitches: list[int]) -> float:
     """The skewness of the pitch class histogram, using Pearson's median skewness formula.
@@ -1339,6 +1348,7 @@ def pitch_class_skewness(pitches: list[int]) -> float:
 
 @jsymbolic
 @descriptives
+@class_based
 @pitch
 def pitch_class_kurtosis(pitches: list[int]) -> float:
     """The sample excess kurtosis of the pitch class histogram.
@@ -1361,6 +1371,7 @@ def pitch_class_kurtosis(pitches: list[int]) -> float:
 
 @jsymbolic
 @descriptives
+@class_based
 @pitch
 def pitch_class_skewness_after_folding(pitches: list[int]) -> float:
     """The skewness of the pitch class histogram, using Pearson's median skewness formula, 
@@ -1384,6 +1395,7 @@ def pitch_class_skewness_after_folding(pitches: list[int]) -> float:
 
 @jsymbolic
 @descriptives
+@class_based
 @pitch
 def pitch_class_kurtosis_after_folding(pitches: list[int]) -> float:
     """The sample excess kurtosis of the pitch class histogram, after arranging 
@@ -1407,6 +1419,7 @@ def pitch_class_kurtosis_after_folding(pitches: list[int]) -> float:
 
 @jsymbolic
 @descriptives
+@class_based
 @pitch
 def strong_tonal_centres(pitches: list[int]) -> float:
     """The number of isolated peaks in the pitch class histogram that each account for at least 9% of notes.
@@ -1490,7 +1503,7 @@ def pitch_kurtosis(pitches: list[int]) -> float:
     return histogram.kurtosis
 
 @jsymbolic
-@basic
+@descriptives
 @pitch
 def importance_of_bass_register(pitches: list[int]) -> float:
     """The proportion of pitch numbers in the melody that are between 0 and 54. 
@@ -1508,7 +1521,7 @@ def importance_of_bass_register(pitches: list[int]) -> float:
     return float(sum(1 for pitch in pitches if 0 <= pitch <= 54) / len(pitches))
 
 @jsymbolic
-@basic
+@descriptives
 @pitch
 def importance_of_middle_register(pitches: list[int]) -> float:
     """The proportion of pitch numbers in the melody that are between 55 and 72. 
@@ -1526,7 +1539,7 @@ def importance_of_middle_register(pitches: list[int]) -> float:
     return float(sum(1 for pitch in pitches if 55 <= pitch <= 72) / len(pitches))
 
 @jsymbolic
-@basic
+@descriptives
 @pitch
 def importance_of_high_register(pitches: list[int]) -> float:
     """The proportion of pitch numbers in the melody that are between 73 and 127. 
@@ -1545,7 +1558,7 @@ def importance_of_high_register(pitches: list[int]) -> float:
 
 
 @partitura
-@basic
+@descriptives
 @pitch
 def pitch_spelling(melody: Melody) -> list[str]:
     """Pitch spelling using the ps13s1 algorithm.
@@ -2427,7 +2440,7 @@ def _get_features_by_type(feature_type: str) -> dict:
     Parameters
     ----------
     feature_type : str
-        The type of features to collect (e.g., 'basic', 'contour', 'tonality', etc.)
+        The type of features to collect (e.g., 'descriptives', 'contour', 'tonality', etc.)
         
     Returns
     -------
@@ -2441,8 +2454,8 @@ def _get_features_by_type(feature_type: str) -> dict:
     
     features = {}
     for name, obj in inspect.getmembers(current_module):
-        if (inspect.isfunction(obj) and 
-            hasattr(obj, '_feature_types') and 
+        if (inspect.isfunction(obj) and
+            hasattr(obj, '_feature_types') and
             feature_type in obj._feature_types):
             features[name] = obj
     
@@ -2485,7 +2498,7 @@ def _get_features_by_domain_and_types(domain: str, allowed_types: list[str]) -> 
     domain : str
         The domain of features to collect ('pitch', 'rhythm', or 'both')
     allowed_types : list[str]
-        List of allowed feature types (e.g., ['basic', 'descriptives'])
+        List of allowed feature types (e.g., ['descriptives', 'interval'])
         
     Returns
     -------
@@ -2513,7 +2526,7 @@ def _get_features_by_domain_and_types(domain: str, allowed_types: list[str]) -> 
 def get_pitch_features(melody: Melody) -> Dict:
     """Dynamically collect all pitch features for a melody.
     
-    Collects features decorated with @pitch domain and @basic or @descriptives type.
+    Collects features decorated with @pitch domain and @descriptives type.
     
     Parameters
     ----------
@@ -2526,7 +2539,7 @@ def get_pitch_features(melody: Melody) -> Dict:
         Dictionary of pitch feature values
     """
     features = {}
-    pitch_functions = _get_features_by_domain_and_types("pitch", ["basic", "descriptives"])
+    pitch_functions = _get_features_by_domain_and_types("pitch", ["descriptives"])
     
     for name, func in pitch_functions.items():
         try:
@@ -2701,7 +2714,7 @@ def get_huron_contour_features(melody: Melody) -> str:
 @fantastic
 @jsymbolic
 @rhythm
-@basic
+@descriptives
 def initial_tempo(melody: Melody) -> float:
     """The first tempo of the melody.
 
@@ -2762,7 +2775,7 @@ def mean_tempo(melody: Melody) -> float:
 
 @jsymbolic
 @rhythm
-@basic
+@descriptives
 def tempo_variability(melody: Melody) -> float:
     """The variability of tempo of the melody.
 
@@ -2782,7 +2795,7 @@ def tempo_variability(melody: Melody) -> float:
 
 @fantastic
 @rhythm
-@basic
+@descriptives
 def duration_range(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
     """The range between the longest and shortest note duration in quarter notes.
 
@@ -2854,7 +2867,7 @@ def average_note_duration(starts: list[float], ends: list[float]) -> float:
 
 @novel
 @rhythm
-@basic
+@descriptives
 def duration_standard_deviation(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
     """The standard deviation of note durations in quarter notes.
 
@@ -2877,7 +2890,7 @@ def duration_standard_deviation(starts: list[float], ends: list[float], tempo: f
 
 @jsymbolic
 @rhythm
-@basic
+@descriptives
 def variability_of_note_durations(starts: list[float], ends: list[float]) -> float:
     """The standard deviation of note durations in seconds.
 
@@ -2927,7 +2940,7 @@ def modal_duration(starts: list[float], ends: list[float], tempo: float = 120.0)
 
 @fantastic
 @rhythm
-@basic
+@descriptives
 def duration_entropy(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
     """The zeroth-order base-2 entropy of the duration distribution in quarter notes.
 
@@ -2950,7 +2963,7 @@ def duration_entropy(starts: list[float], ends: list[float], tempo: float = 120.
 
 @fantastic
 @rhythm
-@basic
+@descriptives
 def length(starts: list[float]) -> float:
     """The total number of notes.
 
@@ -2992,7 +3005,7 @@ def number_of_unique_durations(starts: list[float], ends: list[float], tempo: fl
 @fantastic
 @jsymbolic
 @rhythm
-@basic
+@descriptives
 def global_duration(melody: Melody) -> float:
     """The total duration in seconds of the melody.
 
@@ -3408,7 +3421,7 @@ def ioi_contour_standard_deviation(starts: list[float]) -> float:
 
 @jsymbolic
 @rhythm
-@basic
+@descriptives
 def duration_histogram(starts: list[float], ends: list[float], tempo: float = 120.0) -> dict:
     """A histogram of note durations in quarter notes.
 
@@ -3434,7 +3447,7 @@ def duration_histogram(starts: list[float], ends: list[float], tempo: float = 12
 
 @jsymbolic
 @rhythm
-@basic
+@descriptives
 def range_of_rhythmic_values(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
     """The range of rhythmic values located within the 12-bin PPQN-based histogram. Durations are 
     converted to quarter notes and mapped to 12 fixed rhythmic bins using midpoints. The
@@ -5742,7 +5755,7 @@ def number_of_relatively_strong_rhythmic_pulses_tempo_standardized(
 
 @novel
 @rhythm
-@basic
+@descriptives
 def ioi_histogram(starts: list[float]) -> dict:
     """A histogram of inter-onset intervals.
 
@@ -5896,7 +5909,7 @@ def dotted_duration_transitions(starts: list[float], ends: list[float], tempo: f
 
 @jsymbolic
 @rhythm
-@basic
+@descriptives
 def total_number_of_notes(starts: list[float]) -> int:
     """The total number of notes.
     
@@ -5914,7 +5927,7 @@ def total_number_of_notes(starts: list[float]) -> int:
 
 @jsymbolic
 @rhythm
-@basic
+@descriptives
 def amount_of_staccato(starts: list[float], ends: list[float]) -> float:
     """The proportion of notes with a duration shorter than 0.1 seconds.
 
@@ -6443,48 +6456,6 @@ def referent(melody: Melody) -> int:
         return key_distances[key_name]
     else:
         return -1
-
-@idyom
-@tonality
-@pitch
-def inscale(pitches: list[int]) -> list[int]:
-    """
-    For each pitch in the melody, returns 1 if the pitch is in the estimated key's scale,
-    or 0 if it deviates from the scale.
-
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-
-    Returns
-    -------
-    list[int]
-        List of 1s and 0s indicating whether each pitch is in the scale
-    """
-    pitch_classes = [pitch % 12 for pitch in pitches]
-    correlations = compute_tonality_vector(pitch_classes)[0]
-    key_centre = correlations[0]
-
-    # Get major/minor scales based on key
-    if "major" in key_centre:
-        # Major scale pattern: W-W-H-W-W-W-H (W=2 semitones, H=1 semitone)
-        scale = [0, 2, 4, 5, 7, 9, 11]
-    else:
-        # Natural minor scale pattern: W-H-W-W-H-W-W
-        scale = [0, 2, 3, 5, 7, 8, 10]
-
-    # Get key root pitch class
-    key_name = key_centre.split()[0]
-    key_distances = _get_key_distances()
-    root = key_distances[key_name]
-
-    # Transpose scale to key
-    scale = [(note + root) % 12 for note in scale]
-
-    # Check each pitch class against the scale
-    return [1 if pc in scale else 0 for pc in pitch_classes]
-
 
 @partitura
 @tonality
@@ -9269,7 +9240,7 @@ def _precompute_beat_histogram_data(melody: Melody) -> tuple:
 def get_rhythm_features(melody: Melody) -> Dict:
     """Dynamically collect all rhythm features for a melody.
     
-    Collects features decorated with @rhythm domain and @basic, @descriptives, or @interval type.
+    Collects features decorated with @rhythm domain and @descriptives or @interval type.
     
     Parameters
     ----------
@@ -9282,7 +9253,7 @@ def get_rhythm_features(melody: Melody) -> Dict:
         Dictionary of rhythm feature values
     """
     features = {}
-    rhythm_functions = _get_features_by_domain_and_types("rhythm", ["basic", "descriptives", "interval"])
+    rhythm_functions = _get_features_by_domain_and_types("rhythm", ["descriptives", "interval"])
     
     # Pre-compute beat histogram data once for all beat histogram functions
     beat_histogram_data = None
@@ -9688,7 +9659,8 @@ def syncopicity(melody: Melody) -> float:
 @pitch
 @tonality
 def inscale(melody: Melody) -> list[int]:
-    """Calculate which pitches are in the estimated key's scale.
+    """For each pitch in the melody, returns 1 if the pitch is in the estimated key's scale,
+    or 0 if it deviates from the scale.
     
     Parameters
     ----------
@@ -10465,13 +10437,34 @@ def _setup_default_config(config: Optional[Config]) -> Config:
         config = Config(
             corpus=resources.files("melody_features") / "corpora/Essen_Corpus",
             idyom={
-                "default_pitch": IDyOMConfig(
+                "pitch_stm": IDyOMConfig(
                     target_viewpoints=["cpitch"],
-                    source_viewpoints=[("cpint", "cpintfref")],
-                    ppm_order=1,
-                    models=":both",
+                    source_viewpoints=[("cpitch", "cpint", "cpintfref")],
+                    ppm_order=None,
+                    models=":stm",
                     corpus=None,
-                )
+                ),
+                "pitch_ltm": IDyOMConfig(
+                    target_viewpoints=["cpitch"],
+                    source_viewpoints=[("cpitch", "cpint", "cpintfref")],
+                    ppm_order=None,
+                    models=":ltm",
+                    corpus=None,
+                ),
+                "rhythm_stm": IDyOMConfig(
+                    target_viewpoints=["onset"],
+                    source_viewpoints=["ioi", "ioi-ratio"],
+                    ppm_order=None,
+                    models=":stm",
+                    corpus=None,
+                ),
+                "rhythm_ltm": IDyOMConfig(
+                    target_viewpoints=["onset"],
+                    source_viewpoints=["ioi", "ioi-ratio"],
+                    ppm_order=None,
+                    models=":ltm",
+                    corpus=None,
+                ),
             },
             fantastic=FantasticConfig(max_ngram_order=6, phrase_gap=1.5, corpus=None),
             key_estimation="infer_if_necessary",
@@ -10733,6 +10726,8 @@ def _run_idyom_analysis(
         idyom_corpus = (
             idyom_config.corpus if idyom_config.corpus is not None else config.corpus
         )
+        if idyom_config.models == ":stm" and idyom_config.corpus is None:
+            idyom_corpus = None
         logger.info(
             f"Running IDyOM analysis for '{idyom_name}' with corpus: {idyom_corpus}"
         )

@@ -265,13 +265,34 @@ class TestIDyOMParameterValidation:
 
             with patch('melody_features.idyom_interface.is_idyom_installed', return_value=True):
                 with patch('melody_features.idyom_interface.start_idyom', return_value=MagicMock()):
-                    # Test invalid linked viewpoint
-                    with pytest.raises(ValueError, match="Linked viewpoints must be pairs"):
-                        run_idyom(
+                    mock_py2lisp = MagicMock()
+                    mock_py2lisp.run.IDyOMExperiment.side_effect = Exception("Mocked to avoid execution")
+
+                    with patch('melody_features.idyom_interface.start_idyom', return_value=mock_py2lisp):
+                        # Linked viewpoint with fewer than 2 elements should raise
+                        with pytest.raises(ValueError, match="Linked viewpoints must have at least 2 elements"):
+                            run_idyom(
+                                input_path=temp_dir,
+                                target_viewpoints=[("cpitch",)],
+                                source_viewpoints=["cpint"]
+                            )
+
+                        # Linked viewpoint containing an invalid viewpoint should raise
+                        with pytest.raises(ValueError, match="Invalid viewpoint"):
+                            run_idyom(
+                                input_path=temp_dir,
+                                target_viewpoints=[("cpitch", "onset", "extra")],
+                                source_viewpoints=["cpint"]
+                            )
+
+                        # Linked viewpoints can include more than two elements if all are valid
+                        result = run_idyom(
                             input_path=temp_dir,
-                            target_viewpoints=[("cpitch", "onset", "extra")],
+                            target_viewpoints=[("cpitch", "onset", "cpint")],
                             source_viewpoints=["cpint"]
                         )
+
+                        assert result is None, "Valid linked viewpoints should pass validation"
 
     def test_viewpoint_validation_mixed_types(self):
         """Test validation with mix of single and linked viewpoints."""

@@ -40,7 +40,7 @@ from melody_features.interpolation_contour import InterpolationContour
 from melody_features.polynomial_contour import PolynomialContour
 from melody_features.huron_contour import HuronContour
 from melody_features.ngram_counter import NGramCounter
-from melody_features.feature_decorators import idyom, expectation, pitch, rhythm
+from melody_features.feature_decorators import corpus_prevalence, idyom, expectation, pitch, rhythm
 
 
 @dataclass
@@ -82,6 +82,8 @@ def normalize_feature_text(text: str) -> str:
     # First, handle IOI via existing helper
     text = capitalize_ioi(text)
     # Then other acronyms
+    text = re.sub(r"\bstm\b", "STM", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bltm\b", "LTM", text, flags=re.IGNORECASE)
     text = re.sub(r"\btfdf\b", "TFDF", text, flags=re.IGNORECASE)
     text = re.sub(r"\bdf\b", "DF", text, flags=re.IGNORECASE)
     text = re.sub(r"\bnpvi\b", "NPVI", text, flags=re.IGNORECASE)
@@ -339,6 +341,13 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         else:
             domain_attr = getattr(obj, "_feature_domain", None)
 
+        # Set domain to "pitch" for contour class properties if not already set
+        if is_property and "." in name:
+            class_name = name.split(".", 1)[0]
+            contour_classes = ["StepContour", "InterpolationContour", "PolynomialContour", "HuronContour"]
+            if class_name in contour_classes and not domain_attr:
+                domain_attr = "pitch"
+
         domain_for_filter = domain_attr if domain_attr else ""
 
         rows.append(
@@ -365,29 +374,44 @@ def to_dataframe(rows: list[FeatureRow]) -> pd.DataFrame:
     return df
 
 def _get_feature_category(obj) -> str:
-    """Determine the feature category based on the actual feature type decorator."""
+    """Determine the feature category based on the actual feature type decorator.
+    Returns a comma-separated string of categories for features that belong to multiple categories.
+    """
     is_property = isinstance(obj, property)
     if is_property and hasattr(obj, 'fget') and obj.fget is not None:
         feature_types = getattr(obj.fget, "_feature_types", None)
     else:
         feature_types = getattr(obj, "_feature_types", None)
-    if feature_types and len(feature_types) > 0:
-        feature_type = feature_types[0]
-        type_mapping = {
-            'pitch': 'Pitch',
-            'interval': 'Interval', 
-            'contour': 'Contour',
-            'rhythm': 'Rhythm',
-            'complexity': 'Complexity',
-            'tonality': 'Tonality',
-            'metre': 'Metre',
-            'expectation': 'Expectation',
-            'corpus_prevalence': 'Corpus',
-            'mtype': 'Patterns',
-        }
-        return type_mapping.get(feature_type, feature_type.title())
     
-    # handle class based features
+    type_mapping = {
+        'pitch': 'Pitch',
+        'interval': 'Interval', 
+        'contour': 'Contour',
+        'rhythm': 'Rhythm',
+        'complexity': 'Complexity',
+        'tonality': 'Tonality',
+        'metre': 'Metre',
+        'expectation': 'Expectation',
+        'corpus_prevalence': 'Corpus',
+        'mtype': 'MType',
+        'class_based': 'Class-based',
+        'descriptives': 'Descriptives',
+    }
+    
+    if feature_types and len(feature_types) > 0:
+        # Map all feature types to their categories
+        categories = []
+        for feature_type in feature_types:
+            mapped = type_mapping.get(feature_type)
+            if mapped and mapped not in categories:
+                categories.append(mapped)
+        
+        if categories:
+            return ', '.join(categories)
+        # Fallback: if no mapping found, use title case of first type
+        return feature_types[0].title()
+    
+    # handle class based features (fallback for features without decorators)
     if hasattr(obj, '__name__'):
         name = obj.__name__
         if name in ['honores_h', 'yules_k', 'simpsons_d', 'sichels_s', 'mean_entropy', 'mean_productivity']:
@@ -397,7 +421,6 @@ def _get_feature_category(obj) -> str:
     
     # get properties
     if isinstance(obj, property):
-
         if hasattr(obj, 'fget') and obj.fget:
             if hasattr(obj.fget, '__qualname__'):
                 qualname = obj.fget.__qualname__
@@ -427,12 +450,11 @@ def build_table() -> pd.DataFrame:
             if isinstance(prop_obj, property) and prop_name not in excluded_properties:
                 all_features.append((f"{class_name}.{prop_name}", prop_obj))
     
-    # Add placeholder function for IDyOM features that are dynamically generated
+    # Add placeholder functions for IDyOM features that are dynamically generated
     @idyom
     @expectation
     @pitch
-    @rhythm
-    def mean_information_content(_melody):
+    def pitch_mean_information_content_stm(_melody):
         """The average information content across all notes in a melody,
         calculated using IDyOM's prediction-by-partial-matching (PPM) algorithm. 
         Information content is perceptually related to surprise, and can be calculated
@@ -440,14 +462,62 @@ def build_table() -> pd.DataFrame:
         
         Citation
         --------
-        Pearce, M. (2005).
+        Pearce, M. (2005)
+        """
+        # Placeholder function for table generation
+
+    @idyom
+    @expectation
+    @corpus_prevalence
+    @pitch
+    def pitch_mean_information_content_ltm(_melody):
+        """The average information content across all notes in a melody,
+        calculated using IDyOM's long-term model (LTM). Information content is
+        perceptually related to surprise, and can be calculated for pitches or rhythms.
+        
+        Citation
+        --------
+        Pearce, M. (2005)
+        """
+        # Placeholder function for table generation
+
+    @idyom
+    @expectation
+    @rhythm
+    def rhythm_mean_information_content_stm(_melody):
+        """The average rhythmic information content across all notes in a melody,
+        calculated using IDyOM's short-term model (STM). Information content is
+        perceptually related to surprise, and can be calculated for pitches or rhythms.
+        
+        Citation
+        --------
+        Pearce, M. (2005)
+        """
+        # Placeholder function for table generation
+
+    @idyom
+    @expectation
+    @corpus_prevalence
+    @rhythm
+    def rhythm_mean_information_content_ltm(_melody):
+        """The average rhythmic information content across all notes in a melody,
+        calculated using IDyOM's long-term model (LTM). Information content is
+        perceptually related to surprise, and can be calculated for pitches or rhythms.
+        
+        Citation
+        --------
+        Pearce, M. (2005)
         """
         # Placeholder function for table generation
     
-    # Manually set domain to indicate it appears in both Pitch and Rhythm filters
-    mean_information_content._feature_domain = "pitch,rhythm"  # noqa: SLF001
-    
-    all_features.append(("mean_information_content", mean_information_content))
+    all_features.extend(
+        [
+            ("pitch_mean_information_content_stm", pitch_mean_information_content_stm),
+            ("pitch_mean_information_content_ltm", pitch_mean_information_content_ltm),
+            ("rhythm_mean_information_content_stm", rhythm_mean_information_content_stm),
+            ("rhythm_mean_information_content_ltm", rhythm_mean_information_content_ltm),
+        ]
+    )
     
     rows = collect_feature_rows(all_features)
     return to_dataframe(rows)
@@ -553,7 +623,12 @@ def main():
             f.write("\n")
             f.write("table_html = add_data_category_attributes(table_html, df_renamed)\n\n")
             f.write("# Generate dropdown options for filters\n")
-            f.write("categories = sorted(df['category'].unique())\n")
+            f.write("# Extract all unique categories from comma-separated values\n")
+            f.write("all_categories = set()\n")
+            f.write("for cat_str in df['category'].fillna(''):\n")
+            f.write("    for cat in [c.strip() for c in str(cat_str).split(',') if c.strip()]:\n")
+            f.write("        all_categories.add(cat)\n")
+            f.write("categories = sorted(all_categories)\n")
             f.write("category_options = '\\n'.join([f'        <option value=\"{cat}\">{cat}</option>' for cat in categories])\n\n")
             f.write("# Domains (from decorators)\n")
             f.write("domains = ['Pitch', 'Rhythm', 'Both']\n")
@@ -606,6 +681,17 @@ def main():
             f.write("    font-size: 16px;\n")
             f.write("    background-color: white;\n")
             f.write("    min-width: 150px;\n")
+            f.write("}\n")
+            f.write(".feature-counter {\n")
+            f.write("    padding: 10px 15px;\n")
+            f.write("    font-size: 16px;\n")
+            f.write("    font-weight: 600;\n")
+            f.write("    color: #495057;\n")
+            f.write("    background-color: #f8f9fa;\n")
+            f.write("    border: 1px solid #dee2e6;\n")
+            f.write("    border-radius: 4px;\n")
+            f.write("    white-space: nowrap;\n")
+            f.write("    align-self: center;\n")
             f.write("}\n")
             f.write("/* Visual grouping within the table */\n")
             f.write(".table tr[data-category] {\n")
@@ -687,6 +773,7 @@ def main():
             f.write("        <option value=''>All Types</option>\n")
             f.write("        {type_options}\n")
             f.write("    </select>\n")
+            f.write("    <span class='feature-counter' id='featureCounter'>0 features</span>\n")
             f.write("</div>\n")
             f.write("<div class='table-container'>\n")
             f.write("'''\n\n")
@@ -707,6 +794,7 @@ def main():
             f.write("    const implementationFilter = document.getElementById('implementationFilter');\n")
             f.write("    const typeFilter = document.getElementById('typeFilter');\n")
             f.write("    const domainFilter = document.getElementById('domainFilter');\n")
+            f.write("    const featureCounter = document.getElementById('featureCounter');\n")
             f.write("    const tbody = table.querySelector('tbody');\n")
             f.write("    const rows = Array.from(tbody.querySelectorAll('tr'));\n")
             f.write("    \n")
@@ -733,16 +821,17 @@ def main():
             f.write("            const domain = row.getAttribute('data-domain') || '';\n")
             f.write("            \n")
             f.write("            const matchesSearch = text.includes(searchTerm);\n")
-            f.write("            const matchesCategory = !selectedCategory || category === selectedCategory;\n")
+            f.write("            const matchesCategory = !selectedCategory || category.split(',').map(s => s.trim()).includes(selectedCategory);\n")
             f.write("            const matchesImplementation = !selectedImplementation || impl.split(',').map(s => s.trim()).includes(selectedImplementation);\n")
             f.write("            const matchesType = !selectedType || ftype === selectedType;\n")
             f.write("            // Domain filtering: handle special case of 'pitch,rhythm' appearing in both filters\n")
+            f.write("            // 'both' domain features only appear when 'Both' is selected\n")
             f.write("            let matchesDomain = true;\n")
             f.write("            if (selectedDomain) {\n")
             f.write("                if (selectedDomain === 'Pitch') {\n")
-            f.write("                    matchesDomain = domain === 'pitch' || domain === 'both' || domain === 'pitch,rhythm';\n")
+            f.write("                    matchesDomain = domain === 'pitch' || domain === 'pitch,rhythm';\n")
             f.write("                } else if (selectedDomain === 'Rhythm') {\n")
-            f.write("                    matchesDomain = domain === 'rhythm' || domain === 'both' || domain === 'pitch,rhythm';\n")
+            f.write("                    matchesDomain = domain === 'rhythm' || domain === 'pitch,rhythm';\n")
             f.write("                } else if (selectedDomain === 'Both') {\n")
             f.write("                    matchesDomain = domain === 'both';\n")
             f.write("                } else {\n")
@@ -752,6 +841,15 @@ def main():
             f.write("            \n")
             f.write("            row.style.display = (matchesSearch && matchesCategory && matchesImplementation && matchesType && matchesDomain) ? '' : 'none';\n")
             f.write("        });\n")
+            f.write("        \n")
+            f.write("        // Update feature counter\n")
+            f.write("        const visibleCount = rows.filter(row => row.style.display !== 'none').length;\n")
+            f.write("        const totalCount = rows.length;\n")
+            f.write("        if (visibleCount === totalCount) {\n")
+            f.write("            featureCounter.textContent = `${totalCount} feature${totalCount !== 1 ? 's' : ''}`;\n")
+            f.write("        } else {\n")
+            f.write("            featureCounter.textContent = `${visibleCount} of ${totalCount} feature${totalCount !== 1 ? 's' : ''}`;\n")
+            f.write("        }\n")
             f.write("    }\n")
             f.write("    \n")
             f.write("    // Add event listeners\n")
@@ -800,6 +898,9 @@ def main():
             f.write("        // Reorder rows in DOM\n")
             f.write("        sortedRows.forEach(row => tbody.appendChild(row));\n")
             f.write("    }\n")
+            f.write("    \n")
+            f.write("    // Initialize counter on page load\n")
+            f.write("    filterRows();\n")
             f.write("});\n")
             f.write("</script>\n")
             f.write("'''))\n")

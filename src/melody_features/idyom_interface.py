@@ -206,9 +206,9 @@ def run_idyom(
         for viewpoint in viewpoints:
             # Handle both single viewpoints and tuples
             if isinstance(viewpoint, (list, tuple)):
-                if len(viewpoint) != 2:
+                if len(viewpoint) < 2:
                     raise ValueError(
-                        f"Linked viewpoints must be pairs, got {len(viewpoint)} elements: {viewpoint}"
+                        f"Linked viewpoints must have at least 2 elements, got {len(viewpoint)} elements: {viewpoint}"
                     )
                 all_provided_viewpoints.update(viewpoint)
             else:
@@ -349,19 +349,26 @@ def run_idyom(
         )
 
         logger.info("Setting experiment parameters...")
-        experiment.set_parameters(
-            target_viewpoints=target_viewpoints,
-            source_viewpoints=source_viewpoints,
-            models=models,
-            k=k,
-            detail=detail,
-            ltmo_order_bound=ppm_order,
-            stmo_order_bound=ppm_order,
-        )
+
+        parameter_kwargs = {
+            "target_viewpoints": target_viewpoints,
+            "source_viewpoints": source_viewpoints,
+            "models": models,
+            "k": k,
+            "detail": detail,
+        }
+
+        if ppm_order is not None:
+            parameter_kwargs["ltmo_order_bound"] = ppm_order
+            parameter_kwargs["stmo_order_bound"] = ppm_order
+        else:
+            logger.debug("ppm_order is None; will use inf ltmo/stmo order bounds")
+
+        experiment.set_parameters(**parameter_kwargs)
 
         logger.info("Running IDyOM analysis...")
         experiment.run()
-        logger.info("Analysis complete!")
+        logger.info("IDyOM analysis complete!")
 
         results_path = Path(experiment.logger.this_exp_folder)
 

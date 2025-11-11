@@ -125,9 +125,7 @@ def _get_feature_category_mapping():
     """Get mapping from domains and types to category names."""
     return {
         # Domain-based mappings
-        (FeatureDomain.PITCH, FeatureType.BASIC): 'pitch_features',
         (FeatureDomain.PITCH, FeatureType.DESCRIPTIVES): 'pitch_features',
-        (FeatureDomain.RHYTHM, FeatureType.BASIC): 'rhythm_features',
         (FeatureDomain.RHYTHM, FeatureType.DESCRIPTIVES): 'rhythm_features',
         (FeatureDomain.RHYTHM, FeatureType.INTERVAL): 'rhythm_features',
         # Type-based mappings
