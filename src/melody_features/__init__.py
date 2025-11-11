@@ -6,6 +6,7 @@ from .corpus import (
     essen_corpus,  # noqa: F401
     get_corpus_path,
     list_available_corpora,
+    load_melodies_from_directory,
 )
 
 from .features import (
@@ -23,4 +24,5 @@ __all__ = [
     "FantasticConfig",
     "IDyOMConfig",
     "get_all_features",
+    "load_melodies_from_directory",
 ]

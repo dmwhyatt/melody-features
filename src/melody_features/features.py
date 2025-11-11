@@ -485,13 +485,14 @@ def pitch_standard_deviation(pitches: list[int]) -> float:
     -------
     float
         Standard deviation of pitches
+
+    Notes
+    -----
+    This feature is named 'pitch_variability' in JSymbolic.
     """
     if not pitches or len(pitches) < 2:
         return 0.0
     return float(np.std(pitches, ddof=1))
-
-# Alias
-pitch_variability = pitch_standard_deviation
 
 @jsymbolic
 @class_based
@@ -1631,12 +1632,12 @@ def mean_absolute_interval(pitches: list[int]) -> float:
     -------
     float
         Mean absolute interval size in semitones
+
+    Notes
+    -----
+    This feature is named 'mean_melodic_interval' in JSymbolic.
     """
     return float(np.mean([abs(x) for x in pitch_interval(pitches)]))
-
-
-# Alias for mean_absolute_interval / FANTASTIC vs jSymbolic
-mean_melodic_interval = mean_absolute_interval
 
 @fantastic
 @interval
@@ -1672,16 +1673,16 @@ def modal_interval(pitches: list[int]) -> int:
     -------
     int
         Most frequent interval size in semitones
+
+    Notes
+    -----
+    This feature is named 'most_common_interval' in JSymbolic.
     """
 
     intervals_abs = [abs(x) for x in pitch_interval(pitches)]
     if not intervals_abs:
         return 0
     return int(get_mode(intervals_abs))
-
-
-# Alias for modal_interval / FANTASTIC vs jSymbolic
-most_common_interval = modal_interval
 
 @fantastic
 @interval
@@ -2453,10 +2454,19 @@ def _get_features_by_type(feature_type: str) -> dict:
     current_module = sys.modules[__name__]
     
     features = {}
+    seen_function_ids = set()
     for name, obj in inspect.getmembers(current_module):
         if (inspect.isfunction(obj) and
             hasattr(obj, '_feature_types') and
             feature_type in obj._feature_types):
+            # skip aliased functions to avoid repetition
+            if obj.__name__ != name:
+                continue
+            # safeguard using function id
+            func_id = id(obj)
+            if func_id in seen_function_ids:
+                continue
+            seen_function_ids.add(func_id)
             features[name] = obj
     
     return features
@@ -2481,10 +2491,19 @@ def _get_features_by_domain(domain: str) -> dict:
     current_module = sys.modules[__name__]
     
     features = {}
+    seen_function_ids = set()
     for name, obj in inspect.getmembers(current_module):
         if (inspect.isfunction(obj) and 
             hasattr(obj, '_feature_domain') and 
             obj._feature_domain == domain):
+            # skip aliased functions to avoid repetition
+            if obj.__name__ != name:
+                continue
+            # safeguard using function id
+            func_id = id(obj)
+            if func_id in seen_function_ids:
+                continue
+            seen_function_ids.add(func_id)
             features[name] = obj
     
     return features
@@ -2511,11 +2530,20 @@ def _get_features_by_domain_and_types(domain: str, allowed_types: list[str]) -> 
     current_module = sys.modules[__name__]
     
     features = {}
+    seen_function_ids = set()
     for name, obj in inspect.getmembers(current_module):
         if (inspect.isfunction(obj) and 
             hasattr(obj, '_feature_domain') and 
             obj._feature_domain == domain and
             hasattr(obj, '_feature_types')):
+            # skip aliased functions to avoid repetition
+            if obj.__name__ != name:
+                continue
+            # safeguard using function id
+            func_id = id(obj)
+            if func_id in seen_function_ids:
+                continue
+            seen_function_ids.add(func_id)
             # Check if any of the function's types are in allowed_types
             if any(ftype in allowed_types for ftype in obj._feature_types):
                 features[name] = obj
@@ -3018,11 +3046,12 @@ def global_duration(melody: Melody) -> float:
     -------
     float
         Total duration of the MIDI sequence in seconds
+
+    Notes
+    -----
+    This feature is named 'duration_in_seconds' in JSymbolic.
     """
     return melody.total_duration
-
-# Alias - but don't return again with get_all_features()
-duration_in_seconds = global_duration
 
 @fantastic
 @jsymbolic
@@ -8056,6 +8085,8 @@ def compltrans(melody: Melody) -> float:
 
 @midi_toolbox
 @pitch
+@rhythm
+@both
 @complexity
 def complebm(melody: Melody, method: str = 'o') -> float:
     """Expectancy-based melodic complexity, according to Eerola & North (2000).
@@ -8248,9 +8279,7 @@ def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_o
         except Exception as e:
             print(f"Warning: Could not compute {name}: {e}")
             features[name] = None
-    
-    features.update(get_narmour_features(melody))
-    
+
     mtype_features = get_mtype_features(melody, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order)
     features.update(mtype_features)
     

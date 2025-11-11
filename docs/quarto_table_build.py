@@ -35,12 +35,13 @@ src_dir = script_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 from melody_features import features as features_module
+from melody_features import idyom_interface
 from melody_features.step_contour import StepContour
 from melody_features.interpolation_contour import InterpolationContour
 from melody_features.polynomial_contour import PolynomialContour
 from melody_features.huron_contour import HuronContour
 from melody_features.ngram_counter import NGramCounter
-from melody_features.feature_decorators import corpus_prevalence, idyom, expectation, pitch, rhythm
+from melody_features.feature_decorators import corpus_prevalence, idyom, expectation, metre, pitch, rhythm, both, complexity, midi_toolbox, contour
 
 
 @dataclass
@@ -200,6 +201,54 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
     def build_source_url(obj: object) -> str:
         target = obj.fget if isinstance(obj, property) else obj
 
+        # Special handling for IDyOM placeholder functions - link to idyom_interface.py
+        idyom_placeholder_functions = {
+            "pitch_mean_information_content_stm",
+            "pitch_mean_information_content_ltm",
+            "rhythm_mean_information_content_stm",
+            "rhythm_mean_information_content_ltm",
+        }
+        
+        # special handling for complebm: link to complebm function in features.py
+        complebm_functions = {
+            "complebm_pitch",
+            "complebm_rhythm",
+            "complebm_optimal",
+        }
+        
+        func_name = getattr(target, "__name__", None)
+        if func_name in idyom_placeholder_functions:
+            # dynamically find run_idyom line number
+            try:
+                run_idyom_func = getattr(idyom_interface, "run_idyom", None)
+                if run_idyom_func:
+                    _, start_line = inspect.getsourcelines(run_idyom_func)
+                    rel_path = Path("src/melody_features/idyom_interface.py")
+                    quoted_path = quote(rel_path.as_posix())
+                    return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}#L{start_line}"
+            except (OSError, TypeError):
+                pass
+            # Fallback to hardcoded path if dynamic lookup fails
+            rel_path = Path("src/melody_features/idyom_interface.py")
+            quoted_path = quote(rel_path.as_posix())
+            return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}"
+        
+        if func_name in complebm_functions:
+            # dynamically find complebm line number
+            try:
+                complebm_func = getattr(features_module, "complebm", None)
+                if complebm_func:
+                    _, start_line = inspect.getsourcelines(complebm_func)
+                    rel_path = Path("src/melody_features/features.py")
+                    quoted_path = quote(rel_path.as_posix())
+                    return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}#L{start_line}"
+            except (OSError, TypeError):
+                pass
+            # fallback to hardcoded path if dynamic lookup fails
+            rel_path = Path("src/melody_features/features.py")
+            quoted_path = quote(rel_path.as_posix())
+            return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}"
+
         try:
             target_unwrapped = inspect.unwrap(target)
         except (AttributeError, ValueError):
@@ -252,6 +301,10 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         
         # Skip InverseEntropyWeighting class
         if name == "InverseEntropyWeighting":
+            continue
+        
+        # Skip complebm - we'll add the three variants separately
+        if name == "complebm":
             continue
             
         is_property = isinstance(obj, property)
@@ -510,12 +563,99 @@ def build_table() -> pd.DataFrame:
         """
         # Placeholder function for table generation
     
+    # Add placeholder functions for complebm variants
+    @midi_toolbox
+    @pitch
+    @complexity
+    def complebm_pitch(_melody):
+        """Expectancy-based melodic complexity calculated using pitch patterns only,
+        according to Eerola & North (2000). The complexity score is normalized against
+        the Essen folksong collection, where a score of 5 represents average complexity.
+        
+        Citation
+        --------
+        Eerola & North (2000)
+        """
+        # Placeholder function for table generation
+    
+    @midi_toolbox
+    @rhythm
+    @complexity
+    def complebm_rhythm(_melody):
+        """Expectancy-based melodic complexity calculated using rhythmic features only,
+        according to Eerola & North (2000). The complexity score is normalized against
+        the Essen folksong collection, where a score of 5 represents average complexity.
+        
+        Citation
+        --------
+        Eerola & North (2000)
+        """
+    
+    @midi_toolbox
+    @both
+    @complexity
+    def complebm_optimal(_melody):
+        """Expectancy-based melodic complexity calculated using an optimal combination
+        of pitch patterns and rhythmic features, according to Eerola & North (2000).
+        The complexity score is normalized against the Essen folksong collection,
+        where a score of 5 represents average complexity.
+        
+        Citation
+        --------
+        Eerola & North (2000)
+        """
+
+    
+    # Add placeholder functions for features computed by helper functions
+    # or classes, copied from features.py
+    @midi_toolbox
+    @contour
+    @pitch
+    def comb_contour_matrix(_melody):
+        """The Marvin & Laprade (1987) comb contour matrix.
+        For a melody with n notes, returns an n x n binary matrix where
+        C[i][j] = 1 if pitch of note j is higher than pitch of note i (p[j] > p[i])
+        for i >= j (lower triangle including diagonal), and 0 otherwise.
+        
+        Citation
+        --------
+        Marvin & Laprade (1987)
+        """
+ 
+    
+    @rhythm
+    @metre
+    def metric_hierarchy(_melody):
+        """Metric hierarchy values for each note, indicating the strength of each note
+        position within the known or estimated meter. Higher values indicate stronger
+        metric positions (e.g., downbeat = 5, beat = 4, half-beat = 3, etc.).
+        
+        Implementation based on MIDI toolbox metrichierarchy.m.
+        """
+    
+    @rhythm
+    @metre
+    def meter_accent(_melody):
+        """Phenomenal accent synchrony measure, calculated as the negative mean of
+        the product of metric hierarchy, melodic accent, and durational accent
+        for each note. Higher values indicate stronger accent synchrony.
+        
+        Implementation based on MIDI toolbox meteraccent.m.
+        """
+        # Placeholder function for table generation
+    
     all_features.extend(
         [
             ("pitch_mean_information_content_stm", pitch_mean_information_content_stm),
             ("pitch_mean_information_content_ltm", pitch_mean_information_content_ltm),
             ("rhythm_mean_information_content_stm", rhythm_mean_information_content_stm),
             ("rhythm_mean_information_content_ltm", rhythm_mean_information_content_ltm),
+            ("complebm_pitch", complebm_pitch),
+            ("complebm_rhythm", complebm_rhythm),
+            ("complebm_optimal", complebm_optimal),
+            ("comb_contour_matrix", comb_contour_matrix),
+            ("metric_hierarchy", metric_hierarchy),
+            ("meter_accent", meter_accent),
         ]
     )
     
