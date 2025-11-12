@@ -20,6 +20,7 @@ Then, run it:
 """
 import logging
 import os
+import re
 import shutil
 import subprocess
 from glob import glob
@@ -188,6 +189,7 @@ def run_idyom(
     k=1,
     detail=3,
     ppm_order=None,
+    sbcl_dynamic_space_size: Optional[int] = 8192,
 ):
     logger = logging.getLogger("melody_features")
     """
@@ -367,7 +369,47 @@ def run_idyom(
         experiment.set_parameters(**parameter_kwargs)
 
         logger.info("Running IDyOM analysis...")
-        experiment.run()
+
+        original_os_system = getattr(py2lisp.run, "os", None)
+        original_system_call = None
+        patched_system = None
+        if sbcl_dynamic_space_size is not None and original_os_system is not None:
+            original_system_call = original_os_system.system
+
+            def _patched_system(command: str) -> int:
+                if command.strip().startswith("sbcl"):
+                    if "--dynamic-space-size" in command:
+                        command = re.sub(
+                            r"--dynamic-space-size\s+\d+",
+                            f"--dynamic-space-size {sbcl_dynamic_space_size}",
+                            command,
+                        )
+                    else:
+                        command = command.replace(
+                            "sbcl",
+                            f"sbcl --dynamic-space-size {sbcl_dynamic_space_size}",
+                            1,
+                        )
+                    logger.debug(
+                        "Using SBCL dynamic space size %s MB for command: %s",
+                        sbcl_dynamic_space_size,
+                        command,
+                    )
+                return original_system_call(command)
+
+            patched_system = _patched_system
+            original_os_system.system = patched_system
+
+        try:
+            experiment.run()
+        finally:
+            if (
+                patched_system is not None
+                and original_os_system is not None
+                and original_system_call is not None
+            ):
+                original_os_system.system = original_system_call
+
         logger.info("IDyOM analysis complete!")
 
         results_path = Path(experiment.logger.this_exp_folder)
