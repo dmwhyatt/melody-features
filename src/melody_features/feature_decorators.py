@@ -1,5 +1,22 @@
 """
 Feature decorators for categorizing melodic features by source.
+
+We integrate multiple decorators that are used to label features with their source, category, and domain.
+Domain decorators are `pitch`, `rhythm`, and `both`, accounting for the different input representations used to compute the features.
+- `pitch` captures anything corresponding to MIDI pitch numbers and re-expressions thereof.
+- `rhythm` captures anything that utilises onsets and offsets, including re-expressions thereof.
+- `both` is a special category devised to cover any features that are computed from representations 
+that combine both pitch and rhythm. This specifially covers the MType features from FANTASTIC.
+
+We also implement decorators corresponding to the original software resource that inspired our present implmentation. This makes 
+it possible to calculate features from a specific software resource using `_get_features_by_source`, which is used in the `features.py` to produce
+functions like `get_fantastic_features`.
+
+The final decorator corresponds to the category a feature falls under. For some categories, there are pitch and rhythm domain features that can be considered
+under that same category: e.g. `interval` operations for pitch correspond to melodic intervals, where `interval` operations for rhythm correspond to IOIs. 
+However, not all categories are this general - for example, `absolute` only applies to pitch features, and we instead use the name `timing` for equivalent rhythm features.
+This categorisation is used to produce the interactive feature table in the documentation, and to help organise the many different software implementations
+under a common framework.
 """
 
 from functools import wraps
@@ -25,7 +42,8 @@ class FeatureType:
     CONTOUR = "contour"
     TONALITY = "tonality"
     METRE = "metre"
-    DESCRIPTIVES = "descriptives"
+    ABSOLUTE = "absolute"
+    TIMING = "timing"
     CORPUS_PREVALENCE = "corpus_prevalence"
     EXPECTATION = "expectation"
     COMPLEXITY = "complexity"
@@ -216,7 +234,8 @@ class_based = feature_type(FeatureType.CLASS_BASED)
 contour = feature_type(FeatureType.CONTOUR)
 tonality = feature_type(FeatureType.TONALITY)
 metre = feature_type(FeatureType.METRE)
-descriptives = feature_type(FeatureType.DESCRIPTIVES)
+absolute = feature_type(FeatureType.ABSOLUTE)
+timing = feature_type(FeatureType.TIMING)
 corpus_prevalence = feature_type(FeatureType.CORPUS_PREVALENCE)
 expectation = feature_type(FeatureType.EXPECTATION)
 complexity = feature_type(FeatureType.COMPLEXITY)

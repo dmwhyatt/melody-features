@@ -448,7 +448,8 @@ def _get_feature_category(obj) -> str:
         'corpus_prevalence': 'Corpus',
         'mtype': 'MType',
         'class_based': 'Class-based',
-        'descriptives': 'Descriptives',
+        'absolute': 'Absolute',
+        'timing': 'Timing',
     }
     
     if feature_types and len(feature_types) > 0:
