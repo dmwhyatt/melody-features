@@ -11,6 +11,7 @@ import tempfile
 import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+from types import SimpleNamespace
 
 from melody_features.idyom_interface import (
     is_idyom_installed,
@@ -265,13 +266,34 @@ class TestIDyOMParameterValidation:
 
             with patch('melody_features.idyom_interface.is_idyom_installed', return_value=True):
                 with patch('melody_features.idyom_interface.start_idyom', return_value=MagicMock()):
-                    # Test invalid linked viewpoint
-                    with pytest.raises(ValueError, match="Linked viewpoints must be pairs"):
-                        run_idyom(
+                    mock_py2lisp = MagicMock()
+                    mock_py2lisp.run.IDyOMExperiment.side_effect = Exception("Mocked to avoid execution")
+
+                    with patch('melody_features.idyom_interface.start_idyom', return_value=mock_py2lisp):
+                        # Linked viewpoint with fewer than 2 elements should raise
+                        with pytest.raises(ValueError, match="Linked viewpoints must have at least 2 elements"):
+                            run_idyom(
+                                input_path=temp_dir,
+                                target_viewpoints=[("cpitch",)],
+                                source_viewpoints=["cpint"]
+                            )
+
+                        # Linked viewpoint containing an invalid viewpoint should raise
+                        with pytest.raises(ValueError, match="Invalid viewpoint"):
+                            run_idyom(
+                                input_path=temp_dir,
+                                target_viewpoints=[("cpitch", "onset", "extra")],
+                                source_viewpoints=["cpint"]
+                            )
+
+                        # Linked viewpoints can include more than two elements if all are valid
+                        result = run_idyom(
                             input_path=temp_dir,
-                            target_viewpoints=[("cpitch", "onset", "extra")],
+                            target_viewpoints=[("cpitch", "onset", "cpint")],
                             source_viewpoints=["cpint"]
                         )
+
+                        assert result is None, "Valid linked viewpoints should pass validation"
 
     def test_viewpoint_validation_mixed_types(self):
         """Test validation with mix of single and linked viewpoints."""
@@ -350,6 +372,48 @@ class TestIDyOMFileHandling:
             )
             assert result is None, "Should return None due to mocked exception"
             assert mock_copy.call_count >= 2, "Should copy pretraining files"
+
+    @patch('melody_features.idyom_interface.is_idyom_installed', return_value=True)
+    def test_run_idyom_dynamic_space_size_override(self, mock_installed):
+        """Test that run_idyom applies the configured SBCL dynamic space size."""
+        commands = []
+
+        def fake_system(command: str) -> int:
+            commands.append(command)
+            return 0
+
+        dummy_os = SimpleNamespace(system=fake_system)
+
+        class DummyExperiment:
+            def __init__(self, *args, **kwargs):
+                self.logger = SimpleNamespace(
+                    this_exp_folder=tempfile.mkdtemp(),
+                    output_data_exp_folder=tempfile.mkdtemp(),
+                )
+
+            def set_parameters(self, **kwargs):
+                return None
+
+            def run(self):
+                DummyRun.os.system("sbcl --noinform --load compute.lisp")
+                raise Exception("Mocked stop to bypass post-processing")
+
+        DummyRun = SimpleNamespace(os=dummy_os, IDyOMExperiment=DummyExperiment)
+        mock_py2lisp = SimpleNamespace(run=DummyRun)
+
+        with patch('melody_features.idyom_interface.start_idyom', return_value=mock_py2lisp):
+            with tempfile.TemporaryDirectory() as temp_dir:
+                Path(os.path.join(temp_dir, "test.mid")).touch()
+                result = run_idyom(
+                    input_path=temp_dir,
+                    sbcl_dynamic_space_size=16384,
+                )
+
+        assert result is None, "run_idyom should return None due to mocked stop"
+        assert commands, "Expected IDyOMExperiment.run to invoke SBCL command"
+        assert any("--dynamic-space-size 16384" in cmd for cmd in commands), (
+            "SBCL command should include the configured dynamic space size"
+        )
 
 
 class TestIDyOMErrorHandling:

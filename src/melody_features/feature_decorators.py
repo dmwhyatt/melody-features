@@ -1,5 +1,22 @@
 """
 Feature decorators for categorizing melodic features by source.
+
+We integrate multiple decorators that are used to label features with their source, category, and domain.
+Domain decorators are `pitch`, `rhythm`, and `both`, accounting for the different input representations used to compute the features.
+- `pitch` captures anything corresponding to MIDI pitch numbers and re-expressions thereof.
+- `rhythm` captures anything that utilises onsets and offsets, including re-expressions thereof.
+- `both` is a special category devised to cover any features that are computed from representations 
+that combine both pitch and rhythm. This specifially covers the MType features from FANTASTIC.
+
+We also implement decorators corresponding to the original software resource that inspired our present implmentation. This makes 
+it possible to calculate features from a specific software resource using `_get_features_by_source`, which is used in the `features.py` to produce
+functions like `get_fantastic_features`.
+
+The final decorator corresponds to the category a feature falls under. For some categories, there are pitch and rhythm domain features that can be considered
+under that same category: e.g. `interval` operations for pitch correspond to melodic intervals, where `interval` operations for rhythm correspond to IOIs. 
+However, not all categories are this general - for example, `absolute` only applies to pitch features, and we instead use the name `timing` for equivalent rhythm features.
+This categorisation is used to produce the interactive feature table in the documentation, and to help organise the many different software implementations
+under a common framework.
 """
 
 from functools import wraps
@@ -20,14 +37,24 @@ class FeatureSource:
 
 class FeatureType:
     """Class for categorizing features by type."""
-    PITCH = "pitch"
     INTERVAL = "interval"
+    CLASS_BASED = "class_based"
     CONTOUR = "contour"
     TONALITY = "tonality"
-    DURATION = "duration"
+    METRE = "metre"
+    ABSOLUTE = "absolute"
+    TIMING = "timing"
+    CORPUS_PREVALENCE = "corpus_prevalence"
+    EXPECTATION = "expectation"
     COMPLEXITY = "complexity"
-    CORPUS = "corpus"
-    MTYPE = "mtype" 
+
+
+class FeatureDomain:
+    """Class for categorizing features by domain."""
+    PITCH = "pitch"
+    RHYTHM = "rhythm"
+    BOTH = "both"
+
 
 def _create_feature_decorator(source: str, citation: str, feature_type: str = None) -> Callable:
     """Create a feature decorator for a specific source and optionally a feature type."""
@@ -152,12 +179,68 @@ def feature_type(feature_type: str) -> Callable:
     return decorator
 
 
+def domain(domain_value: str) -> Callable:
+    """Decorator to specify the domain of a feature.
+    
+    Parameters
+    ----------
+    domain_value : str
+        The domain of the feature. Must be one of: 'pitch', 'rhythm', or 'both'
+        
+    Raises
+    ------
+    ValueError
+        If domain_value is not one of the allowed values
+    """
+    valid_domains = {FeatureDomain.PITCH, FeatureDomain.RHYTHM, FeatureDomain.BOTH}
+    if domain_value not in valid_domains:
+        raise ValueError(
+            f"Domain must be one of {valid_domains}, got '{domain_value}'"
+        )
+    
+    def decorator(func: Callable) -> Callable:
+        # Initialize attributes if they don't exist
+        if not hasattr(func, '_feature_sources'):
+            func._feature_sources = []
+        if not hasattr(func, '_feature_citations'):
+            func._feature_citations = []
+        if not hasattr(func, '_feature_types'):
+            func._feature_types = []
+        
+        # Set feature domain
+        func._feature_domain = domain_value
+        
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+        
+        # Copy all attributes to wrapper
+        wrapper._feature_sources = getattr(func, '_feature_sources', []).copy()
+        wrapper._feature_citations = getattr(func, '_feature_citations', []).copy()
+        wrapper._feature_types = getattr(func, '_feature_types', []).copy()
+        wrapper._feature_source = getattr(func, '_feature_source', None)
+        wrapper._feature_citation = getattr(func, '_feature_citation', None)
+        wrapper._feature_domain = func._feature_domain
+        if hasattr(func, '_feature_type'):
+            wrapper._feature_type = func._feature_type
+        
+        return wrapper
+    return decorator
+
+
 # Feature type decorators - can be combined with source decorators
-pitch_feature = feature_type(FeatureType.PITCH)
-interval_feature = feature_type(FeatureType.INTERVAL)
-contour_feature = feature_type(FeatureType.CONTOUR)
-tonality_feature = feature_type(FeatureType.TONALITY)
-duration_feature = feature_type(FeatureType.DURATION)
-complexity_feature = feature_type(FeatureType.COMPLEXITY)
-corpus_feature = feature_type(FeatureType.CORPUS)
-mtype_feature = feature_type(FeatureType.MTYPE)
+interval = feature_type(FeatureType.INTERVAL)
+class_based = feature_type(FeatureType.CLASS_BASED)
+contour = feature_type(FeatureType.CONTOUR)
+tonality = feature_type(FeatureType.TONALITY)
+metre = feature_type(FeatureType.METRE)
+absolute = feature_type(FeatureType.ABSOLUTE)
+timing = feature_type(FeatureType.TIMING)
+corpus_prevalence = feature_type(FeatureType.CORPUS_PREVALENCE)
+expectation = feature_type(FeatureType.EXPECTATION)
+complexity = feature_type(FeatureType.COMPLEXITY)
+
+# Domain decorators - can be combined with source decorators
+pitch = domain(FeatureDomain.PITCH)
+rhythm = domain(FeatureDomain.RHYTHM)
+both = domain(FeatureDomain.BOTH)

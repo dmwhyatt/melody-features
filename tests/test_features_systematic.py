@@ -14,7 +14,7 @@ import inspect
 from typing import get_type_hints, get_origin, get_args
 
 from melody_features.features import get_all_features, Config, IDyOMConfig, FantasticConfig
-from melody_features.feature_decorators import FeatureType
+from melody_features.feature_decorators import FeatureType, FeatureDomain
 
 
 def create_test_midi_file(pitches, starts, ends, tempo=120):
@@ -69,7 +69,8 @@ def _discover_feature_functions():
             feature_functions[name] = {
                 'function': obj,
                 'expected_types': expected_types,
-                'feature_types': obj._feature_types
+                'feature_types': obj._feature_types,
+                'feature_domain': getattr(obj, '_feature_domain', None)
             }
     
     return feature_functions
@@ -121,50 +122,55 @@ def _convert_annotation_to_types(annotation):
 
 
 def _get_feature_category_mapping():
-    """Get mapping from feature types to category names."""
+    """Get mapping from domains and types to category names."""
     return {
-        FeatureType.PITCH: 'pitch_features',
+        # Domain-based mappings
+        (FeatureDomain.PITCH, FeatureType.ABSOLUTE): 'pitch_features',
+        (FeatureDomain.RHYTHM, FeatureType.TIMING): 'rhythm_features',
+        (FeatureDomain.RHYTHM, FeatureType.INTERVAL): 'rhythm_features',
+        # Type-based mappings
         FeatureType.INTERVAL: 'interval_features', 
         FeatureType.CONTOUR: 'contour_features',
-        FeatureType.DURATION: 'duration_features',
         FeatureType.TONALITY: 'tonality_features',
-        FeatureType.MTYPE: 'mtype_features',
+        FeatureType.METRE: 'metre_features',
+        FeatureType.EXPECTATION: 'expectation_features',
         FeatureType.COMPLEXITY: 'complexity_features',
-        FeatureType.CORPUS: 'corpus_features',
+        # back compatible mappings for corpus
+        'corpus': 'corpus_features',
     }
 
 # Some features are actually allowed to be NaN
 NAN_ALLOWED_FEATURES = {
-    'mtype_features.yules_k',  
-    'mtype_features.simpsons_d',  
-    'mtype_features.sichels_s',  
-    'mtype_features.honores_h',  
-    'mtype_features.mean_entropy',  
-    'mtype_features.mean_productivity',  
+    'complexity_features.yules_k',  
+    'complexity_features.simpsons_d',  
+    'complexity_features.sichels_s',  
+    'complexity_features.honores_h',  
+    'complexity_features.mean_entropy',  
+    'complexity_features.mean_productivity',  
     'pitch_features.pitch_class_kurtosis_after_folding',  
     'pitch_features.pitch_class_skewness_after_folding',  
     'pitch_features.pitch_class_variability_after_folding',  
     'interval_features.standard_deviation_absolute_interval',
-    'duration_features.ioi_standard_deviation',
+    'rhythm_features.ioi_standard_deviation',
     'interval_features.minor_major_third_ratio',
-    'duration_features.variability_of_time_between_attacks',
+    'rhythm_features.variability_of_time_between_attacks',
 }
 
 PROPORTION_FEATURES = {
-    'melodic_movement_features.stepwise_motion',
-    'melodic_movement_features.repeated_notes',
-    'melodic_movement_features.chromatic_motion',
-    'melodic_movement_features.amount_of_arpeggiation',
-    'melodic_movement_features.melodic_embellishment',
-    'duration_features.metric_stability',
+    'pitch_features.stepwise_motion',
+    'pitch_features.repeated_notes',
+    'pitch_features.chromatic_motion',
+    'pitch_features.amount_of_arpeggiation',
+    'pitch_features.melodic_embellishment',
+    'rhythm_features.metric_stability',
     'tonality_features.tonalness',
     'interval_features.melodic_large_intervals',
     'tonality_features.proportion_conjunct_scalar',
     'tonality_features.proportion_scalar',
     'interval_features.prevalence_of_most_common_melodic_interval',
-    'duration_features.equal_duration_transitions',
-    'duration_features.dotted_duration_transitions',
-    'duration_features.half_duration_transitions',
+    'rhythm_features.equal_duration_transitions',
+    'rhythm_features.dotted_duration_transitions',
+    'rhythm_features.half_duration_transitions',
 }
 
 
@@ -347,8 +353,8 @@ class TestFeatureTypeValidation:
                 if col in NAN_ALLOWED_FEATURES:
                     # These features can legitimately be NaN
                     continue
-                elif allow_more_nans and any(keyword in col for keyword in ['entropy', 'yules', 'simpsons', 'sichels', 'honores', 'std', 'gradient']):
-                    # Allow NaN for certain features in edge cases
+                elif allow_more_nans and any(keyword in col for keyword in ['entropy', 'yules', 'simpsons', 'sichels', 'honores', 'std', 'deviation', 'variability', 'gradient']):
+                    # Allow NaN for certain features in edge cases (including standard_deviation and variability)
                     continue
                 else:
                     assert not (np.isnan(value) or np.isinf(value)), \
@@ -423,9 +429,17 @@ def test_feature_completeness():
         # Get expected categories from discovered feature functions
         expected_categories = set()
         for func_info in feature_functions.values():
+            domain = func_info.get('feature_domain')
             for feature_type in func_info['feature_types']:
-                if feature_type in category_mapping:
+                # Try domain+type combination first
+                if domain and (domain, feature_type) in category_mapping:
+                    expected_categories.add(category_mapping[(domain, feature_type)])
+                # Fall back to just type
+                elif feature_type in category_mapping:
                     expected_categories.add(category_mapping[feature_type])
+                # Check for special string mappings
+                elif feature_type in ['mtype', 'corpus']:
+                    expected_categories.add(category_mapping.get(feature_type))
         
         # Remove corpus features from expected categories since no corpus is provided
         if config.corpus is None:

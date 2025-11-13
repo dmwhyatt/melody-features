@@ -35,11 +35,13 @@ src_dir = script_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 from melody_features import features as features_module
+from melody_features import idyom_interface
 from melody_features.step_contour import StepContour
 from melody_features.interpolation_contour import InterpolationContour
 from melody_features.polynomial_contour import PolynomialContour
 from melody_features.huron_contour import HuronContour
 from melody_features.ngram_counter import NGramCounter
+from melody_features.feature_decorators import corpus_prevalence, idyom, expectation, metre, pitch, rhythm, both, complexity, midi_toolbox, contour
 
 
 @dataclass
@@ -51,6 +53,7 @@ class FeatureRow:
     type_label: str
     notes: str
     category: str
+    domain: str
     sort_name: str
 
 
@@ -80,6 +83,8 @@ def normalize_feature_text(text: str) -> str:
     # First, handle IOI via existing helper
     text = capitalize_ioi(text)
     # Then other acronyms
+    text = re.sub(r"\bstm\b", "STM", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bltm\b", "LTM", text, flags=re.IGNORECASE)
     text = re.sub(r"\btfdf\b", "TFDF", text, flags=re.IGNORECASE)
     text = re.sub(r"\bdf\b", "DF", text, flags=re.IGNORECASE)
     text = re.sub(r"\bnpvi\b", "NPVI", text, flags=re.IGNORECASE)
@@ -196,6 +201,54 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
     def build_source_url(obj: object) -> str:
         target = obj.fget if isinstance(obj, property) else obj
 
+        # Special handling for IDyOM placeholder functions - link to idyom_interface.py
+        idyom_placeholder_functions = {
+            "pitch_mean_information_content_stm",
+            "pitch_mean_information_content_ltm",
+            "rhythm_mean_information_content_stm",
+            "rhythm_mean_information_content_ltm",
+        }
+        
+        # special handling for complebm: link to complebm function in features.py
+        complebm_functions = {
+            "complebm_pitch",
+            "complebm_rhythm",
+            "complebm_optimal",
+        }
+        
+        func_name = getattr(target, "__name__", None)
+        if func_name in idyom_placeholder_functions:
+            # dynamically find run_idyom line number
+            try:
+                run_idyom_func = getattr(idyom_interface, "run_idyom", None)
+                if run_idyom_func:
+                    _, start_line = inspect.getsourcelines(run_idyom_func)
+                    rel_path = Path("src/melody_features/idyom_interface.py")
+                    quoted_path = quote(rel_path.as_posix())
+                    return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}#L{start_line}"
+            except (OSError, TypeError):
+                pass
+            # Fallback to hardcoded path if dynamic lookup fails
+            rel_path = Path("src/melody_features/idyom_interface.py")
+            quoted_path = quote(rel_path.as_posix())
+            return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}"
+        
+        if func_name in complebm_functions:
+            # dynamically find complebm line number
+            try:
+                complebm_func = getattr(features_module, "complebm", None)
+                if complebm_func:
+                    _, start_line = inspect.getsourcelines(complebm_func)
+                    rel_path = Path("src/melody_features/features.py")
+                    quoted_path = quote(rel_path.as_posix())
+                    return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}#L{start_line}"
+            except (OSError, TypeError):
+                pass
+            # fallback to hardcoded path if dynamic lookup fails
+            rel_path = Path("src/melody_features/features.py")
+            quoted_path = quote(rel_path.as_posix())
+            return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}"
+
         try:
             target_unwrapped = inspect.unwrap(target)
         except (AttributeError, ValueError):
@@ -245,9 +298,21 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
     for name, obj in objs:
         if name.startswith("get_"):
             continue
+        
+        # Skip InverseEntropyWeighting class
+        if name == "InverseEntropyWeighting":
+            continue
+        
+        # Skip complebm - we'll add the three variants separately
+        if name == "complebm":
+            continue
             
-        feature_types = getattr(obj, "_feature_types", None)
         is_property = isinstance(obj, property)
+        
+        if is_property and hasattr(obj, 'fget') and obj.fget is not None:
+            feature_types = getattr(obj.fget, "_feature_types", None)
+        else:
+            feature_types = getattr(obj, "_feature_types", None)
         if not feature_types and not is_property:
             continue
 
@@ -323,7 +388,21 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
 
         category = _get_feature_category(obj)
         
-        
+        # Determine domain from decorator if present
+        if is_property and hasattr(obj, 'fget') and obj.fget is not None:
+            domain_attr = getattr(obj.fget, "_feature_domain", None)
+        else:
+            domain_attr = getattr(obj, "_feature_domain", None)
+
+        # Set domain to "pitch" for contour class properties if not already set
+        if is_property and "." in name:
+            class_name = name.split(".", 1)[0]
+            contour_classes = ["StepContour", "InterpolationContour", "PolynomialContour", "HuronContour"]
+            if class_name in contour_classes and not domain_attr:
+                domain_attr = "pitch"
+
+        domain_for_filter = domain_attr if domain_attr else ""
+
         rows.append(
             FeatureRow(
                 name=display_name,
@@ -333,6 +412,7 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
                 type_label=type_label,
                 notes=notes,
                 category=category,
+                domain=domain_for_filter,
                 sort_name=pretty_name,
             )
         )
@@ -347,24 +427,45 @@ def to_dataframe(rows: list[FeatureRow]) -> pd.DataFrame:
     return df
 
 def _get_feature_category(obj) -> str:
-    """Determine the feature category based on the actual feature type decorator."""
-    feature_types = getattr(obj, "_feature_types", None)
-    if feature_types and len(feature_types) > 0:
-        feature_type = feature_types[0]
-        type_mapping = {
-            'pitch': 'Pitch',
-            'interval': 'Interval', 
-            'contour': 'Contour',
-            'duration': 'Duration',
-            'complexity': 'Complexity',
-            'tonality': 'Tonality',
-            'mtype': 'Patterns',
-            'corpus': 'Corpus',
-            'melodic_movement': 'Melodic Movement'
-        }
-        return type_mapping.get(feature_type, feature_type.title())
+    """Determine the feature category based on the actual feature type decorator.
+    Returns a comma-separated string of categories for features that belong to multiple categories.
+    """
+    is_property = isinstance(obj, property)
+    if is_property and hasattr(obj, 'fget') and obj.fget is not None:
+        feature_types = getattr(obj.fget, "_feature_types", None)
+    else:
+        feature_types = getattr(obj, "_feature_types", None)
     
-    # handle class based features
+    type_mapping = {
+        'pitch': 'Pitch',
+        'interval': 'Interval', 
+        'contour': 'Contour',
+        'rhythm': 'Rhythm',
+        'complexity': 'Complexity',
+        'tonality': 'Tonality',
+        'metre': 'Metre',
+        'expectation': 'Expectation',
+        'corpus_prevalence': 'Corpus',
+        'mtype': 'MType',
+        'class_based': 'Class-based',
+        'absolute': 'Absolute',
+        'timing': 'Timing',
+    }
+    
+    if feature_types and len(feature_types) > 0:
+        # Map all feature types to their categories
+        categories = []
+        for feature_type in feature_types:
+            mapped = type_mapping.get(feature_type)
+            if mapped and mapped not in categories:
+                categories.append(mapped)
+        
+        if categories:
+            return ', '.join(categories)
+        # Fallback: if no mapping found, use title case of first type
+        return feature_types[0].title()
+    
+    # handle class based features (fallback for features without decorators)
     if hasattr(obj, '__name__'):
         name = obj.__name__
         if name in ['honores_h', 'yules_k', 'simpsons_d', 'sichels_s', 'mean_entropy', 'mean_productivity']:
@@ -374,7 +475,6 @@ def _get_feature_category(obj) -> str:
     
     # get properties
     if isinstance(obj, property):
-
         if hasattr(obj, 'fget') and obj.fget:
             if hasattr(obj.fget, '__qualname__'):
                 qualname = obj.fget.__qualname__
@@ -403,6 +503,162 @@ def build_table() -> pd.DataFrame:
         for prop_name, prop_obj in inspect.getmembers(cls):
             if isinstance(prop_obj, property) and prop_name not in excluded_properties:
                 all_features.append((f"{class_name}.{prop_name}", prop_obj))
+    
+    # Add placeholder functions for IDyOM features that are dynamically generated
+    @idyom
+    @expectation
+    @pitch
+    def pitch_mean_information_content_stm(_melody):
+        """The average information content across all notes in a melody,
+        calculated using IDyOM's prediction-by-partial-matching (PPM) algorithm. 
+        Information content is perceptually related to surprise, and can be calculated
+        for pitches or rhythms.
+        
+        Citation
+        --------
+        Pearce, M. (2005)
+        """
+        # Placeholder function for table generation
+
+    @idyom
+    @expectation
+    @corpus_prevalence
+    @pitch
+    def pitch_mean_information_content_ltm(_melody):
+        """The average information content across all notes in a melody,
+        calculated using IDyOM's long-term model (LTM). Information content is
+        perceptually related to surprise, and can be calculated for pitches or rhythms.
+        
+        Citation
+        --------
+        Pearce, M. (2005)
+        """
+        # Placeholder function for table generation
+
+    @idyom
+    @expectation
+    @rhythm
+    def rhythm_mean_information_content_stm(_melody):
+        """The average rhythmic information content across all notes in a melody,
+        calculated using IDyOM's short-term model (STM). Information content is
+        perceptually related to surprise, and can be calculated for pitches or rhythms.
+        
+        Citation
+        --------
+        Pearce, M. (2005)
+        """
+        # Placeholder function for table generation
+
+    @idyom
+    @expectation
+    @corpus_prevalence
+    @rhythm
+    def rhythm_mean_information_content_ltm(_melody):
+        """The average rhythmic information content across all notes in a melody,
+        calculated using IDyOM's long-term model (LTM). Information content is
+        perceptually related to surprise, and can be calculated for pitches or rhythms.
+        
+        Citation
+        --------
+        Pearce, M. (2005)
+        """
+        # Placeholder function for table generation
+    
+    # Add placeholder functions for complebm variants
+    @midi_toolbox
+    @pitch
+    @complexity
+    def complebm_pitch(_melody):
+        """Expectancy-based melodic complexity calculated using pitch patterns only,
+        according to Eerola & North (2000). The complexity score is normalized against
+        the Essen folksong collection, where a score of 5 represents average complexity.
+        
+        Citation
+        --------
+        Eerola & North (2000)
+        """
+        # Placeholder function for table generation
+    
+    @midi_toolbox
+    @rhythm
+    @complexity
+    def complebm_rhythm(_melody):
+        """Expectancy-based melodic complexity calculated using rhythmic features only,
+        according to Eerola & North (2000). The complexity score is normalized against
+        the Essen folksong collection, where a score of 5 represents average complexity.
+        
+        Citation
+        --------
+        Eerola & North (2000)
+        """
+    
+    @midi_toolbox
+    @both
+    @complexity
+    def complebm_optimal(_melody):
+        """Expectancy-based melodic complexity calculated using an optimal combination
+        of pitch patterns and rhythmic features, according to Eerola & North (2000).
+        The complexity score is normalized against the Essen folksong collection,
+        where a score of 5 represents average complexity.
+        
+        Citation
+        --------
+        Eerola & North (2000)
+        """
+
+    
+    # Add placeholder functions for features computed by helper functions
+    # or classes, copied from features.py
+    @midi_toolbox
+    @contour
+    @pitch
+    def comb_contour_matrix(_melody):
+        """The Marvin & Laprade (1987) comb contour matrix.
+        For a melody with n notes, returns an n x n binary matrix where
+        C[i][j] = 1 if pitch of note j is higher than pitch of note i (p[j] > p[i])
+        for i >= j (lower triangle including diagonal), and 0 otherwise.
+        
+        Citation
+        --------
+        Marvin & Laprade (1987)
+        """
+ 
+    
+    @rhythm
+    @metre
+    def metric_hierarchy(_melody):
+        """Metric hierarchy values for each note, indicating the strength of each note
+        position within the known or estimated meter. Higher values indicate stronger
+        metric positions (e.g., downbeat = 5, beat = 4, half-beat = 3, etc.).
+        
+        Implementation based on MIDI toolbox metrichierarchy.m.
+        """
+    
+    @rhythm
+    @metre
+    def meter_accent(_melody):
+        """Phenomenal accent synchrony measure, calculated as the negative mean of
+        the product of metric hierarchy, melodic accent, and durational accent
+        for each note. Higher values indicate stronger accent synchrony.
+        
+        Implementation based on MIDI toolbox meteraccent.m.
+        """
+        # Placeholder function for table generation
+    
+    all_features.extend(
+        [
+            ("pitch_mean_information_content_stm", pitch_mean_information_content_stm),
+            ("pitch_mean_information_content_ltm", pitch_mean_information_content_ltm),
+            ("rhythm_mean_information_content_stm", rhythm_mean_information_content_stm),
+            ("rhythm_mean_information_content_ltm", rhythm_mean_information_content_ltm),
+            ("complebm_pitch", complebm_pitch),
+            ("complebm_rhythm", complebm_rhythm),
+            ("complebm_optimal", complebm_optimal),
+            ("comb_contour_matrix", comb_contour_matrix),
+            ("metric_hierarchy", metric_hierarchy),
+            ("meter_accent", meter_accent),
+        ]
+    )
     
     rows = collect_feature_rows(all_features)
     return to_dataframe(rows)
@@ -478,9 +734,10 @@ def main():
             f.write("# Create a simple interactive table with search and sort\n")
             f.write("# Add category data to each row for filtering\n")
             f.write("df_renamed['data-category'] = df_renamed.index.map(lambda i: df.iloc[i]['category'])\n")
+            f.write("df_renamed['data-domain'] = df_renamed.index.map(lambda i: df.iloc[i].get('domain', ''))\n")
             f.write("\n")
             f.write("# Create a single table with category data for filtering (exclude category columns from display)\n")
-            f.write("df_display = df_renamed.drop(columns=['category', 'data-category', 'sort_name'], errors='ignore')\n")
+            f.write("df_display = df_renamed.drop(columns=['category', 'domain', 'data-category', 'data-domain', 'sort_name'], errors='ignore')\n")
             f.write("table_html = df_display.to_html(classes='table table-striped table-hover', table_id='features-table', escape=False, index=False)\n")
             f.write("\n")
             f.write("# Add data-category attributes to table rows using a more robust approach\n")
@@ -498,7 +755,8 @@ def main():
             f.write("                category = df_with_categories.iloc[data_row_index]['category']\n")
             f.write("                impls = df_with_categories.iloc[data_row_index].get('Pre-existing Implementations', '') or ''\n")
             f.write("                ftype = df_with_categories.iloc[data_row_index].get('Type', '') or ''\n")
-            f.write("                line = line.replace('<tr>', f'<tr data-category=\"{category}\" data-impl=\"{impls}\" data-type=\"{ftype}\">')\n")
+            f.write("                domain = df_with_categories.iloc[data_row_index].get('domain', '') or ''\n")
+            f.write("                line = line.replace('<tr>', f'<tr data-category=\"{category}\" data-impl=\"{impls}\" data-type=\"{ftype}\" data-domain=\"{domain}\">')\n")
             f.write("                data_row_index += 1\n")
             f.write("        result_lines.append(line)\n")
             f.write("    \n")
@@ -506,8 +764,16 @@ def main():
             f.write("\n")
             f.write("table_html = add_data_category_attributes(table_html, df_renamed)\n\n")
             f.write("# Generate dropdown options for filters\n")
-            f.write("categories = sorted(df['category'].unique())\n")
+            f.write("# Extract all unique categories from comma-separated values\n")
+            f.write("all_categories = set()\n")
+            f.write("for cat_str in df['category'].fillna(''):\n")
+            f.write("    for cat in [c.strip() for c in str(cat_str).split(',') if c.strip()]:\n")
+            f.write("        all_categories.add(cat)\n")
+            f.write("categories = sorted(all_categories)\n")
             f.write("category_options = '\\n'.join([f'        <option value=\"{cat}\">{cat}</option>' for cat in categories])\n\n")
+            f.write("# Domains (from decorators)\n")
+            f.write("domains = ['Pitch', 'Rhythm', 'Both']\n")
+            f.write("domain_options = '\\n'.join([f'        <option value=\"{opt}\">{opt}</option>' for opt in domains])\n\n")
             f.write("# Implementations: split comma-separated values and deduplicate\n")
             f.write("impl_tokens = set()\n")
             f.write("for v in df['implementations'].fillna(''):\n")
@@ -556,6 +822,17 @@ def main():
             f.write("    font-size: 16px;\n")
             f.write("    background-color: white;\n")
             f.write("    min-width: 150px;\n")
+            f.write("}\n")
+            f.write(".feature-counter {\n")
+            f.write("    padding: 10px 15px;\n")
+            f.write("    font-size: 16px;\n")
+            f.write("    font-weight: 600;\n")
+            f.write("    color: #495057;\n")
+            f.write("    background-color: #f8f9fa;\n")
+            f.write("    border: 1px solid #dee2e6;\n")
+            f.write("    border-radius: 4px;\n")
+            f.write("    white-space: nowrap;\n")
+            f.write("    align-self: center;\n")
             f.write("}\n")
             f.write("/* Visual grouping within the table */\n")
             f.write(".table tr[data-category] {\n")
@@ -621,6 +898,10 @@ def main():
             f.write("</style>\n")
             f.write("<div class='filter-container'>\n")
             f.write("    <input type='text' class='search-input' id='searchInput' placeholder='Search features...'>\n")
+            f.write("    <select class='category-filter' id='domainFilter'>\n")
+            f.write("        <option value=''>All Domains</option>\n")
+            f.write("        {domain_options}\n")
+            f.write("    </select>\n")
             f.write("    <select class='category-filter' id='categoryFilter'>\n")
             f.write("        <option value=''>All Categories</option>\n")
             f.write("        {category_options}\n")
@@ -633,6 +914,7 @@ def main():
             f.write("        <option value=''>All Types</option>\n")
             f.write("        {type_options}\n")
             f.write("    </select>\n")
+            f.write("    <span class='feature-counter' id='featureCounter'>0 features</span>\n")
             f.write("</div>\n")
             f.write("<div class='table-container'>\n")
             f.write("'''\n\n")
@@ -640,7 +922,8 @@ def main():
             f.write("formatted_html = (interactive_html\n")
             f.write("                    .replace('{category_options}', category_options)\n")
             f.write("                    .replace('{implementation_options}', implementation_options)\n")
-            f.write("                    .replace('{type_options}', type_options))\n")
+            f.write("                    .replace('{type_options}', type_options)\n")
+            f.write("                    .replace('{domain_options}', domain_options))\n")
             f.write("display(HTML(formatted_html + table_html + '</div>'))\n\n")
             f.write("# Add JavaScript for search and sort functionality\n")
             f.write("display(HTML('''\n")
@@ -651,6 +934,8 @@ def main():
             f.write("    const categoryFilter = document.getElementById('categoryFilter');\n")
             f.write("    const implementationFilter = document.getElementById('implementationFilter');\n")
             f.write("    const typeFilter = document.getElementById('typeFilter');\n")
+            f.write("    const domainFilter = document.getElementById('domainFilter');\n")
+            f.write("    const featureCounter = document.getElementById('featureCounter');\n")
             f.write("    const tbody = table.querySelector('tbody');\n")
             f.write("    const rows = Array.from(tbody.querySelectorAll('tr'));\n")
             f.write("    \n")
@@ -667,20 +952,45 @@ def main():
             f.write("        const selectedCategory = categoryFilter.value;\n")
             f.write("        const selectedImplementation = implementationFilter.value;\n")
             f.write("        const selectedType = typeFilter.value;\n")
+            f.write("        const selectedDomain = domainFilter.value;\n")
             f.write("        \n")
             f.write("        rows.forEach(row => {\n")
             f.write("            const text = row.textContent.toLowerCase();\n")
             f.write("            const category = row.getAttribute('data-category') || '';\n")
             f.write("            const impl = row.getAttribute('data-impl') || '';\n")
             f.write("            const ftype = row.getAttribute('data-type') || '';\n")
+            f.write("            const domain = row.getAttribute('data-domain') || '';\n")
             f.write("            \n")
             f.write("            const matchesSearch = text.includes(searchTerm);\n")
-            f.write("            const matchesCategory = !selectedCategory || category === selectedCategory;\n")
+            f.write("            const matchesCategory = !selectedCategory || category.split(',').map(s => s.trim()).includes(selectedCategory);\n")
             f.write("            const matchesImplementation = !selectedImplementation || impl.split(',').map(s => s.trim()).includes(selectedImplementation);\n")
             f.write("            const matchesType = !selectedType || ftype === selectedType;\n")
+            f.write("            // Domain filtering: handle special case of 'pitch,rhythm' appearing in both filters\n")
+            f.write("            // 'both' domain features only appear when 'Both' is selected\n")
+            f.write("            let matchesDomain = true;\n")
+            f.write("            if (selectedDomain) {\n")
+            f.write("                if (selectedDomain === 'Pitch') {\n")
+            f.write("                    matchesDomain = domain === 'pitch' || domain === 'pitch,rhythm';\n")
+            f.write("                } else if (selectedDomain === 'Rhythm') {\n")
+            f.write("                    matchesDomain = domain === 'rhythm' || domain === 'pitch,rhythm';\n")
+            f.write("                } else if (selectedDomain === 'Both') {\n")
+            f.write("                    matchesDomain = domain === 'both';\n")
+            f.write("                } else {\n")
+            f.write("                    matchesDomain = domain === selectedDomain.toLowerCase();\n")
+            f.write("                }\n")
+            f.write("            }\n")
             f.write("            \n")
-            f.write("            row.style.display = (matchesSearch && matchesCategory && matchesImplementation && matchesType) ? '' : 'none';\n")
+            f.write("            row.style.display = (matchesSearch && matchesCategory && matchesImplementation && matchesType && matchesDomain) ? '' : 'none';\n")
             f.write("        });\n")
+            f.write("        \n")
+            f.write("        // Update feature counter\n")
+            f.write("        const visibleCount = rows.filter(row => row.style.display !== 'none').length;\n")
+            f.write("        const totalCount = rows.length;\n")
+            f.write("        if (visibleCount === totalCount) {\n")
+            f.write("            featureCounter.textContent = `${totalCount} feature${totalCount !== 1 ? 's' : ''}`;\n")
+            f.write("        } else {\n")
+            f.write("            featureCounter.textContent = `${visibleCount} of ${totalCount} feature${totalCount !== 1 ? 's' : ''}`;\n")
+            f.write("        }\n")
             f.write("    }\n")
             f.write("    \n")
             f.write("    // Add event listeners\n")
@@ -688,6 +998,7 @@ def main():
             f.write("    categoryFilter.addEventListener('change', filterRows);\n")
             f.write("    implementationFilter.addEventListener('change', filterRows);\n")
             f.write("    typeFilter.addEventListener('change', filterRows);\n")
+            f.write("    domainFilter.addEventListener('change', filterRows);\n")
             f.write("    \n")
             f.write("    // Sort functionality\n")
             f.write("    let sortColumn = -1;\n")
@@ -728,6 +1039,9 @@ def main():
             f.write("        // Reorder rows in DOM\n")
             f.write("        sortedRows.forEach(row => tbody.appendChild(row));\n")
             f.write("    }\n")
+            f.write("    \n")
+            f.write("    // Initialize counter on page load\n")
+            f.write("    filterRows();\n")
             f.write("});\n")
             f.write("</script>\n")
             f.write("'''))\n")
