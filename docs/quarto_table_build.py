@@ -41,7 +41,7 @@ from melody_features.interpolation_contour import InterpolationContour
 from melody_features.polynomial_contour import PolynomialContour
 from melody_features.huron_contour import HuronContour
 from melody_features.ngram_counter import NGramCounter
-from melody_features.feature_decorators import corpus_prevalence, idyom, expectation, metre, pitch, rhythm, both, complexity, midi_toolbox, contour
+from melody_features.feature_decorators import lexical_diversity, idyom, expectation, metre, pitch, rhythm, both, complexity, midi_toolbox, contour
 
 
 @dataclass
@@ -386,13 +386,13 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         else:
             type_label = determine_type_from_return_annotation(obj)
 
-        category = _get_feature_category(obj)
-        
         # Determine domain from decorator if present
         if is_property and hasattr(obj, 'fget') and obj.fget is not None:
             domain_attr = getattr(obj.fget, "_feature_domain", None)
         else:
             domain_attr = getattr(obj, "_feature_domain", None)
+        
+        category = _get_feature_category(obj, domain_attr)
 
         # Set domain to "pitch" for contour class properties if not already set
         if is_property and "." in name:
@@ -426,9 +426,16 @@ def to_dataframe(rows: list[FeatureRow]) -> pd.DataFrame:
     
     return df
 
-def _get_feature_category(obj) -> str:
+def _get_feature_category(obj, domain: str = None) -> str:
     """Determine the feature category based on the actual feature type decorator.
     Returns a comma-separated string of categories for features that belong to multiple categories.
+    
+    Parameters
+    ----------
+    obj : object
+        The feature object (function or property)
+    domain : str, optional
+        The feature domain ('pitch', 'rhythm', 'both', etc.)
     """
     is_property = isinstance(obj, property)
     if is_property and hasattr(obj, 'fget') and obj.fget is not None:
@@ -445,9 +452,9 @@ def _get_feature_category(obj) -> str:
         'tonality': 'Tonality',
         'metre': 'Metre',
         'expectation': 'Expectation',
-        'corpus_prevalence': 'Corpus',
+        'lexical_diversity': 'Lexical Diversity',
         'mtype': 'MType',
-        'class_based': 'Class-based',
+        'pitch_class': 'Pitch Class',  
         'absolute': 'Absolute',
         'timing': 'Timing',
     }
@@ -457,6 +464,14 @@ def _get_feature_category(obj) -> str:
         categories = []
         for feature_type in feature_types:
             mapped = type_mapping.get(feature_type)
+            
+            if feature_type == 'absolute' and domain == 'pitch':
+                mapped = 'Absolute Pitch'
+            elif feature_type == 'pitch_class' and domain == 'pitch':
+                mapped = 'Pitch Class'
+            elif feature_type == 'interval' and domain == 'rhythm':
+                mapped = 'Inter-Onset Interval'
+            
             if mapped and mapped not in categories:
                 categories.append(mapped)
         
@@ -522,7 +537,6 @@ def build_table() -> pd.DataFrame:
 
     @idyom
     @expectation
-    @corpus_prevalence
     @pitch
     def pitch_mean_information_content_ltm(_melody):
         """The average information content across all notes in a melody,
@@ -551,7 +565,6 @@ def build_table() -> pd.DataFrame:
 
     @idyom
     @expectation
-    @corpus_prevalence
     @rhythm
     def rhythm_mean_information_content_ltm(_melody):
         """The average rhythmic information content across all notes in a melody,
@@ -772,7 +785,7 @@ def main():
             f.write("categories = sorted(all_categories)\n")
             f.write("category_options = '\\n'.join([f'        <option value=\"{cat}\">{cat}</option>' for cat in categories])\n\n")
             f.write("# Domains (from decorators)\n")
-            f.write("domains = ['Pitch', 'Rhythm', 'Both']\n")
+            f.write("domains = ['Pitch', 'Rhythm', 'Pitch & Rhythm']\n")
             f.write("domain_options = '\\n'.join([f'        <option value=\"{opt}\">{opt}</option>' for opt in domains])\n\n")
             f.write("# Implementations: split comma-separated values and deduplicate\n")
             f.write("impl_tokens = set()\n")
@@ -966,14 +979,14 @@ def main():
             f.write("            const matchesImplementation = !selectedImplementation || impl.split(',').map(s => s.trim()).includes(selectedImplementation);\n")
             f.write("            const matchesType = !selectedType || ftype === selectedType;\n")
             f.write("            // Domain filtering: handle special case of 'pitch,rhythm' appearing in both filters\n")
-            f.write("            // 'both' domain features only appear when 'Both' is selected\n")
+            f.write("            // 'both' domain features only appear when 'Pitch & Rhythm' is selected\n")
             f.write("            let matchesDomain = true;\n")
             f.write("            if (selectedDomain) {\n")
             f.write("                if (selectedDomain === 'Pitch') {\n")
             f.write("                    matchesDomain = domain === 'pitch' || domain === 'pitch,rhythm';\n")
             f.write("                } else if (selectedDomain === 'Rhythm') {\n")
             f.write("                    matchesDomain = domain === 'rhythm' || domain === 'pitch,rhythm';\n")
-            f.write("                } else if (selectedDomain === 'Both') {\n")
+            f.write("                } else if (selectedDomain === 'Pitch & Rhythm') {\n")
             f.write("                    matchesDomain = domain === 'both';\n")
             f.write("                } else {\n")
             f.write("                    matchesDomain = domain === selectedDomain.toLowerCase();\n")

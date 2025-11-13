@@ -12,11 +12,9 @@ We also implement decorators corresponding to the original software resource tha
 it possible to calculate features from a specific software resource using `_get_features_by_source`, which is used in the `features.py` to produce
 functions like `get_fantastic_features`.
 
-The final decorator corresponds to the category a feature falls under. For some categories, there are pitch and rhythm domain features that can be considered
-under that same category: e.g. `interval` operations for pitch correspond to melodic intervals, where `interval` operations for rhythm correspond to IOIs. 
-However, not all categories are this general - for example, `absolute` only applies to pitch features, and we instead use the name `timing` for equivalent rhythm features.
-This categorisation is used to produce the interactive feature table in the documentation, and to help organise the many different software implementations
-under a common framework.
+The category decorators are designed to organise features into categories that are useful for analysis and interpretation.
+Features from the same category are typically related by the representation used to compute the feature, for example,
+`pitch_class` features are computed from MIDI pitch numbers modulo 12.
 """
 
 from functools import wraps
@@ -38,13 +36,13 @@ class FeatureSource:
 class FeatureType:
     """Class for categorizing features by type."""
     INTERVAL = "interval"
-    CLASS_BASED = "class_based"
+    pitch_class = "pitch_class"
     CONTOUR = "contour"
     TONALITY = "tonality"
     METRE = "metre"
     ABSOLUTE = "absolute"
     TIMING = "timing"
-    CORPUS_PREVALENCE = "corpus_prevalence"
+    LEXICAL_DIVERSITY = "lexical_diversity"
     EXPECTATION = "expectation"
     COMPLEXITY = "complexity"
 
@@ -230,13 +228,13 @@ def domain(domain_value: str) -> Callable:
 
 # Feature type decorators - can be combined with source decorators
 interval = feature_type(FeatureType.INTERVAL)
-class_based = feature_type(FeatureType.CLASS_BASED)
+pitch_class = feature_type(FeatureType.pitch_class)
 contour = feature_type(FeatureType.CONTOUR)
 tonality = feature_type(FeatureType.TONALITY)
 metre = feature_type(FeatureType.METRE)
 absolute = feature_type(FeatureType.ABSOLUTE)
 timing = feature_type(FeatureType.TIMING)
-corpus_prevalence = feature_type(FeatureType.CORPUS_PREVALENCE)
+lexical_diversity = feature_type(FeatureType.LEXICAL_DIVERSITY)
 expectation = feature_type(FeatureType.EXPECTATION)
 complexity = feature_type(FeatureType.COMPLEXITY)
 

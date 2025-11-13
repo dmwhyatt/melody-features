@@ -10,8 +10,8 @@ from importlib import resources
 
 from .feature_decorators import (
     fantastic, idyom, midi_toolbox, melsim, jsymbolic, novel, simile, partitura,
-    FeatureType, feature_type, interval, class_based, contour, tonality, metre, absolute, timing,
-    corpus_prevalence, expectation, complexity,
+    FeatureType, feature_type, interval, pitch_class, contour, tonality, metre, absolute, timing,
+    lexical_diversity, expectation, complexity,
     pitch, rhythm, both
 )
 
@@ -495,7 +495,7 @@ def pitch_standard_deviation(pitches: list[int]) -> float:
     return float(np.std(pitches, ddof=1))
 
 @jsymbolic
-@class_based
+@pitch_class
 @absolute
 @pitch
 def pitch_class_variability(pitches: list[int]) -> float:
@@ -518,7 +518,7 @@ def pitch_class_variability(pitches: list[int]) -> float:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def pitch_class_variability_after_folding(pitches: list[int]) -> float:
     """Standard deviation of all pitch classes after arranging the pitch classes by perfect fifths.
@@ -564,7 +564,7 @@ def pitch_entropy(pitches: list[int]) -> float:
 
 @midi_toolbox
 @absolute
-@class_based
+@pitch_class
 @pitch
 def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
     """The distribution of pitch classes in the melody, weighted by the duration of the notes.
@@ -622,7 +622,7 @@ def first_pitch(pitches: list[int]) -> int:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def first_pitch_class(pitches: list[int]) -> int:
     """The first pitch class in the melody.
@@ -663,7 +663,7 @@ def last_pitch(pitches: list[int]) -> int:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def last_pitch_class(pitches: list[int]) -> int:
     """The last pitch class in the melody.
@@ -829,7 +829,7 @@ def _consecutive_fifths(pitch_classes: list[int]) -> list[int]:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def dominant_spread(pitches: list[int]) -> int:
     """The longest sequence of pitch classes separated by perfect 5ths that each appear >9% of the time.
@@ -894,7 +894,7 @@ def mean_pitch(pitches: list[int]) -> int:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def mean_pitch_class(pitches: list[int]) -> float:
     """The arithmetic mean of the pitch classes in the melody.
@@ -931,7 +931,7 @@ def most_common_pitch(pitches: list[int]) -> int:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def most_common_pitch_class(pitches: list[int]) -> int:
     """The most frequently occurring pitch class in the melody.
@@ -952,7 +952,7 @@ def most_common_pitch_class(pitches: list[int]) -> int:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def number_of_unique_pitch_classes(pitches: list[int]) -> int:
     """The number of unique pitch classes in the melody.
@@ -971,7 +971,7 @@ def number_of_unique_pitch_classes(pitches: list[int]) -> int:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def number_of_common_pitches_classes(pitches: list[int]) -> int:
     """The number of pitch classes that appear in at least 20% of total notes.
@@ -1139,7 +1139,7 @@ def prevalence_of_most_common_pitch(pitches: list[int]) -> float:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def prevalence_of_most_common_pitch_class(pitches: list[int]) -> float:
     """The proportion of pitch classes that are the most common pitch class with regards to the
@@ -1194,7 +1194,7 @@ def relative_prevalence_of_top_pitches(pitches: list[int]) -> float:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def relative_prevalence_of_top_pitch_classes(pitches: list[int]) -> float:
     """The ratio of the frequency of the second most common pitch class to the frequency of the most common pitch class.
@@ -1264,7 +1264,7 @@ def interval_between_most_prevalent_pitches(pitches: list[int]) -> int:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def interval_between_most_prevalent_pitch_classes(pitches: list[int]) -> int:
     """The number of semitones between the two most prevalent pitch classes.
@@ -1299,7 +1299,7 @@ def interval_between_most_prevalent_pitch_classes(pitches: list[int]) -> int:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
     """A histogram of pitch classes arranged according to the circle of fifths.
@@ -1326,7 +1326,7 @@ def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def pitch_class_skewness(pitches: list[int]) -> float:
     """The skewness of the pitch class histogram, using Pearson's median skewness formula.
@@ -1349,7 +1349,7 @@ def pitch_class_skewness(pitches: list[int]) -> float:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def pitch_class_kurtosis(pitches: list[int]) -> float:
     """The sample excess kurtosis of the pitch class histogram.
@@ -1372,7 +1372,7 @@ def pitch_class_kurtosis(pitches: list[int]) -> float:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def pitch_class_skewness_after_folding(pitches: list[int]) -> float:
     """The skewness of the pitch class histogram, using Pearson's median skewness formula, 
@@ -1396,7 +1396,7 @@ def pitch_class_skewness_after_folding(pitches: list[int]) -> float:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def pitch_class_kurtosis_after_folding(pitches: list[int]) -> float:
     """The sample excess kurtosis of the pitch class histogram, after arranging 
@@ -1420,7 +1420,7 @@ def pitch_class_kurtosis_after_folding(pitches: list[int]) -> float:
 
 @jsymbolic
 @absolute
-@class_based
+@pitch_class
 @pitch
 def strong_tonal_centres(pitches: list[int]) -> float:
     """The number of isolated peaks in the pitch class histogram that each account for at least 9% of notes.
@@ -8287,7 +8287,7 @@ def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_o
     return features
 
 @fantastic
-@corpus_prevalence
+@lexical_diversity
 @both
 def tfdf_spearman(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Calculate Spearman correlation between term frequency and document frequency.
@@ -8355,7 +8355,7 @@ def tfdf_spearman(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
         return 0.0
 
 @fantastic
-@corpus_prevalence
+@lexical_diversity
 @both
 def tfdf_kendall(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Calculate Kendall's tau correlation between term frequency and document frequency.
@@ -8423,7 +8423,7 @@ def tfdf_kendall(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngra
         return 0.0
 
 @fantastic
-@corpus_prevalence
+@lexical_diversity
 @both
 def mean_log_tfdf(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Calculate mean log TF-DF score across all n-grams.
@@ -8490,7 +8490,7 @@ def mean_log_tfdf(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
     return float(np.mean(tfdf_values) if tfdf_values else 0.0)
 
 @fantastic
-@corpus_prevalence
+@lexical_diversity
 @both
 def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Calculate normalized log distance between TF and DF distributions.
@@ -8556,7 +8556,7 @@ def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
     return float(np.mean(distances) if distances else 0.0)
 
 @fantastic
-@corpus_prevalence
+@lexical_diversity
 @both
 def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Calculate maximum log document frequency across all n-grams.
@@ -8609,7 +8609,7 @@ def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_
     return float(np.log1p(max_df) if max_df > 0 else 0.0)
 
 @fantastic
-@corpus_prevalence
+@lexical_diversity
 @both
 def min_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Calculate minimum log document frequency across all n-grams.
@@ -8662,7 +8662,7 @@ def min_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_
     return float(np.log1p(min_df) if min_df < float("inf") else 0.0)
 
 @fantastic
-@corpus_prevalence
+@lexical_diversity
 @both
 def mean_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Calculate mean log document frequency across all n-grams.
@@ -8722,7 +8722,7 @@ def mean_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram
     return float(total_log_df / df_count if df_count > 0 else 0.0)
 
 @fantastic
-@corpus_prevalence
+@lexical_diversity
 @both
 def mean_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Calculate mean global-local weight using inverse entropy weighting.
@@ -8771,7 +8771,7 @@ def mean_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: flo
         return 0.0
 
 @fantastic
-@corpus_prevalence
+@lexical_diversity
 @both
 def std_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Calculate standard deviation of global-local weight using inverse entropy weighting.
@@ -8820,7 +8820,7 @@ def std_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: floa
         return 0.0
 
 @fantastic
-@corpus_prevalence
+@lexical_diversity
 @both
 def mean_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Calculate mean global weight using inverse entropy weighting.
@@ -8869,7 +8869,7 @@ def mean_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, ma
         return 0.0
 
 @fantastic
-@corpus_prevalence
+@lexical_diversity
 @both
 def std_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Calculate standard deviation of global weight using inverse entropy weighting.
