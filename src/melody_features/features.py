@@ -486,9 +486,9 @@ def pitch_standard_deviation(pitches: list[int]) -> float:
     float
         Standard deviation of pitches
 
-    Notes
+    Note
     -----
-    This feature is named 'pitch_variability' in JSymbolic.
+    This feature is named 'Pitch Variability' in JSymbolic.
     """
     if not pitches or len(pitches) < 2:
         return 0.0
@@ -1633,9 +1633,9 @@ def mean_absolute_interval(pitches: list[int]) -> float:
     float
         Mean absolute interval size in semitones
 
-    Notes
+    Note
     -----
-    This feature is named 'mean_melodic_interval' in JSymbolic.
+    This feature is named 'Mean Melodic Interval' in JSymbolic.
     """
     return float(np.mean([abs(x) for x in pitch_interval(pitches)]))
 
@@ -1674,9 +1674,9 @@ def modal_interval(pitches: list[int]) -> int:
     int
         Most frequent interval size in semitones
 
-    Notes
+    Note
     -----
-    This feature is named 'most_common_interval' in JSymbolic.
+    This feature is named 'Most Common Interval' in JSymbolic.
     """
 
     intervals_abs = [abs(x) for x in pitch_interval(pitches)]
@@ -3047,9 +3047,9 @@ def global_duration(melody: Melody) -> float:
     float
         Total duration of the MIDI sequence in seconds
 
-    Notes
+    Note
     -----
-    This feature is named 'duration_in_seconds' in JSymbolic.
+    This feature is named 'Duration in Seconds' in JSymbolic.
     """
     return melody.total_duration
 
