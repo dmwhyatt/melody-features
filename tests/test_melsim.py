@@ -7,6 +7,7 @@ Tests the melody similarity calculation wrapper that interfaces with the R melsi
 # they're slightly different to the AMADS tests but the functionality is roughly the same.
 
 import os
+import shutil
 import tempfile
 from unittest.mock import patch, MagicMock
 import pytest
@@ -360,6 +361,10 @@ class TestMelsimBatchProcessing:
 
     def setup_method(self):
         """Set up test data for batch processing."""
+        # Skip if Rscript is not available
+        if shutil.which("Rscript") is None:
+            pytest.skip("Rscript not available, skipping melsim tests")
+        
         self.test_melodies = {
             "melody1": ([60, 62, 64, 65], [0.0, 0.5, 1.0, 1.5], [0.4, 0.9, 1.4, 1.9]),
             "melody2": ([60, 62, 64, 67], [0.0, 0.5, 1.0, 1.5], [0.4, 0.9, 1.4, 1.9]),
@@ -551,6 +556,11 @@ class TestMelsimComprehensiveValidation:
 
 class TestMelsimFileHandling:
     """Test file handling and batch processing."""
+
+    def setup_method(self):
+        """Set up test - skip if Rscript is not available."""
+        if shutil.which("Rscript") is None:
+            pytest.skip("Rscript not available, skipping melsim tests")
 
     @patch('multiprocessing.Pool')
     @patch('melody_features.melsim_wrapper.melsim._batch_compute_similarities')
