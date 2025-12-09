@@ -19,7 +19,7 @@ import os
 import multiprocessing as mp
 from importlib import resources
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Tuple, Optional, Set, Union
 
 from natsort import natsorted
 from tqdm import tqdm
@@ -30,14 +30,12 @@ from melody_features.representations import Melody, read_midijson
 
 # Corpus paths for easy access
 try:
-    essen_corpus = resources.files("melody_features") / "corpora" / "Essen_Corpus"
+    essen_corpus = resources.files("melody_features") / "corpora" / "essen_corpus"
+    pearce_default_idyom = resources.files("melody_features") / "corpora" / "pearce_default_idyom"
 except ImportError:
     # Fallback for development or when package is not installed
-    essen_corpus = Path(__file__).parent / "corpora" / "Essen_Corpus"
-
-
-
-
+    essen_corpus = Path(__file__).parent / "corpora" / "essen_corpus"
+    pearce_default_idyom = Path(__file__).parent / "corpora" / "pearce_default_idyom"
 
 def process_melody_ngrams(args) -> set:
     """Process n-grams for a single melody.
@@ -459,8 +457,7 @@ def get_corpus_path(corpus_name: str) -> Path:
     Parameters
     ----------
     corpus_name : str
-        Name of the corpus. Currently supports: 'essen'
-
+        Name of the corpus. Currently supports: 'essen', 'pearce_default_idyom'.
     Returns
     -------
     Path
@@ -473,7 +470,7 @@ def get_corpus_path(corpus_name: str) -> Path:
     FileNotFoundError
         If the corpus directory does not exist
     """
-    corpus_paths = {"essen": essen_corpus}
+    corpus_paths = {"essen": essen_corpus, "pearce_default_idyom": pearce_default_idyom}
 
     if corpus_name not in corpus_paths:
         available = ", ".join(corpus_paths.keys())
@@ -495,7 +492,7 @@ def get_corpus_files(corpus_name: str, max_files: int = None) -> List[Path]:
     Parameters
     ----------
     corpus_name : str
-        Name of the corpus. Currently supports: 'essen'
+        Name of the corpus. Currently supports: 'essen', 'pearce_default_idyom'.
     max_files : int, optional
         Maximum number of files to return. If None, returns all files.
 
@@ -533,4 +530,4 @@ def list_available_corpora() -> List[str]:
     List[str]
         List of available corpus names
     """
-    return ["essen"]
+    return ["essen", "pearce_default_idyom"]

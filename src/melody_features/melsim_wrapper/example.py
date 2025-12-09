@@ -9,11 +9,11 @@ if __name__ == "__main__":
     install_dependencies()
 
     # example files from Essen folksong corpus
-    appenzel_path = "src/melody_features/corpora/Essen_Corpus/appenzel.mid"
-    arabic_path = "src/melody_features/corpora/Essen_Corpus/arabic01.mid"
+    appenzel_path = "src/melody_features/corpora/essen_corpus/appenzel.mid"
+    arabic_path = "src/melody_features/corpora/essen_corpus/arabic01.mid"
 
     # if you wished to, you could instead use a directory:
-    midi_dir = "src/melody_features/corpora/Essen_Corpus"
+    midi_dir = "src/melody_features/corpora/essen_corpus"
 
     # Calculate similarity between two MIDI files
     similarity_value = get_similarity_from_midi(

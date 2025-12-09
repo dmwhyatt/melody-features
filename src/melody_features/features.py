@@ -16,6 +16,7 @@ from .feature_decorators import (
 )
 
 warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="pretty_midi")
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
 warnings.filterwarnings(
     "ignore", category=UserWarning, message=".*pkg_resources is deprecated.*"
@@ -301,6 +302,8 @@ class IDyOMConfig:
         Path to the corpus to use for IDyOM analysis. If not provided, the corpus will be the one specified in the Config class.
         This will override the corpus specified in the Config class if both are provided.
         This should be set to None if using :stm model, as the short term model does not use pretraining. 
+        You can use the bundled corpora (essen_corpus and pearce_default_idyom) or provide a path to a directory containing MIDI files
+        for a different corpus.
     """
 
     target_viewpoints: list[str]
@@ -346,6 +349,8 @@ class FantasticConfig:
     corpus : Optional[os.PathLike]
         Path to the corpus to use for FANTASTIC analysis. If not provided, the corpus will be the one specified in the Config class.
         This will override the corpus specified in the Config class if both are provided.
+        You can use the bundled corpora (essen_corpus and pearce_default_idyom) or provide a path to a directory containing MIDI files
+        for a different corpus.
     """
 
     max_ngram_order: int
@@ -391,6 +396,8 @@ class Config:
     corpus : Optional[os.PathLike]
         Path to the corpus to use for the feature set. This can be overridden by the corpus parameter in the IDyOMConfig and FantasticConfig classes.
         If None, no corpus-dependent features will be computed unless specified in individual configs.
+        You can use the bundled corpora (essen_corpus and pearce_default_idyom) or provide a path to a directory containing MIDI files
+        for a different corpus.
     key_estimation: str
         The key estimation method to use. Can be 
         `always_read_from_file`, `infer_if_necessary` or `always_infer`:
@@ -496,7 +503,6 @@ def pitch_standard_deviation(pitches: list[int]) -> float:
 
 @jsymbolic
 @pitch_class
-@absolute
 @pitch
 def pitch_class_variability(pitches: list[int]) -> float:
     """Standard deviation of all pitch classes in the melody.
@@ -517,7 +523,6 @@ def pitch_class_variability(pitches: list[int]) -> float:
     return float(np.std(pcs, ddof=1))
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def pitch_class_variability_after_folding(pitches: list[int]) -> float:
@@ -563,7 +568,6 @@ def pitch_entropy(pitches: list[int]) -> float:
     return float(shannon_entropy(pitches))
 
 @midi_toolbox
-@absolute
 @pitch_class
 @pitch
 def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
@@ -621,7 +625,6 @@ def first_pitch(pitches: list[int]) -> int:
     return int(pitches[0])
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def first_pitch_class(pitches: list[int]) -> int:
@@ -662,7 +665,6 @@ def last_pitch(pitches: list[int]) -> int:
     return int(pitches[-1])
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def last_pitch_class(pitches: list[int]) -> int:
@@ -828,7 +830,6 @@ def _consecutive_fifths(pitch_classes: list[int]) -> list[int]:
     return longest_sequence
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def dominant_spread(pitches: list[int]) -> int:
@@ -893,7 +894,6 @@ def mean_pitch(pitches: list[int]) -> int:
     return int(np.mean(pitches))
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def mean_pitch_class(pitches: list[int]) -> float:
@@ -930,7 +930,6 @@ def most_common_pitch(pitches: list[int]) -> int:
     return int(get_mode(pitches))
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def most_common_pitch_class(pitches: list[int]) -> int:
@@ -951,7 +950,6 @@ def most_common_pitch_class(pitches: list[int]) -> int:
     return int(get_mode([pitch % 12 for pitch in pitches]))
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def number_of_unique_pitch_classes(pitches: list[int]) -> int:
@@ -970,7 +968,6 @@ def number_of_unique_pitch_classes(pitches: list[int]) -> int:
     return int(len(set([pitch % 12 for pitch in pitches])))
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def number_of_common_pitches_classes(pitches: list[int]) -> int:
@@ -1138,7 +1135,6 @@ def prevalence_of_most_common_pitch(pitches: list[int]) -> float:
     return float(pitches.count(most_common_pitch(pitches)) / len(pitches))
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def prevalence_of_most_common_pitch_class(pitches: list[int]) -> float:
@@ -1193,7 +1189,6 @@ def relative_prevalence_of_top_pitches(pitches: list[int]) -> float:
     return float(second_most_freq / most_common_freq)
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def relative_prevalence_of_top_pitch_classes(pitches: list[int]) -> float:
@@ -1263,7 +1258,6 @@ def interval_between_most_prevalent_pitches(pitches: list[int]) -> int:
     return int(abs(int(max_index) - int(second_max_index)))
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def interval_between_most_prevalent_pitch_classes(pitches: list[int]) -> int:
@@ -1298,7 +1292,6 @@ def interval_between_most_prevalent_pitch_classes(pitches: list[int]) -> int:
     return int(diff)
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
@@ -1325,7 +1318,6 @@ def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
 
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def pitch_class_skewness(pitches: list[int]) -> float:
@@ -1348,7 +1340,6 @@ def pitch_class_skewness(pitches: list[int]) -> float:
     return histogram.skewness
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def pitch_class_kurtosis(pitches: list[int]) -> float:
@@ -1371,7 +1362,6 @@ def pitch_class_kurtosis(pitches: list[int]) -> float:
     return histogram.kurtosis
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def pitch_class_skewness_after_folding(pitches: list[int]) -> float:
@@ -1395,7 +1385,6 @@ def pitch_class_skewness_after_folding(pitches: list[int]) -> float:
     return histogram.skewness
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def pitch_class_kurtosis_after_folding(pitches: list[int]) -> float:
@@ -1419,7 +1408,6 @@ def pitch_class_kurtosis_after_folding(pitches: list[int]) -> float:
     return histogram.kurtosis
 
 @jsymbolic
-@absolute
 @pitch_class
 @pitch
 def strong_tonal_centres(pitches: list[int]) -> float:
@@ -2570,6 +2558,62 @@ def get_pitch_features(melody: Melody) -> Dict:
     pitch_functions = _get_features_by_domain_and_types("pitch", ["absolute"])
     
     for name, func in pitch_functions.items():
+        try:
+            sig = inspect.signature(func)
+            params = list(sig.parameters.keys())
+            
+            # Call function with appropriate parameters based on signature
+            if 'pitches' in params and 'starts' in params and 'ends' in params and 'tempo' in params:
+                result = func(melody.pitches, melody.starts, melody.ends, melody.tempo)
+            elif 'pitches' in params and 'starts' in params and 'ends' in params:
+                result = func(melody.pitches, melody.starts, melody.ends)
+            elif 'pitches' in params and 'starts' in params:
+                if 'tempo' in params and 'ppqn' in params:
+                    result = func(melody.pitches, melody.starts, melody.tempo, 480)
+                elif 'tempo' in params:
+                    result = func(melody.pitches, melody.starts, melody.tempo)
+                else:
+                    result = func(melody.pitches, melody.starts)
+            elif 'pitches' in params:
+                result = func(melody.pitches)
+            elif 'starts' in params and 'ends' in params:
+                result = func(melody.starts, melody.ends)
+            elif 'starts' in params:
+                result = func(melody.starts)
+            elif 'ends' in params:
+                result = func(melody.ends)
+            elif 'melody' in params:
+                result = func(melody)
+            else:
+                result = func(melody)
+
+            features[name] = result
+        except Exception as e:
+            print(f"Warning: Could not compute {name}: {e}")
+            features[name] = None
+
+    return features
+
+
+def get_pitch_class_features(melody: Melody) -> Dict:
+    """Dynamically collect all pitch class features for a melody.
+    
+    Collects features decorated with @pitch domain and @pitch_class type.
+    
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+        
+    Returns
+    -------
+    Dict
+        Dictionary of pitch class feature values
+    """
+    features = {}
+    pitch_class_functions = _get_features_by_domain_and_types("pitch", ["pitch_class"])
+    
+    for name, func in pitch_class_functions.items():
         try:
             sig = inspect.signature(func)
             params = list(sig.parameters.keys())
@@ -5785,7 +5829,6 @@ def number_of_relatively_strong_rhythmic_pulses_tempo_standardized(
 @novel
 @rhythm
 @interval
-@timing
 def ioi_histogram(starts: list[float]) -> dict:
     """A histogram of inter-onset intervals.
 
@@ -10089,6 +10132,10 @@ def process_melody(args):
     timings["pitch"] = time.time() - start
 
     start = time.time()
+    pitch_class_features = get_pitch_class_features(mel)
+    timings["pitch_class"] = time.time() - start
+
+    start = time.time()
     interval_features = get_interval_features(mel)
     timings["interval"] = time.time() - start
 
@@ -10118,6 +10165,7 @@ def process_melody(args):
 
     melody_features = {
         "pitch_features": pitch_features,
+        "pitch_class_features": pitch_class_features,
         "interval_features": interval_features,
         "contour_features": contour_features,
         "rhythm_features": rhythm_features,
@@ -10465,7 +10513,7 @@ def _setup_default_config(config: Optional[Config]) -> Config:
     """
     if config is None:
         config = Config(
-            corpus=resources.files("melody_features") / "corpora/Essen_Corpus",
+            corpus=resources.files("melody_features") / "corpora/pearce_default_idyom",
             idyom={
                 "pitch_stm": IDyOMConfig(
                     target_viewpoints=["cpitch"],
@@ -10829,6 +10877,7 @@ def _setup_parallel_processing(
     mel = Melody(melody_data_list[0])
     first_features = {
         "pitch_features": get_pitch_features(mel),
+        "pitch_class_features": get_pitch_class_features(mel),
         "interval_features": get_interval_features(mel),
         "contour_features": get_contour_features(mel),
         "rhythm_features": get_rhythm_features(mel),
@@ -10888,6 +10937,7 @@ def _setup_parallel_processing(
     # Track timing statistics
     timing_stats = {
         "pitch": [],
+        "pitch_class": [],
         "interval": [],
         "contour": [],
         "rhythm": [],

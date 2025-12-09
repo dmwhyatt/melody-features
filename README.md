@@ -71,7 +71,7 @@ print(results.iloc[:1,].to_json(indent=4, orient="records"))
 
 ```
 
-By default, this function will produce a Pandas DataFrame containing the tabulated features, using the Essen Folksong Collection as the reference corpus.
+By default, this function will produce a Pandas DataFrame containing the tabulated features, using the a collection of 903 Western traditional music melodies as the reference corpus, from Pearce (2006).
 
 
 This function can be customised in a number of ways, please see `notebooks/example.ipynb` for a detailed breakdown.
