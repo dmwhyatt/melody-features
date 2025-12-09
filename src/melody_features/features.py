@@ -302,7 +302,7 @@ class IDyOMConfig:
         Path to the corpus to use for IDyOM analysis. If not provided, the corpus will be the one specified in the Config class.
         This will override the corpus specified in the Config class if both are provided.
         This should be set to None if using :stm model, as the short term model does not use pretraining. 
-        You can use the bundled corpora (essen_corpus and pearce_default_idyom) or provide a path to a directory containing MIDI files
+        You can use the bundled corpora (essen_folksong_collection and pearce_default_idyom) or provide a path to a directory containing MIDI files
         for a different corpus.
     """
 
@@ -349,7 +349,7 @@ class FantasticConfig:
     corpus : Optional[os.PathLike]
         Path to the corpus to use for FANTASTIC analysis. If not provided, the corpus will be the one specified in the Config class.
         This will override the corpus specified in the Config class if both are provided.
-        You can use the bundled corpora (essen_corpus and pearce_default_idyom) or provide a path to a directory containing MIDI files
+        You can use the bundled corpora (essen_folksong_collection and pearce_default_idyom) or provide a path to a directory containing MIDI files
         for a different corpus.
     """
 
@@ -396,7 +396,7 @@ class Config:
     corpus : Optional[os.PathLike]
         Path to the corpus to use for the feature set. This can be overridden by the corpus parameter in the IDyOMConfig and FantasticConfig classes.
         If None, no corpus-dependent features will be computed unless specified in individual configs.
-        You can use the bundled corpora (essen_corpus and pearce_default_idyom) or provide a path to a directory containing MIDI files
+        You can use the bundled corpora (essen_folksong_collection and pearce_default_idyom) or provide a path to a directory containing MIDI files
         for a different corpus.
     key_estimation: str
         The key estimation method to use. Can be 

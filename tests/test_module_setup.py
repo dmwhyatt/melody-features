@@ -147,7 +147,7 @@ def test_resource_access():
     """Test importlib.resources access."""
     from importlib import resources
 
-    essen_path = resources.files("melody_features") / "corpora" / "Essen_Corpus"
+    essen_path = resources.files("melody_features") / "corpora" / "essen_folksong_collection"
 
     assert essen_path is not None, "Resource path is None"
     assert essen_path.exists(), f"Resource path does not exist: {essen_path}"
@@ -170,8 +170,8 @@ def test_importlib_resources_compatibility():
         assert corpora_path.exists(), "Corpora directory does not exist"
 
         # Test that Essen_Corpus exists
-        essen_path = corpora_path / "Essen_Corpus"
-        assert essen_path.exists(), "Essen_Corpus directory does not exist"
+        essen_path = corpora_path / "essen_folksong_collection"
+        assert essen_path.exists(), "essen_folksong_collection directory does not exist"
 
     except Exception as e:
         pytest.fail(f"importlib.resources access failed: {e}")

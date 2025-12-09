@@ -30,11 +30,11 @@ from melody_features.representations import Melody, read_midijson
 
 # Corpus paths for easy access
 try:
-    essen_corpus = resources.files("melody_features") / "corpora" / "essen_corpus"
+    essen_corpus = resources.files("melody_features") / "corpora" / "essen_folksong_collection"
     pearce_default_idyom = resources.files("melody_features") / "corpora" / "pearce_default_idyom"
 except ImportError:
     # Fallback for development or when package is not installed
-    essen_corpus = Path(__file__).parent / "corpora" / "essen_corpus"
+    essen_corpus = Path(__file__).parent / "corpora" / "essen_folksong_collection"
     pearce_default_idyom = Path(__file__).parent / "corpora" / "pearce_default_idyom"
 
 def process_melody_ngrams(args) -> set:

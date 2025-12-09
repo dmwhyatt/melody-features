@@ -15,7 +15,7 @@ def test_essen_corpus_import():
     assert isinstance(essen_corpus, Path)
     assert essen_corpus.exists()
     assert essen_corpus.is_dir()
-    assert "essen_corpus" in str(essen_corpus)
+    assert "essen_folksong_collection" in str(essen_corpus)
 
 
 def test_get_corpus_path_function():
@@ -26,7 +26,7 @@ def test_get_corpus_path_function():
     assert isinstance(essen_path, Path)
     assert essen_path.exists()
     assert essen_path.is_dir()
-    assert "essen_corpus" in str(essen_path)
+    assert "essen_folksong_collection" in str(essen_path)
 
 
 def test_main_package_import():

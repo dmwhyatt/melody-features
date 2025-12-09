@@ -155,11 +155,11 @@ def test_all_mapped_features_match_csv_values():
     
     # Test all melodies in the CSV
     melody_files = [
-        "src/melody_features/corpora/Essen_Corpus/appenzel.mid",
-        "src/melody_features/corpora/Essen_Corpus/arabic01.mid", 
-        "src/melody_features/corpora/Essen_Corpus/ashsham1.mid",
-        "src/melody_features/corpora/Essen_Corpus/belgium1.mid",
-        "src/melody_features/corpora/Essen_Corpus/brabant1.mid"
+        "src/melody_features/corpora/essen_folksong_collection/appenzel.mid",
+        "src/melody_features/corpora/essen_folksong_collection/arabic01.mid", 
+        "src/melody_features/corpora/essen_folksong_collection/ashsham1.mid",
+        "src/melody_features/corpora/essen_folksong_collection/belgium1.mid",
+        "src/melody_features/corpora/essen_folksong_collection/brabant1.mid"
     ]
     
     total_tests = 0

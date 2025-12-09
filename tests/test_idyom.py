@@ -489,7 +489,7 @@ class TestKeyEstimationStrategies:
         from mido import MidiFile
         
         # Use a file from the Essen corpus that has a key signature
-        midi_path = resources.files("melody_features") / "corpora/Essen_Corpus/appenzel.mid"
+        midi_path = resources.files("melody_features") / "corpora/essen_folksong_collection/appenzel.mid"
         
         with tempfile.TemporaryDirectory() as input_dir:
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -526,7 +526,7 @@ class TestKeyEstimationStrategies:
         from melody_features.algorithms import compute_tonality_vector
         from mido import MidiFile
 
-        midi_path = resources.files("melody_features") / "corpora/Essen_Corpus/appenzel.mid"
+        midi_path = resources.files("melody_features") / "corpora/essen_folksong_collection/appenzel.mid"
 
         with tempfile.TemporaryDirectory() as input_dir:
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -561,7 +561,7 @@ class TestKeyEstimationStrategies:
         from melody_features.features import create_temp_midi_with_key_signature
         from mido import MidiFile
         
-        midi_path = resources.files("melody_features") / "corpora/Essen_Corpus/appenzel.mid"
+        midi_path = resources.files("melody_features") / "corpora/essen_folksong_collection/appenzel.mid"
         
         with tempfile.TemporaryDirectory() as input_dir:
             with tempfile.TemporaryDirectory() as temp_dir:
