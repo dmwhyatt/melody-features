@@ -9,7 +9,7 @@
 [![Coverage](https://codecov.io/gh/dmwhyatt/melody-features/branch/main/graph/badge.svg)](https://codecov.io/gh/dmwhyatt/melody-features)
 
 ## Overview
-This is a Python package designed to facilitate the use of many different melody analyis tools. 
+This is a Python package designed to facilitate the use of many different melody analysis tools. 
 
 The main goal of this package is to consolidate a wide range of features from the computational melody analysis literature
 into a single place, in a single language.
