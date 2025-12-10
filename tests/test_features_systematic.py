@@ -139,38 +139,54 @@ def _get_feature_category_mapping():
         'corpus': 'corpus_features',
     }
 
+def _internal_to_display_category(internal_name):
+    """Map internal category names to display names (lowercase with underscores)."""
+    mapping = {
+        'pitch_features': 'absolute_pitch',
+        'pitch_class_features': 'pitch_class',
+        'interval_features': 'interval',
+        'contour_features': 'contour',
+        'rhythm_features': 'timing',  # ioi features map to 'inter_onset_interval'
+        'tonality_features': 'tonality',
+        'metre_features': 'metre',
+        'expectation_features': 'expectation',
+        'complexity_features': 'complexity',  # mtype features map to 'lexical_diversity'
+        'corpus_features': 'corpus',
+    }
+    return mapping.get(internal_name, internal_name.lower().replace('_features', ''))
+
 # Some features are actually allowed to be NaN
 NAN_ALLOWED_FEATURES = {
-    'complexity_features.yules_k',  
-    'complexity_features.simpsons_d',  
-    'complexity_features.sichels_s',  
-    'complexity_features.honores_h',  
-    'complexity_features.mean_entropy',  
-    'complexity_features.mean_productivity',  
-    'pitch_features.pitch_class_kurtosis_after_folding',  
-    'pitch_features.pitch_class_skewness_after_folding',  
-    'pitch_features.pitch_class_variability_after_folding',  
-    'interval_features.standard_deviation_absolute_interval',
-    'rhythm_features.ioi_standard_deviation',
-    'interval_features.minor_major_third_ratio',
-    'rhythm_features.variability_of_time_between_attacks',
+    'lexical_diversity.yules_k',  
+    'lexical_diversity.simpsons_d',  
+    'lexical_diversity.sichels_s',  
+    'lexical_diversity.honores_h',  
+    'lexical_diversity.mean_entropy',  
+    'lexical_diversity.mean_productivity',  
+    'pitch_class.pitch_class_kurtosis_after_folding',  
+    'pitch_class.pitch_class_skewness_after_folding',  
+    'pitch_class.pitch_class_variability_after_folding',  
+    'interval.standard_deviation_absolute_interval',
+    'inter_onset_interval.ioi_standard_deviation',
+    'interval.minor_major_third_ratio',
+    'timing.variability_of_time_between_attacks',
 }
 
 PROPORTION_FEATURES = {
-    'pitch_features.stepwise_motion',
-    'pitch_features.repeated_notes',
-    'pitch_features.chromatic_motion',
-    'pitch_features.amount_of_arpeggiation',
-    'pitch_features.melodic_embellishment',
-    'rhythm_features.metric_stability',
-    'tonality_features.tonalness',
-    'interval_features.melodic_large_intervals',
-    'tonality_features.proportion_conjunct_scalar',
-    'tonality_features.proportion_scalar',
-    'interval_features.prevalence_of_most_common_melodic_interval',
-    'rhythm_features.equal_duration_transitions',
-    'rhythm_features.dotted_duration_transitions',
-    'rhythm_features.half_duration_transitions',
+    'absolute_pitch.stepwise_motion',
+    'absolute_pitch.repeated_notes',
+    'interval.chromatic_motion',
+    'interval.amount_of_arpeggiation',
+    'expectation.melodic_embellishment',
+    'timing.metric_stability',
+    'tonality.tonalness',
+    'interval.melodic_large_intervals',
+    'tonality.proportion_conjunct_scalar',
+    'tonality.proportion_scalar',
+    'interval.prevalence_of_most_common_melodic_interval',
+    'timing.equal_duration_transitions',
+    'timing.dotted_duration_transitions',
+    'timing.half_duration_transitions',
 }
 
 
@@ -445,6 +461,19 @@ def test_feature_completeness():
         if config.corpus is None:
             expected_categories.discard('corpus_features')
         
+        # Map internal category names to display names (lowercase with underscores)
+        expected_display_categories = set()
+        for internal_cat in expected_categories:
+            display_cat = _internal_to_display_category(internal_cat)
+            expected_display_categories.add(display_cat)
+        
+        # Also add special categories that may exist in the output
+        # (lexical_diversity for mtype features, inter_onset_interval for IOI features)
+        if 'complexity_features' in expected_categories:
+            expected_display_categories.add('lexical_diversity')
+        if 'rhythm_features' in expected_categories:
+            expected_display_categories.add('inter_onset_interval')
+        
         # Check that we have all expected feature categories
         feature_categories = set()
         for col in df.columns:
@@ -452,7 +481,7 @@ def test_feature_completeness():
                 category = col.split('.')[0]
                 feature_categories.add(category)
         
-        missing_categories = expected_categories - feature_categories
+        missing_categories = expected_display_categories - feature_categories
         assert not missing_categories, f"Missing feature categories: {missing_categories}"
         
         # Check that we have a reasonable number of features

@@ -11353,6 +11353,73 @@ def _compute_features_by_source(
 
     return computed_features
 
+def _get_category_display_name(category: str, feature_name: str = None) -> str:
+    """Map internal category names to display names.
+    
+    Parameters
+    ----------
+    category : str
+        Internal category name (e.g., "pitch_features", "pitch_class_features", "pitch")
+    feature_name : str, optional
+        Feature name to help determine category (e.g., for mtype features or IOI features)
+        
+    Returns
+    -------
+    str
+        Display name for the category (e.g., "Absolute Pitch", "Pitch Class")
+    """
+    mtype_features = {"yules_k", "simpsons_d", "sichels_s", "honores_h", "mean_entropy", "mean_productivity"}
+    
+    if feature_name and feature_name in mtype_features:
+        return "Lexical Diversity"
+    
+    if category == "rhythm_features" and feature_name and "ioi" in feature_name.lower():
+        return "Inter-Onset Interval"
+    
+    category_mapping = {
+        "pitch_features": "Absolute Pitch",
+        "pitch_class_features": "Pitch Class",
+        "interval_features": "Interval",
+        "contour_features": "Contour",
+        "rhythm_features": "Timing",
+        "tonality_features": "Tonality",
+        "metre_features": "Metre",
+        "expectation_features": "Expectation",
+        "complexity_features": "Complexity",
+        "corpus_features": "Corpus",
+    }
+    
+    # mapping for timing_stats keys (without "_features" suffix)
+    timing_mapping = {
+        "pitch": "Absolute Pitch",
+        "pitch_class": "Pitch Class",
+        "interval": "Interval",
+        "contour": "Contour",
+        "rhythm": "Timing", # ioi features are included here
+        "tonality": "Tonality",
+        "metre": "Metre",
+        "expectation": "Expectation",
+        "complexity": "Complexity", # lexical diversity features are included here
+        "corpus": "Corpus",
+        "total": "Total",
+    }
+    
+    # Handle IDyOM features
+    if category.startswith("idyom_"):
+        return "IDyOM"
+    
+    # try timing_stats mapping first
+    if category in timing_mapping:
+        return timing_mapping[category]
+    
+    # try DataFrame category mapping
+    if category in category_mapping:
+        return category_mapping[category]
+    
+    # fallback: format the category name
+    return category.replace("_features", "").replace("_", " ").title()
+
+
 def get_all_features(
     input: Union[os.PathLike, List[os.PathLike]],
     config: Optional[Config] = None,
@@ -11495,6 +11562,38 @@ def get_all_features(
     
     # Create DataFrame
     df = pd.DataFrame(all_features, columns=headers)
+    
+    # Rename columns to use display names
+    column_rename_map = {}
+    categories = set()
+    for col in df.columns:
+        # skip non-feature columns
+        if col in ["melody_num", "melody_id"]:
+            continue
+        if "." in col:
+            category, feature_name = col.split(".", 1)
+            display_name = _get_category_display_name(category, feature_name)
+            display_name_lower = display_name.lower().replace(" ", "_").replace("-", "_")
+            new_col_name = f"{display_name_lower}.{feature_name}"
+            column_rename_map[col] = new_col_name
+            categories.add(display_name_lower)
+        elif col.startswith("idyom_"):
+            if "_features" in col:
+                category = col.rsplit("_features", 1)[0]
+            else:
+                category = col
+            display_name = _get_category_display_name(category)
+            display_name_lower = display_name.lower().replace(" ", "_").replace("-", "_")
+            if "." in col:
+                _, feature_name = col.split(".", 1)
+                new_col_name = f"{display_name_lower}.{feature_name}"
+            else:
+                new_col_name = col  # keep as is if no feature name
+            column_rename_map[col] = new_col_name
+            categories.add(display_name_lower)
+    
+    # rename columns in DataFrame
+    df = df.rename(columns=column_rename_map)
     
     # Log timing statistics
     end_time = time.time()

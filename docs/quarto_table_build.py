@@ -392,7 +392,9 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         else:
             domain_attr = getattr(obj, "_feature_domain", None)
         
-        category = _get_feature_category(obj, domain_attr)
+        # Extract feature name for category determination
+        feature_name = name.split(".", 1)[-1] if "." in name else name
+        category = _get_feature_category(obj, domain_attr, feature_name)
 
         # Set domain to "pitch" for contour class properties if not already set
         if is_property and "." in name:
@@ -426,7 +428,7 @@ def to_dataframe(rows: list[FeatureRow]) -> pd.DataFrame:
     
     return df
 
-def _get_feature_category(obj, domain: str = None) -> str:
+def _get_feature_category(obj, domain: str = None, feature_name: str = None) -> str:
     """Determine the feature category based on the actual feature type decorator.
     Returns a comma-separated string of categories for features that belong to multiple categories.
     
@@ -436,26 +438,58 @@ def _get_feature_category(obj, domain: str = None) -> str:
         The feature object (function or property)
     domain : str, optional
         The feature domain ('pitch', 'rhythm', 'both', etc.)
+    feature_name : str, optional
+        The feature name to help determine category (e.g., for mtype features or IOI features)
     """
+    # MType feature names (lexical diversity features) - separate from corpus
+    mtype_features = {"yules_k", "simpsons_d", "sichels_s", "honores_h", "mean_entropy", "mean_productivity"}
+    
+    # Corpus feature names (features that require corpus_stats)
+    corpus_feature_names = {
+        "tfdf_spearman", "tfdf_kendall", "norm_log_dist", "max_log_df", "min_log_df", 
+        "mean_log_df", "mean_global_local_weight", 
+        "mean_global_weight", "mean_log_tfdf",
+        "mean_document_frequency"
+    }
+    
+    # Check if this is a corpus feature (by name or signature)
+    if feature_name and feature_name in corpus_feature_names:
+        return 'Corpus'
+    
+    # Check function signature for corpus_stats parameter (indicates corpus feature)
     is_property = isinstance(obj, property)
+    target = obj.fget if is_property else obj
+    try:
+        sig = inspect.signature(target)
+        if 'corpus_stats' in sig.parameters:
+            # But exclude mtype features which also have corpus_stats but are lexical diversity
+            if feature_name and feature_name not in mtype_features:
+                return 'Corpus'
+    except (TypeError, ValueError):
+        pass
+    
+    # Check if this is an mtype feature (lexical diversity)
+    if feature_name and feature_name in mtype_features:
+        return 'Lexical Diversity'
+    
     if is_property and hasattr(obj, 'fget') and obj.fget is not None:
         feature_types = getattr(obj.fget, "_feature_types", None)
     else:
         feature_types = getattr(obj, "_feature_types", None)
     
     type_mapping = {
-        'pitch': 'Pitch',
+        'pitch': 'Absolute Pitch',
         'interval': 'Interval', 
         'contour': 'Contour',
-        'rhythm': 'Rhythm',
+        'rhythm': 'Timing',
         'complexity': 'Complexity',
         'tonality': 'Tonality',
         'metre': 'Metre',
         'expectation': 'Expectation',
         'lexical_diversity': 'Lexical Diversity',
-        'mtype': 'MType',
+        'mtype': 'Lexical Diversity',
         'pitch_class': 'Pitch Class',  
-        'absolute': 'Absolute',
+        'absolute': 'Absolute Pitch',
         'timing': 'Timing',
     }
     
@@ -470,21 +504,25 @@ def _get_feature_category(obj, domain: str = None) -> str:
             elif feature_type == 'pitch_class' and domain == 'pitch':
                 mapped = 'Pitch Class'
             elif feature_type == 'interval' and domain == 'rhythm':
-                mapped = 'Inter-Onset Interval'
+                # Check if this is an IOI feature
+                if feature_name and 'ioi' in feature_name.lower():
+                    mapped = 'Inter-Onset Interval'
+                else:
+                    mapped = 'Timing'
             
             if mapped and mapped not in categories:
                 categories.append(mapped)
         
         if categories:
             return ', '.join(categories)
-        # Fallback: if no mapping found, use title case of first type
-        return feature_types[0].title()
+        # Fallback: if no mapping found, convert to Title Case
+        return feature_types[0].replace('_', ' ').title()
     
     # handle class based features (fallback for features without decorators)
     if hasattr(obj, '__name__'):
         name = obj.__name__
         if name in ['honores_h', 'yules_k', 'simpsons_d', 'sichels_s', 'mean_entropy', 'mean_productivity']:
-            return 'Complexity'
+            return 'Lexical Diversity'
         elif name in ['class_label', 'global_variation', 'global_direction', 'local_variation', 'coefficients']:
             return 'Contour'
     

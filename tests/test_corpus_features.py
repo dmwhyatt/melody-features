@@ -230,15 +230,15 @@ class TestFeaturesWithCorpus:
             assert len(df) == 1, "Should have one row"
             row = df.iloc[0]
 
-            corpus_feature_cols = [col for col in df.columns if col.startswith('corpus_features.')]
+            corpus_feature_cols = [col for col in df.columns if col.startswith('corpus.')]
             assert len(corpus_feature_cols) > 0, "Should have corpus features"
             
             # Check some corpus features exist and have valid types
-            if 'corpus_features.mean_document_frequency' in row.index:
-                assert isinstance(row['corpus_features.mean_document_frequency'], (int, float)), "Should be numeric"
+            if 'corpus.mean_document_frequency' in row.index:
+                assert isinstance(row['corpus.mean_document_frequency'], (int, float)), "Should be numeric"
             
-            if 'corpus_features.std_document_frequency' in row.index:
-                assert isinstance(row['corpus_features.std_document_frequency'], (int, float)), "Should be numeric"
+            if 'corpus.std_document_frequency' in row.index:
+                assert isinstance(row['corpus.std_document_frequency'], (int, float)), "Should be numeric"
     
     def test_get_all_features_corpus_precedence(self):
         """Test that fantastic.corpus takes precedence over config.corpus."""
@@ -270,7 +270,7 @@ class TestFeaturesWithCorpus:
             df = get_all_features(test_midi, config=config, skip_idyom=True)
             # not sure right now what the best way to check which corpus it used here is
             assert len(df) == 1, "Should process successfully"
-            corpus_cols = [col for col in df.columns if col.startswith('corpus_features.')]
+            corpus_cols = [col for col in df.columns if col.startswith('corpus.')]
             assert len(corpus_cols) > 0, "Should have corpus features"
 
 
