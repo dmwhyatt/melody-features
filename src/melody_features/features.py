@@ -98,9 +98,9 @@ from melody_features.stats import (
 )
 from melody_features.step_contour import StepContour
 from melody_features.meter_estimation import (
-    duration_accent,
-    melodic_accent,
-    metric_hierarchy
+    duration_accent as _duration_accent,
+    melodic_accent as _melodic_accent,
+    metric_hierarchy as _metric_hierarchy,
 )
 from melody_features.pitch_spelling import (
     estimate_spelling_from_melody as _estimate_spelling_from_melody,
@@ -550,7 +550,7 @@ def pitch_class_variability_after_folding(pitches: list[int]) -> float:
 
 
 @fantastic
-@absolute
+@complexity
 @pitch
 def pitch_entropy(pitches: list[int]) -> float:
     """The zeroth-order base-2 entropy of the pitch distribution.
@@ -1673,7 +1673,7 @@ def modal_interval(pitches: list[int]) -> int:
     return int(get_mode(intervals_abs))
 
 @fantastic
-@interval
+@complexity
 @pitch
 def interval_entropy(pitches: list[int]) -> float:
     """The zeroth-order base-2 entropy of the interval distribution.
@@ -3012,7 +3012,7 @@ def modal_duration(starts: list[float], ends: list[float], tempo: float = 120.0)
 
 @fantastic
 @rhythm
-@timing
+@complexity
 def duration_entropy(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
     """The zeroth-order base-2 entropy of the duration distribution in quarter notes.
 
@@ -6027,6 +6027,41 @@ def amount_of_staccato(starts: list[float], ends: list[float]) -> float:
 @midi_toolbox
 @rhythm
 @complexity
+def duration_accent(starts: list[float], ends: list[float], tau: float = 0.5, accent_index: float = 2.0) -> float:
+    """Calculate duration accent for each note based on Parncutt (1994).
+    Duration accent represents the perceptual salience of notes based on their duration.
+    
+    
+    Parameters
+    ----------
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+    tau : float, optional
+        Saturation duration in seconds, by default 0.5
+    accent_index : float, optional
+        Minimum discriminable duration parameter, by default 2.0
+        
+    Citation
+    --------
+    Parncutt (1994)
+
+    Returns
+    -------
+    list[float]
+        List of duration accent values for each note
+
+    Note
+    -----
+    The MIDI toolbox implementation uses defaults of 0.5 for tau (saturation duration) 
+    and 2.0 for accent_index (minimum discriminable duration).
+    """
+    return _duration_accent(starts, ends, tau, accent_index)
+
+@midi_toolbox
+@rhythm
+@complexity
 def mean_duration_accent(starts: list[float], ends: list[float], tau: float = 0.5, accent_index: float = 2.0) -> float:
     """The mean duration accent across all notes. Duration accent represents the perceptual salience of notes based on their duration,
     as defined by Parncutt (1994).
@@ -6056,7 +6091,7 @@ def mean_duration_accent(starts: list[float], ends: list[float], tau: float = 0.
         return 0.0
     return float(np.mean(accents))
 
-@novel
+@midi_toolbox
 @rhythm
 @complexity
 def duration_accent_std(starts: list[float], ends: list[float], tau: float = 0.5, accent_index: float = 2.0) -> float:
@@ -6436,7 +6471,7 @@ def tonal_spike(pitches: list[int]) -> float:
     return top_corr / other_sum
 
 @novel
-@tonality
+@complexity
 @pitch
 def tonal_entropy(pitches: list[int]) -> float:
     """The zeroth-order base-2 entropy of all key correlations.
@@ -7697,7 +7732,7 @@ def melodic_attraction(pitches: list[int]) -> list[float]:
 
     return scaled_attraction
 
-@novel
+@midi_toolbox
 @pitch
 @expectation
 def mean_melodic_attraction(pitches: list[int]) -> float:
@@ -7712,13 +7747,17 @@ def mean_melodic_attraction(pitches: list[int]) -> float:
     -------
     float
         Mean melodic attraction value
+
+    Citation
+    --------
+    Lerdahl (1996)
     """
     attraction_values = melodic_attraction(pitches)
     if not attraction_values:
         return 0.0
     return float(np.mean(attraction_values))
 
-@novel
+@midi_toolbox
 @pitch
 @expectation
 def melodic_attraction_std(pitches: list[int]) -> float:
@@ -7733,14 +7772,43 @@ def melodic_attraction_std(pitches: list[int]) -> float:
     -------
     float
         Standard deviation of melodic attraction values
+
+    Citation
+    --------
+    Lerdahl (1996)
     """
     attraction_values = melodic_attraction(pitches)
     if len(attraction_values) < 2:
         return 0.0
     return float(np.std(attraction_values, ddof=1))
 
+@midi_toolbox
+@pitch
+@expectation
+def melodic_accent(pitches: list[int]) -> list[float]:
+    """Calculate melodic accent salience according to Thomassen's model.
+    Implementation based on MIDI toolbox "melaccent.m"
+    In Thomassen's approach, melodic accents are determined based on 
+    the melodic contour formed by each group of three consecutive pitches. 
+    The accent strength ranges from 0 (no salience) to 1 (maximum salience).
+    
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+        
+    Returns
+    -------
+    list[float]
+        List of melodic accent values for each note
 
-@novel
+    Citation
+    --------
+    Thomassen (1982)
+    """
+    return _melodic_accent(pitches)
+
+@midi_toolbox
 @pitch
 @expectation
 def mean_melodic_accent(pitches: list[int]) -> float:
@@ -7757,13 +7825,17 @@ def mean_melodic_accent(pitches: list[int]) -> float:
     -------
     float
         Mean melodic accent value
+
+    Citation
+    --------
+    Thomassen (1982)
     """
     accents = melodic_accent(pitches)
     if not accents:
         return 0.0
     return float(np.mean(accents))
 
-@novel
+@midi_toolbox
 @pitch
 @expectation
 def melodic_accent_std(pitches: list[int]) -> float:
@@ -7778,6 +7850,10 @@ def melodic_accent_std(pitches: list[int]) -> float:
     -------
     float
         Standard deviation of melodic accent values
+
+    Citation
+    --------
+    Thomassen (1982)
     """
     accents = melodic_accent(pitches)
     if not accents:
@@ -8305,6 +8381,11 @@ def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_o
             elif 'starts' in params and 'ends' in params and 'tau' in params:
                 # edge case for mean_duration_accent
                 result = func(melody.starts, melody.ends, 0.5, 2.0)
+            elif 'starts' in params and 'ends' in params:
+                if 'tempo' in params:
+                    result = func(melody.starts, melody.ends, melody.tempo)
+                else:
+                    result = func(melody.starts, melody.ends)
             elif 'pitches' in params and 'starts' in params and 'ends' in params:
                 result = func(melody.pitches, melody.starts, melody.ends)
             elif 'pitches' in params:
@@ -9249,7 +9330,7 @@ def get_metric_accent_features(melody: Melody) -> Dict:
     """
     metric_features = {}
 
-    hierarchy_values = metric_hierarchy(
+    hierarchy_values = _metric_hierarchy(
         melody.starts, melody.ends, 
         time_signature=melody.meter, tempo=melody.tempo, pitches=melody.pitches
     )
@@ -9264,7 +9345,7 @@ def get_metric_accent_features(melody: Melody) -> Dict:
             accent_products = [
                 h * m * d for h, m, d in zip(
                     hierarchy_values[:min_length],
-                    melodic_accents[:min_length], 
+                    melodic_accents[:min_length],  
                     durational_accents[:min_length]
                 )
             ]
@@ -9601,7 +9682,7 @@ def syncopation(melody: Melody) -> float:
     if not melody.starts or len(melody.starts) < 2:
         return 0.0
 
-    hierarchy_values = metric_hierarchy(
+    hierarchy_values = _metric_hierarchy(
         melody.starts, 
         melody.ends, 
         time_signature=melody.meter, 
@@ -10191,7 +10272,8 @@ def process_melody(args):
         if idyom_results_dict:
             for idyom_name, idyom_results in idyom_results_dict.items():
                 if idyom_results and melody_id_str in idyom_results:
-                    idyom_features.update(idyom_results[melody_id_str])
+                    for feature_key, feature_value in idyom_results[melody_id_str].items():
+                        idyom_features[f"{idyom_name}_{feature_key}"] = feature_value
 
         if idyom_features:
             melody_features["idyom_features"] = idyom_features
@@ -11379,7 +11461,7 @@ def _get_category_display_name(category: str, feature_name: str = None) -> str:
     category_mapping = {
         "pitch_features": "Absolute Pitch",
         "pitch_class_features": "Pitch Class",
-        "interval_features": "Interval",
+        "interval_features": "Pitch Interval",
         "contour_features": "Contour",
         "rhythm_features": "Timing",
         "tonality_features": "Tonality",
@@ -11393,7 +11475,7 @@ def _get_category_display_name(category: str, feature_name: str = None) -> str:
     timing_mapping = {
         "pitch": "Absolute Pitch",
         "pitch_class": "Pitch Class",
-        "interval": "Interval",
+        "interval": "Pitch Interval",
         "contour": "Contour",
         "rhythm": "Timing", # ioi features are included here
         "tonality": "Tonality",

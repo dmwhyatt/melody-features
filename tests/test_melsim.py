@@ -220,7 +220,13 @@ class TestSimilarityCalculation:
     @patch('subprocess.run')
     def test_batch_compute_similarities(self, mock_subprocess):
         """Test batch similarity computation."""
-        mock_subprocess.return_value = MagicMock(returncode=0, stdout='[0.5, 0.7, 0.3]')
+        # _batch_compute_similarities calls get_similarity 3 times, each calling subprocess.run once
+        # So we need to return different values for each call
+        mock_subprocess.side_effect = [
+            MagicMock(returncode=0, stdout='0.5'),
+            MagicMock(returncode=0, stdout='0.7'),
+            MagicMock(returncode=0, stdout='0.3')
+        ]
 
         melody1_data = ([60, 62, 64], [0.0, 0.5, 1.0], [0.4, 0.9, 1.4])
         melody2_data = ([67, 69, 71], [0.0, 0.5, 1.0], [0.4, 0.9, 1.4])
@@ -235,7 +241,7 @@ class TestSimilarityCalculation:
         similarities = _batch_compute_similarities(args_list)
 
         assert similarities == [0.5, 0.7, 0.3], "Should return mocked similarities"
-        mock_subprocess.assert_called_once()
+        assert mock_subprocess.call_count == 3, "Should be called 3 times (once per similarity calculation)"
 
 
 class TestUtilityFunctions:

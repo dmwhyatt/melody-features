@@ -479,7 +479,7 @@ def _get_feature_category(obj, domain: str = None, feature_name: str = None) -> 
     
     type_mapping = {
         'pitch': 'Absolute Pitch',
-        'interval': 'Interval', 
+        'interval': 'Pitch Interval', 
         'contour': 'Contour',
         'rhythm': 'Timing',
         'complexity': 'Complexity',
@@ -503,6 +503,8 @@ def _get_feature_category(obj, domain: str = None, feature_name: str = None) -> 
                 mapped = 'Absolute Pitch'
             elif feature_type == 'pitch_class' and domain == 'pitch':
                 mapped = 'Pitch Class'
+            elif feature_type == 'interval' and domain == 'pitch':
+                mapped = 'Pitch Interval'
             elif feature_type == 'interval' and domain == 'rhythm':
                 # Check if this is an IOI feature
                 if feature_name and 'ioi' in feature_name.lower():
@@ -677,6 +679,7 @@ def build_table() -> pd.DataFrame:
     
     @rhythm
     @metre
+    @midi_toolbox
     def metric_hierarchy(_melody):
         """Metric hierarchy values for each note, indicating the strength of each note
         position within the known or estimated meter. Higher values indicate stronger
@@ -687,6 +690,7 @@ def build_table() -> pd.DataFrame:
     
     @rhythm
     @metre
+    @midi_toolbox
     def meter_accent(_melody):
         """Phenomenal accent synchrony measure, calculated as the negative mean of
         the product of metric hierarchy, melodic accent, and durational accent

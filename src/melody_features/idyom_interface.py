@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Optional
 
 from natsort import natsorted
+from melody_features.corpus import get_corpus_files
+import tempfile
 
 # A set of known valid viewpoints for IDyOM. This prevents typos and unsupported values.
 VALID_VIEWPOINTS = {
@@ -453,36 +455,65 @@ def run_idyom(
 
 if __name__ == "__main__":
     # This block provides a simple example of how to use the run_idyom function.
-    # It will run IDyOM on the MIDI files in the supplied directory.
+    # It will run IDyOM on the first 10 MIDI files from the Essen Folksong Collection.
 
     logger = logging.getLogger("melody_features")
-    example_midi_dir = "/Users/davidwhyatt/Downloads/Essen_First_10"
-
-    if Path(example_midi_dir).is_dir():
-        logger.info(f"--- Running IDyOM on example directory: '{example_midi_dir}' ---")
-        run_idyom(
-            input_path=example_midi_dir,
-            # The output .dat file will be placed in the current directory by default.
-            description="Example run on Essen First 10",
-            # Target viewpoints can only be onset, cpitch, or ioi.
-            # Typically people focus on analysing just cpitch, because that's
-            # where IDyOM has been most validated.
-            target_viewpoints=["cpitch"],
-            # Source viewpoints can be all kinds of things.
-            # Marcus's favourite is a linked viewpoint comprising:
-            # - cpint: the chromatic interval between the current and previous note
-            # - cpintfref: the chromatic interval between the current note and the tonic
-            # Note however that we need to make sure that key signature is encoded in the MIDI file.
-            # source_viewpoints=['cpitch'],
-            # source_viewpoints=['cpintfref'],
-            source_viewpoints=[("cpint", "cpintfref"), "cpcint"],
-            models=":both",
-            detail=2,
-            ppm_order=1,  # Set the order of the PPM models
-        )
+    
+    # Get the first 10 files from the Essen corpus
+    essen_files = get_corpus_files("essen", max_files=10)
+    
+    if not essen_files:
+        logger.warning("No MIDI files found in Essen corpus.")
+        logger.info("Please ensure the corpus is properly installed.")
     else:
-        logger.warning(
-            f"--- Example MIDI directory '{example_midi_dir}' not found. ---"
-        )
-        logger.info("Please create it and add some MIDI files to it,")
-        logger.info("or change the 'example_midi_dir' variable in the script.")
+        # Create a temporary directory and copy the first 10 files there
+        temp_dir = tempfile.mkdtemp(prefix="idyom_example_")
+        logger.info(f"Created temporary directory: {temp_dir}")
+        
+        try:
+            for file_path in essen_files:
+                shutil.copy2(file_path, temp_dir)
+            
+            logger.info(f"--- Running IDyOM on first 10 files from Essen corpus ---")
+            logger.info(f"Using temporary directory: {temp_dir}")
+            
+            result_path = run_idyom(
+                input_path=temp_dir,
+                # The output .dat file will be placed in the current directory by default.
+                description="Example run on Essen First 10",
+                # Target viewpoints can only be onset, cpitch, or ioi.
+                # Typically people focus on analysing just cpitch, because that's
+                # where IDyOM has been most validated.
+                target_viewpoints=["cpitch"],
+                # Source viewpoints can be all kinds of things.
+                # Marcus's favourite is a linked viewpoint comprising:
+                # - cpint: the chromatic interval between the current and previous note
+                # - cpintfref: the chromatic interval between the current note and the tonic
+                # Note however that we need to make sure that key signature is encoded in the MIDI file.
+                # source_viewpoints=['cpitch'],
+                # source_viewpoints=['cpintfref'],
+                source_viewpoints=[("cpint", "cpintfref"), "cpcint"],
+                models=":both",
+                detail=2,
+                ppm_order=1,  # Set the order of the PPM models
+            )
+            if result_path is not None:
+                print(f"IDyOM output .dat file located at: {result_path}")
+                try:
+                    with open(result_path, "r") as dat_file:
+                        for i, line in enumerate(dat_file):
+                            print(line.rstrip())
+                            if i >= 19:
+                                print("...(output truncated)...")
+                                break
+                except Exception as e:
+                    print(f"Could not read .dat file: {e}")
+            else:
+                print("IDyOM did not produce an output .dat file.")
+        finally:
+            # Clean up temporary directory
+            try:
+                shutil.rmtree(temp_dir)
+                logger.info(f"Cleaned up temporary directory: {temp_dir}")
+            except Exception as e:
+                logger.warning(f"Could not clean up temporary directory {temp_dir}: {e}")

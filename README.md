@@ -86,7 +86,7 @@ Since calculating similarities is highly modular in Melsim, we leave the user to
 
 ### Available Corpora
 
-The package comes with an example corpus, a MIDI conversion of the well-known Essen Folksong Collection (Eck, 2024; Schaffrath, 1995).
+The package comes with two example corpora: a MIDI conversion of the well-known Essen Folksong Collection (Eck, 2024; Schaffrath, 1995), and 903 Western musical tradition melodies, used by Pearce for IDyOM pretraining (Pearce, 2006). By default, the 903-melody corpus is invoked by `get_all_features`. 
 
 ## Development
 

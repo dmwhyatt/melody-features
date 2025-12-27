@@ -273,8 +273,11 @@ def get_similarity_from_midi(
     output_file: Union[str, Path] = None,
     n_cores: int = None,
     batch_size: int = 100,
-) -> Union[float, Dict[Tuple[str, str, str], float]]:
+) -> Union[float, Dict[Tuple[str, str, str, str], float]]:
     """Calculate similarity between MIDI files using melsim.
+
+    This function directly calls melsim's read_midi and similarity functions
+    for consistency.
 
     Parameters
     ----------
@@ -297,10 +300,10 @@ def get_similarity_from_midi(
 
     Returns
     -------
-    Union[float, Dict[Tuple[str, str, str], float]]
+    Union[float, Dict[Tuple[str, str, str, str], float]]
         If comparing two files, returns similarity value.
         If comparing multiple files, returns dictionary mapping tuples of
-        (file1, file2, method) to their similarity values
+        (file1, file2, method, transformation) to their similarity values
     """
     logger = logging.getLogger("melody_features")
     
@@ -399,7 +402,18 @@ mel2 <- melody_factory$new(mel_data = mel2_data, mel_meta = list(name = basename
 result <- melsim(mel1, mel2, sim_measures = sim_measure, verbose = FALSE, with_progress = FALSE)
 
 # Output just the score
-cat(result$data$sim[1])
+# For composite measures (like opti3), the result contains multiple rows with different algorithms
+# Extract the row matching the requested method name, otherwise use the first row
+if ("algorithm" %in% names(result$data)) {{
+    method_row <- result$data[result$data$algorithm == "{method}", ]
+    if (nrow(method_row) > 0) {{
+        cat(method_row$sim[1])
+    }} else {{
+        cat(result$data$sim[1])
+    }}
+}} else {{
+    cat(result$data$sim[1])
+}}
 '''
 
     try:
@@ -425,14 +439,10 @@ def _compute_pairwise_similarities(
     output_file: Union[str, Path] = None,
     batch_size: int = 100,
     logger = None
-) -> Dict[Tuple, float]:
+) -> Dict[Tuple[str, str, str, str], float]:
     """Compute pairwise similarities between multiple MIDI files.
     
     Uses batched R calls for efficiency - one R process handles many comparisons.
-    
-    Returns a dictionary with keys as tuples:
-    - (file1, file2, method) when single transformation is used
-    - (file1, file2, method, transformation) when multiple transformations are used
     """
     from tqdm import tqdm
     
@@ -470,22 +480,20 @@ def _compute_pairwise_similarities(
 
 def _compute_batch_similarities(
     comparisons: List[Tuple[Path, Path, str, str]]
-) -> Dict[Tuple[str, str, str], float]:
+) -> Dict[Tuple[str, str, str, str], float]:
     """Compute a batch of similarities in a single R process.
     
     This is the key optimization - one R process handles many comparisons.
-    Uses a temporary file for the R script.
     
     Parameters
     ----------
     comparisons : List[Tuple[Path, Path, str, str]]
         List of (file1, file2, method, transformation) tuples
     """
-    import tempfile
-    
     if not comparisons:
         return {}
     
+    # Create a temporary R script file for the batch
     # Build file list and comparison indices (using absolute paths)
     unique_files = {}
     file_index = 0
@@ -514,20 +522,13 @@ def _compute_batch_similarities(
     
     comparisons_r = ", ".join(comp_lines)
     
-    # Build composite measures list for R
-    composite_measures_r = ", ".join([f'"{m}"' for m in COMPOSITE_MEASURES])
-    
-    # Build switch cases for composite measures
-    switch_cases = ",\n                    ".join([f'"{m}" = similarity_measures${m}' for m in COMPOSITE_MEASURES])
-    
     r_script = f'''
 library(melsim)
 library(dplyr)
-library(jsonlite)
 
 # Load all unique files once
 file_paths <- c({file_paths_r})
-melodies <- vector("list", length(file_paths))
+melodies <- list()
 
 for (i in seq_along(file_paths)) {{
     tryCatch({{
@@ -546,8 +547,6 @@ comparisons <- list({comparisons_r})
 
 # Compute all similarities
 results <- numeric(length(comparisons))
-composite_measures <- c({composite_measures_r})
-
 for (j in seq_along(comparisons)) {{
     comp <- comparisons[[j]]
     mel1 <- melodies[[comp$i1]]
@@ -555,56 +554,51 @@ for (j in seq_along(comparisons)) {{
     
     if (is.null(mel1) || is.null(mel2)) {{
         results[j] <- NA
-        next
-    }}
-    
-    tryCatch({{
-        # Check if it's a composite measure (like opti3) or needs sim_measure_factory
-        if (comp$method %in% composite_measures) {{
-            # Use switch for reliable access to R6 object fields
-            sim_measure <- switch(comp$method,
-                {switch_cases},
-                NULL
-            )
-            if (is.null(sim_measure)) {{
-                results[j] <- NA
-                next
+    }} else {{
+        tryCatch({{
+            # Check if it's a composite measure (like opti3) or needs sim_measure_factory
+            if (comp$method %in% c("opti3")) {{
+                sim_measure <- similarity_measures[[comp$method]]
+            }} else {{
+                # Use sim_measure_factory for basic measures
+                trans <- if (!is.null(comp$transformation)) comp$transformation else "pitch"
+                sim_measure <- sim_measure_factory$new(
+                    name = comp$method,
+                    full_name = comp$method,
+                    transformation = trans,
+                    parameters = list(),
+                    sim_measure = comp$method
+                )
             }}
-        }} else {{
-            # Use sim_measure_factory for basic measures
-            trans <- if (!is.null(comp$transformation)) comp$transformation else "pitch"
-            sim_measure <- sim_measure_factory$new(
-                name = comp$method,
-                full_name = comp$method,
-                transformation = trans,
-                parameters = list(),
-                sim_measure = comp$method
-            )
-        }}
-        
-        # Compute similarity
-        sim_result <- melsim(mel1, mel2, sim_measures = sim_measure, verbose = FALSE, with_progress = FALSE)
-        results[j] <- sim_result$data$sim[1]
-    }}, error = function(e) {{
-        results[j] <<- NA
-    }})
+            result <- melsim(mel1, mel2, sim_measures = sim_measure, verbose = FALSE, with_progress = FALSE)
+            # For composite measures (like opti3), the result contains multiple rows with different algorithms
+            # Extract the row matching the requested method name, otherwise use the first row
+            if ("algorithm" %in% names(result$data)) {{
+                method_row <- result$data[result$data$algorithm == comp$method, ]
+                if (nrow(method_row) > 0) {{
+                    results[j] <- method_row$sim[1]
+                }} else {{
+                    results[j] <- result$data$sim[1]
+                }}
+            }} else {{
+                results[j] <- result$data$sim[1]
+            }}
+        }}, error = function(e) {{
+            results[j] <<- NA
+        }})
+    }}
 }}
 
 # Output as JSON
-cat(toJSON(results))
+cat(jsonlite::toJSON(results))
 '''
-    
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.R', delete=False) as f:
-        f.write(r_script)
-        r_script_path = f.name
     
     try:
         result = subprocess.run(
-            ["Rscript", "--vanilla", r_script_path],
+            ["Rscript", "-e", r_script],
             capture_output=True,
             text=True,
-            check=True,
-            timeout=3600  # 1 hour timeout
+            check=True
         )
         
         # Extract just the JSON from output (skip any logging lines)
@@ -619,60 +613,43 @@ cat(toJSON(results))
         scores = json.loads(output)
         
         # Build result dictionary
-        # Check if we have multiple transformations to decide key format
-        unique_transformations = set(trans for _, _, _, trans in comparisons)
-        use_trans_in_key = len(unique_transformations) > 1
-        
         results = {}
         for idx, (f1, f2, method, trans) in enumerate(comparisons):
             score = scores[idx] if idx < len(scores) else None
             if score is not None and not (isinstance(score, float) and np.isnan(score)):
-                if use_trans_in_key:
-                    results[(f1.name, f2.name, method, trans)] = float(score)
-                else:
-                    results[(f1.name, f2.name, method)] = float(score)
+                # Include transformation in key to distinguish different transformations
+                f1_name = f1.name if isinstance(f1, Path) else Path(f1).name
+                f2_name = f2.name if isinstance(f2, Path) else Path(f2).name
+                results[(f1_name, f2_name, method, trans)] = float(score)
         
         return results
         
-    except subprocess.TimeoutExpired as e:
-        raise RuntimeError(
-            f"R script timed out after 1 hour. This may indicate an infinite loop or very slow computation. "
-            f"stderr: {e.stderr.decode() if e.stderr else 'No stderr'} "
-            f"stdout: {e.stdout.decode()[:500] if e.stdout else 'No stdout'}"
-        )
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(
-            f"Error calculating batch similarities. "
-            f"Return code: {e.returncode}. "
-            f"stderr: {e.stderr[:1000] if e.stderr else 'No stderr'}. "
-            f"stdout: {e.stdout[:1000] if e.stdout else 'No stdout'}"
-        )
+        raise RuntimeError(f"Error calculating batch similarities: {e.stderr}")
     except json.JSONDecodeError as e:
-        raise RuntimeError(
-            f"Error parsing R output as JSON: {e}. "
-            f"Output was: {result.stdout[-500:] if 'result' in locals() else 'No output'}"
-        )
-    finally:
-        # Clean up temporary file
-        import os
-        try:
-            os.unlink(r_script_path)
-        except OSError:
-            pass
+        raise RuntimeError(f"Error parsing R output: {e}")
 
 
-def _save_results(results: Dict[Tuple, float], output_file: Union[str, Path], logger = None):
+def _save_results(
+    results: Dict[Tuple, float],
+    output_file: Union[str, Path],
+    logger
+):
     """Save results to a JSON file."""
     import pandas as pd
     
+    # Handle both 3-tuple (file1, file2, method) and 4-tuple (file1, file2, method, transformation) keys
     rows = []
     for key, sim in results.items():
-        if len(key) == 4:
-            f1, f2, m, t = key
-            rows.append({"file1": f1, "file2": f2, "method": m, "transformation": t, "similarity": sim})
-        else:
+        if len(key) == 3:
             f1, f2, m = key
             rows.append({"file1": f1, "file2": f2, "method": m, "similarity": sim})
+        elif len(key) == 4:
+            f1, f2, m, trans = key
+            rows.append({"file1": f1, "file2": f2, "method": m, "transformation": trans, "similarity": sim})
+        else:
+            # Fallback for unexpected key formats
+            rows.append({"key": str(key), "similarity": sim})
     
     df = pd.DataFrame(rows)
     
@@ -751,7 +728,20 @@ mel2 <- melody_factory$new(mel_data = mel2_data, mel_meta = list(name = "melody2
 
 # Compute similarity (suppress verbose output)
 result <- melsim(mel1, mel2, sim_measures = sim_measure, verbose = FALSE, with_progress = FALSE)
-cat(result$data$sim[1])
+
+# Output just the score
+# For composite measures (like opti3), the result contains multiple rows with different algorithms
+# Extract the row matching the requested method name, otherwise use the first row
+if ("algorithm" %in% names(result$data)) {{
+    method_row <- result$data[result$data$algorithm == "{method}", ]
+    if (nrow(method_row) > 0) {{
+        cat(method_row$sim[1])
+    }} else {{
+        cat(result$data$sim[1])
+    }}
+}} else {{
+    cat(result$data$sim[1])
+}}
 '''
 
     try:
@@ -793,6 +783,11 @@ def load_midi_file(
 
     return midi_data["pitches"], midi_data["starts"], midi_data["ends"]
 
+
+# ============================================================================
+# Legacy functions for backwards compatibility
+# ============================================================================
+
 def check_python_package_installed(package: str):
     """Check if a Python package is installed."""
     try:
@@ -818,7 +813,7 @@ def _convert_strings_to_tuples(d: Dict) -> Dict:
 def _compute_similarity(args: Tuple) -> float:
     """Compute similarity between two melodies using R script.
 
-    Deprecated function for backwards compatibility.
+    Legacy function for backwards compatibility.
 
     Parameters
     ----------
@@ -848,14 +843,12 @@ def _compute_similarity(args: Tuple) -> float:
 def _batch_compute_similarities(args_list: List[Tuple]) -> List[float]:
     """Compute similarities for a batch of melody pairs.
 
-    Deprecated function - uses batch R processing for efficiency.
-    Makes a single R call that returns JSON array of results.
+    Legacy function - now uses the optimized batch processing internally.
 
     Parameters
     ----------
     args_list : List[Tuple]
-        List of argument tuples: (melody1_data, melody2_data, method, transformation)
-        where melody_data is a tuple of (pitches, starts, ends)
+        List of argument tuples for _compute_similarity
 
     Returns
     -------
@@ -865,94 +858,24 @@ def _batch_compute_similarities(args_list: List[Tuple]) -> List[float]:
     if not args_list:
         return []
     
-    # Build R script with all comparisons
-    melody_objs = []
-    comparisons_r = []
+    # Extract unique method (assuming all use the same method)
+    method = args_list[0][2]
     
-    for idx, (melody1_data, melody2_data, method, transformation) in enumerate(args_list):
-        # Convert arrays to strings
-        pitches1_str = ",".join(map(str, melody1_data[0]))
-        starts1_str = ",".join(map(str, melody1_data[1]))
-        durations1 = [e - s for s, e in zip(melody1_data[1], melody1_data[2])]
-        durations1_str = ",".join(map(str, durations1))
-        
-        pitches2_str = ",".join(map(str, melody2_data[0]))
-        starts2_str = ",".join(map(str, melody2_data[1]))
-        durations2 = [e - s for s, e in zip(melody2_data[1], melody2_data[2])]
-        durations2_str = ",".join(map(str, durations2))
-        
-        # Create melody objects in R
-        mel1_idx = idx * 2
-        mel2_idx = idx * 2 + 1
-        
-        melody_objs.append(f'''mel{mel1_idx}_data <- tibble::tibble(
-    onset = c({starts1_str}),
-    pitch = c({pitches1_str}),
-    duration = c({durations1_str})
-)
-mel{mel1_idx} <- melody_factory$new(mel_data = mel{mel1_idx}_data, mel_meta = list(name = "mel{mel1_idx}"))
-
-mel{mel2_idx}_data <- tibble::tibble(
-    onset = c({starts2_str}),
-    pitch = c({pitches2_str}),
-    duration = c({durations2_str})
-)
-mel{mel2_idx} <- melody_factory$new(mel_data = mel{mel2_idx}_data, mel_meta = list(name = "mel{mel2_idx}"))''')
-        
-        # Determine similarity measure
-        if method in COMPOSITE_MEASURES:
-            sim_measure_code = f'sim_measure_{idx} <- similarity_measures${method}'
-        else:
-            trans = transformation if transformation else "pitch"
-            sim_measure_code = f'''sim_measure_{idx} <- sim_measure_factory$new(
-    name = "{method}",
-    full_name = "{method}",
-    transformation = "{trans}",
-    parameters = list(),
-    sim_measure = "{method}"
-)'''
-        
-        comparisons_r.append(f'''{sim_measure_code}
-result_{idx} <- melsim(mel{mel1_idx}, mel{mel2_idx}, sim_measures = sim_measure_{idx}, verbose = FALSE, with_progress = FALSE)
-results[{idx + 1}] <- result_{idx}$data$sim[1]''')
-    
-    r_script = f'''
-library(melsim)
-library(dplyr)
-library(jsonlite)
-
-{chr(10).join(melody_objs)}
-
-# Pre-allocate results
-results <- numeric({len(args_list)})
-
-{chr(10).join(comparisons_r)}
-
-# Output as JSON
-cat(toJSON(results))
-'''
-    
-    try:
-        result = subprocess.run(
-            ["Rscript", "-e", r_script],
-            capture_output=True,
-            text=True,
-            check=True
+    # Build comparisons for batch processing
+    # Create temp files and use the batch approach
+    results = []
+    for args in args_list:
+        melody1_data, melody2_data, method, transformation = args
+        result = get_similarity(
+            np.array(melody1_data[0]),
+            np.array(melody1_data[1]),
+            np.array(melody1_data[2]),
+            np.array(melody2_data[0]),
+            np.array(melody2_data[1]),
+            np.array(melody2_data[2]),
+            method,
+            transformation,
         )
-        
-        # Parse JSON output
-        output = result.stdout.strip()
-        # Find JSON array in output
-        for line in output.split('\n'):
-            line = line.strip()
-            if line.startswith('['):
-                output = line
-                break
-        
-        scores = json.loads(output)
-        return [float(s) for s in scores]
-        
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Error calculating batch similarities: {e.stderr}")
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"Error parsing R output: {e}")
+        results.append(result)
+    
+    return results
