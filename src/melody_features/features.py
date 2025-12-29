@@ -1073,7 +1073,7 @@ def tessitura(pitches: list[int]) -> list[float]:
     tessitura_values = [float(val) for val in tessitura_values]
     return tessitura_values
 
-@novel
+@midi_toolbox
 @absolute
 @pitch
 def mean_tessitura(pitches: list[int]) -> float:
@@ -1094,7 +1094,7 @@ def mean_tessitura(pitches: list[int]) -> float:
         return 0.0
     return float(np.mean(tess_values))
 
-@novel
+@midi_toolbox
 @absolute
 @pitch
 def tessitura_std(pitches: list[int]) -> float:
@@ -6239,7 +6239,7 @@ def onset_autocorrelation(starts: list[float], ends: list[float], divisions_per_
     
     return autocorr_result.tolist()
 
-@novel
+@midi_toolbox
 @rhythm
 @timing
 def onset_autocorr_peak(starts: list[float], ends: list[float], divisions_per_quarter: int = 4, max_lag_quarters: int = 8) -> float:
@@ -6634,7 +6634,6 @@ def tonal_tension(
     )
 
 @partitura
-@novel
 @tonality
 @pitch
 def mean_cloud_diameter(
@@ -6697,7 +6696,6 @@ def mean_cloud_diameter(
     return float(np.mean(cloud_diameter))
 
 @partitura
-@novel
 @tonality
 @pitch
 def std_cloud_diameter(
@@ -6760,7 +6758,6 @@ def std_cloud_diameter(
     return float(np.std(cloud_diameter, ddof=1))
 
 @partitura
-@novel
 @tonality
 @pitch
 def mean_cloud_momentum(
@@ -6824,7 +6821,6 @@ def mean_cloud_momentum(
     return float(np.mean(cloud_momentum))
 
 @partitura
-@novel
 @tonality
 @pitch
 def std_cloud_momentum(
@@ -6887,7 +6883,6 @@ def std_cloud_momentum(
     return float(np.std(cloud_momentum, ddof=1))
 
 @partitura
-@novel
 @tonality
 @pitch
 def mean_tensile_strain(
@@ -6950,7 +6945,6 @@ def mean_tensile_strain(
     return float(np.mean(tensile_strain))
 
 @partitura
-@novel
 @tonality
 @pitch
 def std_tensile_strain(
@@ -7547,7 +7541,7 @@ def mobility(pitches: list[int]) -> list[float]:
     
     return mobility_values
 
-@novel
+@midi_toolbox
 @pitch
 @expectation
 def mean_mobility(pitches: list[int]) -> float:
@@ -7569,7 +7563,7 @@ def mean_mobility(pitches: list[int]) -> float:
     return float(np.mean(mob_values))
 
 
-@novel
+@midi_toolbox
 @pitch
 @expectation
 def mobility_std(pitches: list[int]) -> float:
