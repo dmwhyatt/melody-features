@@ -443,10 +443,13 @@ def run_idyom(
         shutil.move(str(dat_file_path), str(destination_path))
         shutil.rmtree(temp_history_folder)
 
+        # Resolve to absolute path so calling code can find it regardless of working directory
+        absolute_path = destination_path.resolve()
+        
         logger.info(
-            f"IDyOM processing completed successfully! Output: {destination_path}"
+            f"IDyOM processing completed successfully! Output: {absolute_path}"
         )
-        return str(destination_path)
+        return str(absolute_path)
 
     except Exception as e:
         logger.error(f"Error running IDyOM analysis on {description}: {e}")

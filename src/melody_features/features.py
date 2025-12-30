@@ -3304,13 +3304,15 @@ def ioi_mean(starts: list[float]) -> float:
     -------
     float
         Mean of inter-onset intervals
+
+    Note
+    ----
+    This is called average_time_between_attacks in jSymbolic.
     """
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
     if not intervals:
         return 0.0
     return float(np.mean(intervals))
-
-average_time_between_attacks = ioi_mean
 
 @idyom
 @jsymbolic
@@ -3328,13 +3330,16 @@ def ioi_standard_deviation(starts: list[float]) -> float:
     -------
     float
         Standard deviation of inter-onset intervals
+
+    Note
+    ----
+    This is called variability_of_time_between_attacks in jSymbolic.
     """
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
     if not intervals:
         return 0.0
     return float(np.std(intervals, ddof=1))
 
-variability_of_time_between_attacks = ioi_standard_deviation
 
 @idyom
 @rhythm
@@ -6027,7 +6032,7 @@ def amount_of_staccato(starts: list[float], ends: list[float]) -> float:
 @midi_toolbox
 @rhythm
 @complexity
-def duration_accent(starts: list[float], ends: list[float], tau: float = 0.5, accent_index: float = 2.0) -> float:
+def duration_accent(starts: list[float], ends: list[float], tau: float = 0.5, accent_index: float = 2.0) -> list[float]:
     """Calculate duration accent for each note based on Parncutt (1994).
     Duration accent represents the perceptual salience of notes based on their duration.
     
@@ -7539,7 +7544,7 @@ def mobility(pitches: list[int]) -> list[float]:
         mob_value = correlation * current_deviation
         mobility_values.append(abs(mob_value))
     
-    return mobility_values
+    return [float(mob_value) for mob_value in mobility_values]
 
 @midi_toolbox
 @pitch
@@ -8352,7 +8357,7 @@ def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_o
     
     for name, func in complexity_functions.items():
         try:
-            # Skip classes/functions that require special parameters
+            # Skip classes/functions that require special handling
             if name in ('InverseEntropyWeighting', 'get_mtype_features'):
                 continue
                 
@@ -8373,7 +8378,7 @@ def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_o
             elif 'melody' in params:
                 result = func(melody)
             elif 'starts' in params and 'ends' in params and 'tau' in params:
-                # edge case for mean_duration_accent
+                # Functions with tau parameter (duration_accent, mean_duration_accent, duration_accent_std)
                 result = func(melody.starts, melody.ends, 0.5, 2.0)
             elif 'starts' in params and 'ends' in params:
                 if 'tempo' in params:
@@ -8388,12 +8393,8 @@ def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_o
                 # Try with melody object
                 result = func(melody)
             
-            # Handle functions that return lists (like mobility)
-            if isinstance(result, list) and len(result) > 1:
-                features[f"{name}_mean"] = np.mean(result)
-                features[f"{name}_std"] = np.std(result, ddof=1) if len(result) > 1 else 0.0
-            else:
-                features[name] = result
+            # Store all features as-is (no auto-generation of mean/std)
+            features[name] = result
                 
         except Exception as e:
             print(f"Warning: Could not compute {name}: {e}")
@@ -9298,8 +9299,6 @@ def get_contour_features(melody: Melody) -> Dict:
     contour_features["polynomial_contour_coefficients"] = get_polynomial_contour_features(melody)
     contour_features["huron_contour"] = get_huron_contour_features(melody)
     contour_features["comb_contour_matrix"] = get_comb_contour_matrix(melody.pitches)
-    contour_features["mean_melodic_accent"] = mean_melodic_accent(melody.pitches)
-    contour_features["melodic_accent_std"] = melodic_accent_std(melody.pitches)
     return contour_features
 
 
@@ -10051,11 +10050,6 @@ def get_tonality_features(
     else:
         tonality_features["tonal_clarity"] = -1.0
         tonality_features["tonal_spike"] = -1.0
-
-    # Entropy using cached values
-    tonality_features["tonal_entropy"] = (
-        shannon_entropy(abs_corr_values) if correlations else -1.0
-    )
     
     # Histogram using cached correlations
     tonality_features["tonalness_histogram"] = histogram_bins(correlations[0][1], 24)
@@ -10258,22 +10252,23 @@ def process_melody(args):
         )
         timings["corpus"] = time.time() - start
 
-        # Add pre-computed IDyOM features if available for this melody's ID
-        melody_id_str = str(melody_data["melody_num"])
+    # Add pre-computed IDyOM features if available for this melody's ID
+    melody_id_str = str(melody_data["melody_num"])
 
-        # Handle IDyOM results dictionary (multiple configurations)
-        idyom_features = {}
-        if idyom_results_dict:
-            for idyom_name, idyom_results in idyom_results_dict.items():
-                if idyom_results and melody_id_str in idyom_results:
-                    for feature_key, feature_value in idyom_results[melody_id_str].items():
-                        idyom_features[f"{idyom_name}_{feature_key}"] = feature_value
+    # Handle IDyOM results dictionary (multiple configurations)
+    idyom_features = {}
+    if idyom_results_dict:
+        for idyom_name, idyom_results in idyom_results_dict.items():
+            if idyom_results and melody_id_str in idyom_results:
+                for feature_key, feature_value in idyom_results[melody_id_str].items():
+                    # Match the header format: idyom_{idyom_name}_features.{feature_key}
+                    idyom_features[f"idyom_{idyom_name}_features.{feature_key}"] = feature_value
+            else:
+                # Add fallback value for this config if results not found
+                idyom_features[f"idyom_{idyom_name}_features.mean_information_content"] = -1
 
-        if idyom_features:
-            melody_features["idyom_features"] = idyom_features
-        else:
-            # Add obvious flag if IDyOM values if not found
-            melody_features["idyom_features"] = {"mean_information_content": -1}
+    if idyom_features:
+        melody_features["idyom_features"] = idyom_features
 
     timings["total"] = time.time() - start_total
 
@@ -10358,28 +10353,60 @@ def get_idyom_results(
         idyom_results = {}
         try:
             with open(dat_file_path, "r", encoding="utf-8") as f:
-                next(f)  # Skip header
+                # Read header to determine column names
+                header_line = next(f).strip()
+                header_parts = header_line.split()
+                
+                logger.debug(f"IDyOM header: {header_line}")
+                logger.debug(f"IDyOM header parts: {header_parts}")
+                
+                # Find the column index for information content
+                # The dat file typically has: melody.id melody.name information.content
+                # We want to extract the last column (information content)
+                if len(header_parts) < 2:
+                    logger.error(f"Invalid header format: {header_line}")
+                    return {}
+                
+                # The last column should be the information content value
+                info_content_col_idx = len(header_parts) - 1
+                
+                logger.debug(f"Will extract information content from column index {info_content_col_idx} (header has {len(header_parts)} columns)")
 
                 line_count = 0
                 for line in f:
                     line_count += 1
                     parts = line.strip().split()
 
-                    if len(parts) < 3:
+                    if len(parts) < 2:
                         logger.warning(f"Skipping malformed line: {line.strip()}")
                         continue  # Skip malformed lines
 
                     try:
                         # IDyOM's melody ID is a 1-based index.
                         melody_idx = int(parts[0]) - 1
-                        mean_ic = float(parts[2])
 
                         if 0 <= melody_idx < len(midi_files):
                             # Map the index to the melody number (1-based index)
                             melody_id = str(melody_idx + 1)
-                            idyom_results[melody_id] = {
-                                "mean_information_content": mean_ic
-                            }
+                            
+                            logger.debug(f"Processing melody {melody_id}: parts={parts}, len={len(parts)}")
+                            
+                            # Extract the information content value from the correct column
+                            if len(parts) <= info_content_col_idx:
+                                logger.warning(
+                                    f"Not enough columns in line for melody {melody_id}. Expected at least {info_content_col_idx + 1}, got {len(parts)}. Parts: {parts}"
+                                )
+                                continue
+                            
+                            try:
+                                feature_value = float(parts[info_content_col_idx])
+                                features = {"mean_information_content": feature_value}
+                                idyom_results[melody_id] = features
+                                logger.debug(f"Extracted mean_information_content={feature_value} for melody {melody_id}")
+                            except (ValueError, IndexError) as e:
+                                logger.warning(
+                                    f"Could not parse information content at index {info_content_col_idx} for melody {melody_id}: {e}, parts={parts}"
+                                )
                         else:
                             logger.warning(
                                 f"IDyOM returned an out-of-bounds index: {parts[0]} (max: {len(midi_files)-1})"
@@ -10975,12 +11002,15 @@ def _setup_parallel_processing(
             max_ngram_order=config.fantastic.max_ngram_order,
         )
 
-    # Add IDyOM features for each config to the header if they were generated
+    # Add IDyOM features for each config to the header
     for idyom_name, idyom_results in idyom_results_dict.items():
         if idyom_results:
             sample_id = next(iter(idyom_results))
             for feature in idyom_results[sample_id].keys():
                 first_features[f"idyom_{idyom_name}_features.{feature}"] = None
+        else:
+            # Add header for fallback value even if no results
+            first_features[f"idyom_{idyom_name}_features.mean_information_content"] = None
 
     # Create header by flattening feature names
     headers = ["melody_num", "melody_id"]
@@ -11646,14 +11676,8 @@ def get_all_features(
         # skip non-feature columns
         if col in ["melody_num", "melody_id"]:
             continue
-        if "." in col:
-            category, feature_name = col.split(".", 1)
-            display_name = _get_category_display_name(category, feature_name)
-            display_name_lower = display_name.lower().replace(" ", "_").replace("-", "_")
-            new_col_name = f"{display_name_lower}.{feature_name}"
-            column_rename_map[col] = new_col_name
-            categories.add(display_name_lower)
-        elif col.startswith("idyom_"):
+        # Check for IDyOM columns first (before generic "." check)
+        if col.startswith("idyom_"):
             if "_features" in col:
                 category = col.rsplit("_features", 1)[0]
             else:
@@ -11662,9 +11686,21 @@ def get_all_features(
             display_name_lower = display_name.lower().replace(" ", "_").replace("-", "_")
             if "." in col:
                 _, feature_name = col.split(".", 1)
-                new_col_name = f"{display_name_lower}.{feature_name}"
+                # Extract the config name from the category (e.g., "idyom_pitch_stm" -> "pitch_stm")
+                if category.startswith("idyom_"):
+                    config_name = category[6:]  # Remove "idyom_" prefix
+                    new_col_name = f"{display_name_lower}.{config_name}_{feature_name}"
+                else:
+                    new_col_name = f"{display_name_lower}.{feature_name}"
             else:
                 new_col_name = col  # keep as is if no feature name
+            column_rename_map[col] = new_col_name
+            categories.add(display_name_lower)
+        elif "." in col:
+            category, feature_name = col.split(".", 1)
+            display_name = _get_category_display_name(category, feature_name)
+            display_name_lower = display_name.lower().replace(" ", "_").replace("-", "_")
+            new_col_name = f"{display_name_lower}.{feature_name}"
             column_rename_map[col] = new_col_name
             categories.add(display_name_lower)
     

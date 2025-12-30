@@ -203,10 +203,10 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
 
         # Special handling for IDyOM placeholder functions - link to idyom_interface.py
         idyom_placeholder_functions = {
-            "pitch_mean_information_content_stm",
-            "pitch_mean_information_content_ltm",
-            "rhythm_mean_information_content_stm",
-            "rhythm_mean_information_content_ltm",
+            "pitch_stm_mean_information_content",
+            "pitch_ltm_mean_information_content",
+            "rhythm_stm_mean_information_content",
+            "rhythm_ltm_mean_information_content",
         }
         
         # special handling for complebm: link to complebm function in features.py
@@ -563,7 +563,7 @@ def build_table() -> pd.DataFrame:
     @idyom
     @expectation
     @pitch
-    def pitch_mean_information_content_stm(_melody):
+    def pitch_stm_mean_information_content(_melody):
         """The average information content across all notes in a melody,
         calculated using IDyOM's prediction-by-partial-matching (PPM) algorithm. 
         Information content is perceptually related to surprise, and can be calculated
@@ -578,7 +578,7 @@ def build_table() -> pd.DataFrame:
     @idyom
     @expectation
     @pitch
-    def pitch_mean_information_content_ltm(_melody):
+    def pitch_ltm_mean_information_content(_melody):
         """The average information content across all notes in a melody,
         calculated using IDyOM's long-term model (LTM). Information content is
         perceptually related to surprise, and can be calculated for pitches or rhythms.
@@ -592,7 +592,7 @@ def build_table() -> pd.DataFrame:
     @idyom
     @expectation
     @rhythm
-    def rhythm_mean_information_content_stm(_melody):
+    def rhythm_stm_mean_information_content(_melody):
         """The average rhythmic information content across all notes in a melody,
         calculated using IDyOM's short-term model (STM). Information content is
         perceptually related to surprise, and can be calculated for pitches or rhythms.
@@ -606,7 +606,7 @@ def build_table() -> pd.DataFrame:
     @idyom
     @expectation
     @rhythm
-    def rhythm_mean_information_content_ltm(_melody):
+    def rhythm_ltm_mean_information_content(_melody):
         """The average rhythmic information content across all notes in a melody,
         calculated using IDyOM's long-term model (LTM). Information content is
         perceptually related to surprise, and can be calculated for pitches or rhythms.
@@ -702,10 +702,10 @@ def build_table() -> pd.DataFrame:
     
     all_features.extend(
         [
-            ("pitch_mean_information_content_stm", pitch_mean_information_content_stm),
-            ("pitch_mean_information_content_ltm", pitch_mean_information_content_ltm),
-            ("rhythm_mean_information_content_stm", rhythm_mean_information_content_stm),
-            ("rhythm_mean_information_content_ltm", rhythm_mean_information_content_ltm),
+            ("pitch_stm_mean_information_content", pitch_stm_mean_information_content),
+            ("pitch_ltm_mean_information_content", pitch_ltm_mean_information_content),
+            ("rhythm_stm_mean_information_content", rhythm_stm_mean_information_content),
+            ("rhythm_ltm_mean_information_content", rhythm_ltm_mean_information_content),
             ("complebm_pitch", complebm_pitch),
             ("complebm_rhythm", complebm_rhythm),
             ("complebm_optimal", complebm_optimal),
