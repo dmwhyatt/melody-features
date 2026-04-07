@@ -14,7 +14,7 @@ dependencies = [
     "natsort",
     "numpy",
     "pandas",
-    "pretty_midi",
+    "pretty-midi>=0.2.11",
     "py2lispIDyOM",
     "pytest>=8.0.0",
     "pytest-env>=1.1.0",
