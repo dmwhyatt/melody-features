@@ -38,10 +38,13 @@ if __name__ == "__main__":
     first_10_files = get_corpus_files("essen", max_files=10)
     print(f"Using first 10 files from Essen corpus: {[f.name for f in first_10_files]}")
 
+    output_file = "midi_corpus_similarity.json"
     midi_corpus_similarity = get_similarity_from_midi(
         first_10_files,  # Use the list of first 10 files
         midi_path2=None,  # Not needed for directory processing
         transformation=["pitch", "parsons"],
         method=["Jaccard", "edit_sim"],
-        output_file="midi_corpus_similarity.json",
+        output_file=output_file,
     )
+
+    print(f"Similarity results saved to {output_file}")

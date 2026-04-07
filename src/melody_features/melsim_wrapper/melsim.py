@@ -92,6 +92,7 @@ Num:        Name:
 import json
 import logging
 import subprocess
+import tempfile
 from itertools import combinations
 from pathlib import Path
 from typing import Dict, List, Tuple, Union
@@ -148,7 +149,8 @@ def check_r_packages_installed(install_missing: bool = False, n_retries: int = 3
 
     try:
         result = subprocess.run(
-            ["Rscript", "-e", check_script], capture_output=True, text=True, check=True
+            ["Rscript", "-e", check_script], capture_output=True, text=True, check=True,
+            stdin=subprocess.DEVNULL,
         )
         missing_packages = json.loads(result.stdout.strip()) if result.stdout.strip() else []
 
@@ -185,7 +187,7 @@ def install_r_package(package: str):
         utils::chooseCRANmirror(ind=1)
         utils::install.packages("{package}", dependencies=TRUE)
         """
-        subprocess.run(["Rscript", "-e", install_script], check=True)
+        subprocess.run(["Rscript", "-e", install_script], check=True, stdin=subprocess.DEVNULL)
     elif package in r_github_packages:
         logger.info(f"Installing GitHub package '{package}'...")
         repo = github_repos[package]
@@ -195,7 +197,7 @@ def install_r_package(package: str):
         }}
         remotes::install_github("{repo}", upgrade="always", dependencies=TRUE)
         """
-        subprocess.run(["Rscript", "-e", install_script], check=True)
+        subprocess.run(["Rscript", "-e", install_script], check=True, stdin=subprocess.DEVNULL)
     else:
         raise ValueError(f"Unknown package type for '{package}'")
 
@@ -218,6 +220,7 @@ def install_dependencies():
             capture_output=True,
             text=True,
             check=True,
+            stdin=subprocess.DEVNULL,
         )
         missing_cran = json.loads(result.stdout.strip()) if result.stdout.strip() else []
 
@@ -227,7 +230,7 @@ def install_dependencies():
             utils::chooseCRANmirror(ind=1)
             utils::install.packages(c({", ".join([f'"{p}"' for p in missing_cran])}), dependencies=TRUE)
             """
-            subprocess.run(["Rscript", "-e", cran_script], check=True)
+            subprocess.run(["Rscript", "-e", cran_script], check=True, stdin=subprocess.DEVNULL)
         else:
             logger.info("Skipping install: All CRAN packages are already installed.")
     except subprocess.CalledProcessError as e:
@@ -242,6 +245,7 @@ def install_dependencies():
             capture_output=True,
             text=True,
             check=True,
+            stdin=subprocess.DEVNULL,
         )
         missing_github = json.loads(result.stdout.strip()) if result.stdout.strip() else []
 
@@ -256,7 +260,7 @@ def install_dependencies():
                 }}
                 remotes::install_github("{repo}", upgrade="always", dependencies=TRUE)
                 """
-                subprocess.run(["Rscript", "-e", install_script], check=True)
+                subprocess.run(["Rscript", "-e", install_script], check=True, stdin=subprocess.DEVNULL)
         else:
             logger.info("Skipping install: All GitHub packages are already installed.")
     except subprocess.CalledProcessError as e:
@@ -273,6 +277,7 @@ def get_similarity_from_midi(
     output_file: Union[str, Path] = None,
     n_cores: int = None,
     batch_size: int = 100,
+    r_timeout: int = 300,
 ) -> Union[float, Dict[Tuple[str, str, str, str], float]]:
     """Calculate similarity between MIDI files using melsim.
 
@@ -297,6 +302,9 @@ def get_similarity_from_midi(
         Number of CPU cores to use for parallel processing. Defaults to all available cores.
     batch_size : int, default=100
         Number of comparisons to process in each R batch call
+    r_timeout : int, default=300
+        Seconds before an R subprocess is killed and a RuntimeError is raised.
+        Guards against indefinite hangs.
 
     Returns
     -------
@@ -336,13 +344,15 @@ def get_similarity_from_midi(
             raise ValueError("Need at least 2 MIDI files for pairwise comparison")
         
         return _compute_pairwise_similarities(
-            midi_files, methods, transformations, output_file, batch_size, logger
+            midi_files, methods, transformations, output_file, batch_size, logger,
+            r_timeout=r_timeout,
         )
     else:
         # Single pair comparison
         return _compute_single_similarity(
-            midi_path1, Path(midi_path2), methods[0], 
-            transformations[0] if transformations else None
+            midi_path1, Path(midi_path2), methods[0],
+            transformations[0] if transformations else None,
+            r_timeout=r_timeout,
         )
 
 
@@ -351,10 +361,11 @@ COMPOSITE_MEASURES = {"opti3"}
 
 
 def _compute_single_similarity(
-    file1: Path, 
-    file2: Path, 
+    file1: Path,
+    file2: Path,
     method: str,
-    transformation: str = None
+    transformation: str = None,
+    r_timeout: int = 300,
 ) -> float:
     """Compute similarity between two MIDI files with a single R call.
     
@@ -421,13 +432,20 @@ if ("algorithm" %in% names(result$data)) {{
             ["Rscript", "-e", r_script],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
+            stdin=subprocess.DEVNULL,
+            timeout=r_timeout,
         )
         # Extract just the numeric value from the output (in case of extra logging)
         output = result.stdout.strip()
         # Get the last line which should be the numeric result
         lines = output.split('\n')
         return float(lines[-1].strip())
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"R process timed out after {r_timeout}s computing single similarity "
+            f"({method}/{transformation}). "
+        )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"Error calculating similarity: {e.stderr}")
 
@@ -438,7 +456,8 @@ def _compute_pairwise_similarities(
     transformations: List[str] = None,
     output_file: Union[str, Path] = None,
     batch_size: int = 100,
-    logger = None
+    logger = None,
+    r_timeout: int = 300,
 ) -> Dict[Tuple[str, str, str, str], float]:
     """Compute pairwise similarities between multiple MIDI files.
     
@@ -468,7 +487,7 @@ def _compute_pairwise_similarities(
     results = {}
     for i in tqdm(range(0, len(all_comparisons), batch_size), desc="Processing batches"):
         batch = all_comparisons[i:i + batch_size]
-        batch_results = _compute_batch_similarities(batch)
+        batch_results = _compute_batch_similarities(batch, r_timeout=r_timeout)
         results.update(batch_results)
     
     # Save to file if requested
@@ -479,7 +498,8 @@ def _compute_pairwise_similarities(
 
 
 def _compute_batch_similarities(
-    comparisons: List[Tuple[Path, Path, str, str]]
+    comparisons: List[Tuple[Path, Path, str, str]],
+    r_timeout: int = 300,
 ) -> Dict[Tuple[str, str, str, str], float]:
     """Compute a batch of similarities in a single R process.
     
@@ -532,9 +552,10 @@ melodies <- list()
 
 for (i in seq_along(file_paths)) {{
     tryCatch({{
-        mel_data <- melsim:::read_midi(file_paths[i]) %>% dplyr::rename(duration = durations)
+        mel_data <- melsim:::read_midi(file_paths[i]) %>%
+            dplyr::rename(duration = durations)
         melodies[[i]] <- melody_factory$new(
-            mel_data = mel_data, 
+            mel_data = mel_data,
             mel_meta = list(name = basename(file_paths[i]))
         )
     }}, error = function(e) {{
@@ -593,25 +614,44 @@ for (j in seq_along(comparisons)) {{
 cat(jsonlite::toJSON(results))
 '''
     
+    _script_dir = Path(__file__).parent
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".R", delete=False, encoding="utf-8", dir=_script_dir
+    ) as tmp:
+        tmp.write(r_script)
+        tmp_path = tmp.name
+
     try:
         result = subprocess.run(
-            ["Rscript", "-e", r_script],
+            ["Rscript", "--vanilla", tmp_path],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
+            stdin=subprocess.DEVNULL,
+            timeout=r_timeout,
         )
-        
-        # Extract just the JSON from output (skip any logging lines)
-        output = result.stdout.strip()
-        # Find the JSON array in the output
-        for line in output.split('\n'):
-            line = line.strip()
-            if line.startswith('['):
-                output = line
+
+        # Extract just the JSON from output (skip any logging lines).
+        # R may emit logging/warning lines before the JSON array.
+        raw_stdout = result.stdout.strip()
+        json_line = ""
+        for line in raw_stdout.split('\n'):
+            stripped = line.strip()
+            if stripped.startswith('['):
+                json_line = stripped
                 break
-        
-        scores = json.loads(output)
-        
+
+        if not json_line:
+            # R exited cleanly but produced no JSON — surface stderr to diagnose
+            stderr_snippet = (result.stderr or "").strip()[-2000:]
+            raise RuntimeError(
+                f"R batch script produced no JSON output.\n"
+                f"R stderr (last 2000 chars):\n{stderr_snippet or '(empty)'}\n"
+                f"R stdout:\n{raw_stdout or '(empty)'}"
+            )
+
+        scores = json.loads(json_line)
+
         # Build result dictionary
         results = {}
         for idx, (f1, f2, method, trans) in enumerate(comparisons):
@@ -621,13 +661,24 @@ cat(jsonlite::toJSON(results))
                 f1_name = f1.name if isinstance(f1, Path) else Path(f1).name
                 f2_name = f2.name if isinstance(f2, Path) else Path(f2).name
                 results[(f1_name, f2_name, method, trans)] = float(score)
-        
+
         return results
-        
+
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"R batch process timed out after {r_timeout}s "
+            f"({len(comparisons)} comparisons). "
+        )
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Error calculating batch similarities: {e.stderr}")
+        stderr_snippet = (e.stderr or "").strip()[-2000:]
+        raise RuntimeError(
+            f"R batch process exited with error.\n"
+            f"R stderr (last 2000 chars):\n{stderr_snippet or '(empty)'}"
+        )
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"Error parsing R output: {e}")
+        raise RuntimeError(f"Error parsing R JSON output: {e}")
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
 
 
 def _save_results(
