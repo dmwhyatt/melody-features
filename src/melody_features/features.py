@@ -878,7 +878,7 @@ def dominant_spread(pitches: list[int]) -> int:
 @jsymbolic
 @absolute
 @pitch
-def mean_pitch(pitches: list[int]) -> int:
+def mean_pitch(pitches: list[int]) -> float:
     """The arithmetic mean of the pitch numbers in the melody.
 
     Parameters
@@ -888,10 +888,10 @@ def mean_pitch(pitches: list[int]) -> int:
 
     Returns
     -------
-    int
+    float
         Mean pitch value
     """
-    return int(np.mean(pitches))
+    return float(np.mean(pitches))
 
 @jsymbolic
 @pitch_class
