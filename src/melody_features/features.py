@@ -1852,7 +1852,8 @@ def ivsizedist1(pitches: list[int]) -> dict[int, float]:
 @interval
 @pitch
 def interval_direction(pitches: list[int]) -> list[int]:
-    """The sequence of interval directions in the melody.
+    """The sequence of interval directions in the melody, 
+    where 1 represents upward motion, 0 represents no motion, and -1 represents downward motion.
 
     Parameters
     ----------
@@ -8409,8 +8410,15 @@ def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_o
 @lexical_diversity
 @both
 def tfdf_spearman(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate Spearman correlation between term frequency and document frequency.
-    
+    """Spearman rank correlation between TF and DF over m-types. Positive values mean
+    higher within-melody usage tends to coincide with higher corpus-wide prevalence across m-types;
+    negative values mean the opposite; near zero means little monotonic rank association.
+
+    Notes
+    -----
+    FANTASTIC assigns the minimum rank to every value in a tie group; SciPy's ``spearmanr`` uses
+    average ranks for ties, so the coefficient may differ slightly from the original implementation.
+
     Parameters
     ----------
     melody : Melody
@@ -8477,8 +8485,13 @@ def tfdf_spearman(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
 @lexical_diversity
 @both
 def tfdf_kendall(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate Kendall's tau correlation between term frequency and document frequency.
-    
+    """Kendall's tau rank correlation between melody TF and corpus DF for each m-type.
+
+    Similar to ``tfdf_spearman``, but ordinal association is measured
+    with Kendall's tau instead of Spearman's rho. Positive values mean
+    higher within-melody usage tends to coincide with higher corpus-wide prevalence across m-types;
+    negative values mean the opposite; near zero means little monotonic rank association.
+
     Parameters
     ----------
     melody : Melody
@@ -8545,8 +8558,10 @@ def tfdf_kendall(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngra
 @lexical_diversity
 @both
 def mean_log_tfdf(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate mean log TF-DF score across all n-grams.
-    
+    """Mean of the inner product of normalized TF and DF vectors.
+    Higher values mean the melody's m-type distribution is better aligned 
+    on the same patterns with the corpus document-frequency profile.
+
     Parameters
     ----------
     melody : Melody
@@ -8612,8 +8627,10 @@ def mean_log_tfdf(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
 @lexical_diversity
 @both
 def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate normalized log distance between TF and DF distributions.
-    
+    """Normalized log distance between TF and DF distributions.
+    Larger values mean the melody emphasizes different m-types than the corpus-wide prevalence pattern;
+    smaller values mean closer distributional match.
+
     Parameters
     ----------
     melody : Melody
@@ -8628,7 +8645,7 @@ def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
     Returns
     -------
     float
-        Normalized log distance
+        Mean absolute deviation between normalized TF and DF vectors
     """
     tokenizer = FantasticTokenizer()
     segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
@@ -8678,8 +8695,11 @@ def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
 @lexical_diversity
 @both
 def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate maximum log document frequency across all n-grams.
-    
+    """Natural logarithm +1 of the largest corpus document frequency among m-types appearing here.
+    Highlights how frequent the most common pattern in the
+    melody is relative to the corpus; large values mean at least one local m-type is commonly used across the
+    reference corpus.
+
     Parameters
     ----------
     melody : Melody
@@ -8731,8 +8751,10 @@ def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_
 @lexical_diversity
 @both
 def min_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate minimum log document frequency across all n-grams.
-    
+    """Natural logarithm +1 of the smallest positive corpus DF among m-types used in the melody.
+    Small values mean that the melody uses at least one pattern 
+    that is relatively rare in the corpus.
+
     Parameters
     ----------
     melody : Melody
@@ -8784,8 +8806,10 @@ def min_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_
 @lexical_diversity
 @both
 def mean_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate mean log document frequency across all n-grams.
-    
+    """Average natural logarithm +1 of the corpus document frequency over 
+    all melody m-types that have a positive corpus DF. Higher values mean 
+    that the melody uses patterns that are more common in the corpus.
+
     Parameters
     ----------
     melody : Melody
@@ -8844,8 +8868,13 @@ def mean_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram
 @lexical_diversity
 @both
 def mean_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate mean global-local weight using inverse entropy weighting.
-    
+    """Mean combined local-global weights for n-grams.
+    The combined weight of an m-type is the product of the local and global weights.
+    It summarises the relationship between distinctiveness of an m-type compared to the corpus
+    and its frequency in the melody. A high combined weight indicates that the m-type is both
+    distinctive and frequent in the melody, while a low combined weight indicates that the m-type
+    is either not distinctive or not frequent in the melody.
+
     Parameters
     ----------
     melody : Melody
@@ -8893,8 +8922,8 @@ def mean_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: flo
 @lexical_diversity
 @both
 def std_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate standard deviation of global-local weight using inverse entropy weighting.
-    
+    """Sample standard deviation of combined local-global weights for n-grams.
+
     Parameters
     ----------
     melody : Melody
@@ -8942,8 +8971,11 @@ def std_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: floa
 @lexical_diversity
 @both
 def mean_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate mean global weight using inverse entropy weighting.
-    
+    """Mean global weight across m-types.
+
+    Higher values mean that the m-types in the melody are more globally informative (more unexpected),
+    while lower values mean that the m-types in the melody are less globally informative (more expected). 
+
     Parameters
     ----------
     melody : Melody
@@ -8991,8 +9023,8 @@ def mean_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, ma
 @lexical_diversity
 @both
 def std_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Calculate standard deviation of global weight using inverse entropy weighting.
-    
+    """Sample standard deviation of global weights for m-types.
+
     Parameters
     ----------
     melody : Melody
