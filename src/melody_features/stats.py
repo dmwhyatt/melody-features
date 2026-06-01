@@ -77,6 +77,32 @@ def shannon_entropy(values) -> float:
     return -np.sum(probs * np.log2(probs))
 
 
+def distribution_entropy(weights) -> float:
+    """Base-2 Shannon entropy of a discrete distribution from non-negative weights.
+
+    Weights are normalized to sum to 1; zero weights are omitted. Returns ``0.0``
+    if all weights are zero or the input is empty.
+
+    Parameters
+    ----------
+    weights : list or numpy.ndarray
+        Non-negative masses (e.g. key-correlation magnitudes), not raw samples.
+
+    Returns
+    -------
+    float
+        Shannon entropy in bits.
+    """
+    weights = np.asarray(weights, dtype=float)
+    if weights.size == 0:
+        return 0.0
+    weights = weights[weights > 0]
+    if weights.size == 0:
+        return 0.0
+    probs = weights / weights.sum()
+    return float(-np.sum(probs * np.log2(probs)))
+
+
 def get_mode(values) -> float:
     """Find most common value.
 

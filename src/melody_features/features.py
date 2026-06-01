@@ -91,6 +91,7 @@ from melody_features.feature_histogram import (
     create_melodic_interval_histogram,
 )
 from melody_features.stats import (
+    distribution_entropy,
     get_mode,
     range_func,
     shannon_entropy,
@@ -772,8 +773,8 @@ def last_pitch_class(pitches: list[int]) -> int:
 @jsymbolic
 @absolute
 @pitch
-def basic_pitch_histogram(pitches: list[int]) -> dict:
-    """A histogram of pitch values within the range of input pitches.
+def basic_pitch_histogram(pitches: list[int]) -> dict[int, int]:
+    """A histogram of pitch values and their counts, with one pitch bin per non-zero count.
 
     Parameters
     ----------
@@ -782,23 +783,20 @@ def basic_pitch_histogram(pitches: list[int]) -> dict:
 
     Returns
     -------
-    dict
-        Dictionary mapping pitch values to counts
+    dict[int, int]
+        Mapping from MIDI pitch (0–127) to note count. Only pitches with count > 0 are included.
 
     Note
     ----
-    We use the histogram in the range of input pitches to reduce the output size. An implementation
-    that is truer to the original jSymbolic implementation would return 128 bins (0-127) regardless of how any different pitches are present.
+    We only return bins for pitches that have a count > 0. An implementation that is truer to the original jSymbolic 
+    implementation would return 128 bins (0-127) regardless of how any different pitches are present.
     However, we believe our approach is more concise and easier to understand for many purposes.
     """
     if not pitches:
         return {}
 
-    # Use number of unique pitches as number of bins, with minimum of 1
-    # we return this instead of the full PitchHistogram object to reduce simplify the output
-    # as the PitchHistogram object would return 128 bins (0-127) regardless of how any different pitches are present
-    num_midi_notes = max(1, len(set(pitches)))
-    return histogram_bins(pitches, num_midi_notes)
+    histogram = PitchHistogram(pitches).histogram
+    return {pitch: count for pitch, count in histogram.items() if count > 0}
 
 @jsymbolic
 @absolute
@@ -2172,8 +2170,8 @@ def distance_between_most_prevalent_melodic_intervals(pitches: list[int]) -> flo
 @jsymbolic
 @interval
 @pitch
-def melodic_interval_histogram(pitches: list[int]) -> dict:
-    """A histogram of interval sizes.
+def melodic_interval_histogram(pitches: list[int]) -> dict[int, int]:
+    """Histogram of absolute melodic interval sizes in semitones.
 
     Parameters
     ----------
@@ -2182,12 +2180,24 @@ def melodic_interval_histogram(pitches: list[int]) -> dict:
 
     Returns
     -------
-    dict
-        Dictionary mapping interval sizes to counts
+    dict[int, int]
+        Mapping from interval size (0–127 semitones) to count. Only sizes with count > 0 are included.
+
+    Note
+    ----
+    We only return bins for intervals that have a count > 0. An implementation that is truer to the original jSymbolic 
+    implementation would return 128 bins (0-127) regardless of how any different intervals are present.
     """
     intervals = pitch_interval(pitches)
-    num_intervals = max(1, int(range_func(intervals)))
-    return histogram_bins(intervals, num_intervals)
+    if not intervals:
+        return {}
+
+    histogram: dict[int, int] = {}
+    for interval in intervals:
+        size = abs(interval)
+        if 0 <= size <= 127:
+            histogram[size] = histogram.get(size, 0) + 1
+    return histogram
 
 @jsymbolic
 @interval
@@ -5644,7 +5654,10 @@ def polyrhythms(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """The fraction of beat histogram peaks that are not integer multiples/factors of the highest peak.
+    """The fraction of strong beat-histogram peaks related to the strongest peak.
+
+    Among peaks at least 30% as tall as the maximum, returns the proportion whose bin is
+    an integer multiple/factor of the strongest (multipliers 1, 2, 3, 4, 6, 8; ±3 bins).
 
     Parameters
     ----------
@@ -5660,7 +5673,7 @@ def polyrhythms(
     Returns
     -------
     float
-        Fraction of beat histogram peaks that are not integer multiples/factors of the highest peak (0.0 if no durations)
+        ``hits / n_peaks``, or ``0.0`` if there are no qualifying peaks.
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -5706,7 +5719,10 @@ def polyrhythms_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """The fraction of beat histogram peaks that are not integer multiples/factors of the highest peak using tempo-standardized histogram.
+    """The fraction of strong beat-histogram peaks related to the strongest peak using the tempo-standardized beat histogram.
+
+    Among peaks at least 30% as tall as the maximum, returns the proportion whose bin is
+    an integer multiple/factor of the strongest (multipliers 1, 2, 3, 4, 6, 8; ±3 bins).
 
     Parameters
     ----------
@@ -5722,7 +5738,7 @@ def polyrhythms_tempo_standardized(
     Returns
     -------
     float
-        Fraction of beat histogram peaks that are not integer multiples/factors of the highest peak using tempo-standardized histogram (0.0 if no durations)
+        ``hits / n_peaks``, or ``0.0`` if there are no qualifying peaks.
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -6572,7 +6588,8 @@ def tonal_spike(pitches: list[int]) -> float:
 @complexity
 @pitch
 def tonal_entropy(pitches: list[int]) -> float:
-    """The zeroth-order base-2 entropy of all key correlations.
+    """Zeroth-order base-2 entropy of the 24-key Krumhansl-Schmuckler key correlation distribution. 
+    Normalizes the correlation values to a probability mass over all 24 major/minor keys, then computes Shannon entropy.
 
     Parameters
     ----------
@@ -6582,19 +6599,12 @@ def tonal_entropy(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Entropy of the tonality vector correlation distribution
+        Entropy in bits; ``0.0`` if all correlations are zero.
     """
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
-    if not correlations:
-        return -1.0
-
-    # Calculate entropy of correlation distribution
-    # Extract just the correlation values and normalize them to positive values
-    corr_values = [abs(corr[1]) for corr in correlations]
-
-    # Calculate entropy of the correlation distribution
-    return shannon_entropy(corr_values)
+    weights = [abs(value) for _, value in correlations]
+    return float(distribution_entropy(weights))
 
 
 def _get_key_distances() -> dict[str, int]:
@@ -7192,8 +7202,7 @@ def temperley_likelihood(pitches: list[int]) -> float:
 @tonality
 @pitch
 def tonalness_histogram(pitches: list[int]) -> dict:
-    """
-    A histogram of Krumhansl-Schmuckler correlation values.
+    """Equal-width histogram of all 24 Krumhansl-Schmuckler key correlations.
 
     Parameters
     ----------
@@ -7203,14 +7212,15 @@ def tonalness_histogram(pitches: list[int]) -> dict:
     Returns
     -------
     dict
-        Histogram of KS correlation values
+        Bin-range strings mapped to counts (24 correlations, 24 bins).
 
     Citation
     --------
     Krumhansl (1990)
     """
-    p = [p % 12 for p in pitches]
-    return histogram_bins(compute_tonality_vector(p)[0][1], 24)
+    pitch_classes = [p % 12 for p in pitches]
+    correlation_values = [value for _, value in compute_tonality_vector(pitch_classes)]
+    return histogram_bins(correlation_values, 24)
 
 @idyom
 @midi_toolbox
@@ -10369,8 +10379,7 @@ def get_tonality_features(
         tonality_features["tonal_clarity"] = -1.0
         tonality_features["tonal_spike"] = -1.0
     
-    # Histogram using cached correlations
-    tonality_features["tonalness_histogram"] = histogram_bins(correlations[0][1], 24)
+    tonality_features["tonalness_histogram"] = tonalness_histogram(melody.pitches)
 
     # Determine the key to use for key-dependent features based on strategy
     key_for_features = None
