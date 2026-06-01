@@ -12,15 +12,25 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
+
 from melody_features.features import (
+    DEFAULT_MAX_NGRAM_ORDER,
+    _fantastic_log_normalized_tf_df,
+    _fantastic_melody_ngram_counts,
+    _fantastic_melody_tf_df,
     get_all_features,
     get_corpus_features,
+    mean_log_tfdf,
+    norm_log_dist,
     _setup_corpus_statistics,
     _load_melody_data,
     Config,
     IDyOMConfig,
-    FantasticConfig
+    FantasticConfig,
 )
+from melody_features.import_mid import import_midi
+from melody_features.ngram_counter import NGramCounter
 from melody_features.representations import Melody
 
 
@@ -84,13 +94,87 @@ def create_test_corpus(temp_dir, num_melodies=3):
     return corpus_dir, created_files
 
 
+class TestFantasticCorpusFeatures:
+    """FANTASTIC-aligned n-gram order and log TF/DF corpus features."""
+
+    def test_default_max_ngram_order_is_five(self):
+        assert DEFAULT_MAX_NGRAM_ORDER == 5
+
+    def test_ngram_counter_includes_max_order(self):
+        tokens = ["a", "b", "c", "d", "e"]
+        counter = NGramCounter()
+        counter.count_ngrams(tokens, max_order=3)
+        assert {len(k) for k in counter.ngram_counts} == {1, 2, 3}
+        assert any(len(k) == 3 for k in counter.ngram_counts)
+
+    def test_fantastic_melody_ngram_counts_includes_max_order(self):
+        tokens = ["a", "b", "c", "d", "e"]
+        counts = _fantastic_melody_ngram_counts(tokens, max_ngram_order=3)
+        assert {len(k) for k in counts} == {1, 2, 3}
+
+    def test_fantastic_melody_tf_df_includes_max_order(self):
+        tokens = ["a", "b", "c", "d", "e"]
+        trigram = ("a", "b", "c")
+        doc_freqs = {str(trigram): {"count": 2}}
+        tf, df = _fantastic_melody_tf_df(tokens, doc_freqs, max_ngram_order=5)
+        assert tf.size == 1
+        assert df[0] == 2
+        counts = _fantastic_melody_ngram_counts(tokens, max_ngram_order=5)
+        assert trigram in counts
+        assert any(len(k) == 5 for k in counts)
+
+    def test_fantastic_log_normalized_tf_df_matches_r_formula(self):
+        tf = np.array([2.0, 1.0])
+        df = np.array([4.0, 2.0])
+        norm_tf, norm_df = _fantastic_log_normalized_tf_df(tf, df)
+        assert np.isclose(norm_tf[0], 1.0)
+        assert np.isclose(norm_tf[1], 0.0)
+        assert np.isclose(norm_df[0], 2.0 / 3.0)
+        assert np.isclose(norm_df[1], 1.0 / 3.0)
+        assert np.isclose(np.mean(norm_tf * norm_df), 1.0 / 3.0)
+        norm_log_dist = np.sum(np.abs(norm_tf - norm_df)) / len(tf)
+        assert np.isclose(norm_log_dist, 1.0 / 3.0)
+
+    def test_mean_log_tfdf_is_mean_of_products_not_dot(self):
+        tf = np.array([2.0, 1.0])
+        df = np.array([4.0, 2.0])
+        norm_tf, norm_df = _fantastic_log_normalized_tf_df(tf, df)
+        fantastic = float(np.mean(norm_tf * norm_df))
+        dot_wrong = float(np.dot(tf / tf.sum(), df / df.sum()))
+        assert np.isclose(fantastic, 1.0 / 3.0)
+        assert not np.isclose(dot_wrong, fantastic)
+
+    def test_mean_log_tfdf_and_norm_log_dist_agree_with_get_corpus_features(self):
+        melody = Melody(
+            import_midi("src/melody_features/corpora/essen_folksong_collection/appenzel.mid")
+        )
+        corpus_stats = {
+            "document_frequencies": {
+                str(k): {"count": v}
+                for k, v in [
+                    (("p1",), 5),
+                    (("p2",), 3),
+                ]
+            },
+            "corpus_size": 10,
+        }
+        phrase_gap = 1.5
+        max_order = 2
+
+        batch = get_corpus_features(melody, corpus_stats, phrase_gap, max_order)
+        assert batch["mean_log_tfdf"] == mean_log_tfdf(
+            melody, corpus_stats, phrase_gap, max_order
+        )
+        assert batch["norm_log_dist"] == norm_log_dist(
+            melody, corpus_stats, phrase_gap, max_order
+        )
+
+
 class TestCorpusFeatures:
     """Test corpus-dependent features in features.py."""
 
     def test_get_corpus_features(self):
         """Test get_corpus_features function directly."""
-        from melody_features.import_mid import import_midi
-
         # Create test melody
         pitches = [60, 62, 64, 65, 67]
         starts = [0.0, 0.5, 1.0, 1.5, 2.0]
@@ -120,15 +204,17 @@ class TestCorpusFeatures:
                 melody=melody,
                 corpus_stats=corpus_stats,
                 phrase_gap=1.5,
-                max_ngram_order=6
+                max_ngram_order=5
             )
 
             assert isinstance(features, dict), "Should return dictionary"
             assert len(features) > 0, "Should have some features"
 
             expected_features = [
-                "mean_document_frequency", "std_document_frequency",
-                "mean_global_weight", "std_global_weight"
+                "mean_log_tfdf",
+                "norm_log_dist",
+                "mean_global_weight",
+                "std_global_weight",
             ]
 
             for feature in expected_features:
@@ -156,7 +242,7 @@ class TestCorpusFeatures:
                     )
                 },
                 fantastic=FantasticConfig(
-                    max_ngram_order=6,
+                    max_ngram_order=5,
                     phrase_gap=1.5,
                 ),
                 corpus=corpus_dir
@@ -181,7 +267,7 @@ class TestCorpusFeatures:
                     models=":both"
                 )
             },
-            fantastic=FantasticConfig(max_ngram_order=6, phrase_gap=1.5),
+            fantastic=FantasticConfig(max_ngram_order=5, phrase_gap=1.5),
             corpus=None
         )
 
@@ -218,7 +304,7 @@ class TestFeaturesWithCorpus:
                     )
                 },
                 fantastic=FantasticConfig(
-                    max_ngram_order=6,
+                    max_ngram_order=5,
                     phrase_gap=1.5,
                     corpus=corpus_dir
                 ),
@@ -372,7 +458,7 @@ class TestCorpusStatisticsIntegration:
                     )
                 },
                 fantastic=FantasticConfig(
-                    max_ngram_order=6,
+                    max_ngram_order=5,
                     phrase_gap=1.5,
                     corpus=corpus_dir
                 ),
@@ -411,7 +497,7 @@ class TestCorpusStatisticsIntegration:
                     )
                 },
                 fantastic=FantasticConfig(
-                    max_ngram_order=6,
+                    max_ngram_order=5,
                     phrase_gap=1.5,
                     corpus=corpus_dir
                 ),
@@ -437,7 +523,7 @@ class TestCorpusErrorHandling:
                 )
             },
             fantastic=FantasticConfig(
-                max_ngram_order=6,
+                max_ngram_order=5,
                 phrase_gap=1.5,
                 corpus=None
             ),

@@ -86,7 +86,7 @@ def process_melody_ngrams(args) -> set:
 
 
 def compute_corpus_ngrams(
-    melodies: List[Melody], n_range: Tuple[int, int] = (1, 6), njobs: Optional[int] = -1
+    melodies: List[Melody], n_range: Tuple[int, int] = (1, 5), njobs: Optional[int] = -1
 ) -> Dict:
     """Compute n-gram frequencies across the entire corpus using multiprocessing.
 
@@ -95,7 +95,7 @@ def compute_corpus_ngrams(
     melodies : List[Melody]
         List of Melody objects to analyze
     n_range : Tuple[int, int]
-        Range of n-gram lengths to consider (min, max)
+        Inclusive range of n-gram lengths to consider (min, max)
 
     Returns
     -------
@@ -363,7 +363,11 @@ def load_melodies_from_directory(
     return melodies
 
 
-def make_corpus_stats(midi_dir: str, output_file: str) -> None:
+def make_corpus_stats(
+    midi_dir: str,
+    output_file: str,
+    n_range: Tuple[int, int] = (1, 5),
+) -> None:
     """Process a directory of MIDI files and save corpus statistics.
 
     Parameters
@@ -372,6 +376,8 @@ def make_corpus_stats(midi_dir: str, output_file: str) -> None:
         Path to directory containing MIDI files
     output_file : str
         Path where to save the corpus statistics JSON file
+    n_range : Tuple[int, int], optional
+        Inclusive range of n-gram lengths (min, max), by default (1, 5)
     """
     logger = logging.getLogger("melody_features")
     # Load melodies from MIDI files
@@ -385,7 +391,7 @@ def make_corpus_stats(midi_dir: str, output_file: str) -> None:
     logger.info(f"Processing {len(melodies)} valid melodies")
 
     # Compute corpus statistics
-    corpus_stats = compute_corpus_ngrams(melodies, njobs=-1)
+    corpus_stats = compute_corpus_ngrams(melodies, n_range=n_range, njobs=-1)
 
     # Save to JSON
     save_corpus_stats(corpus_stats, output_file)
@@ -398,7 +404,7 @@ def make_corpus_stats(midi_dir: str, output_file: str) -> None:
 
 
 def make_corpus_stats_from_json(
-    json_file: str, output_file: str, n_range: Tuple[int, int] = (1, 6)
+    json_file: str, output_file: str, n_range: Tuple[int, int] = (1, 5)
 ) -> None:
     """Process a JSON file containing melody data and save corpus statistics.
 
@@ -409,7 +415,7 @@ def make_corpus_stats_from_json(
     output_file : str
         Path where to save the corpus statistics JSON file
     n_range : Tuple[int, int], optional
-        Range of n-gram lengths to consider (min, max), by default (1, 6)
+        Inclusive range of n-gram lengths (min, max), by default (1, 5)
     """
     logger = logging.getLogger("melody_features")
     # Load melody data from JSON

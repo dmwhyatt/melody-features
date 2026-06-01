@@ -421,6 +421,9 @@ def _default_idyom_configs(corpus: Optional[os.PathLike] = None) -> dict[str, ID
 
 _DEFAULT_IDYOM_CONFIGS = _default_idyom_configs(_DEFAULT_CORPUS)
 
+# Inclusive maximum m-type length (FANTASTIC n.limits default: 1–5).
+DEFAULT_MAX_NGRAM_ORDER = 5
+
 
 @dataclass
 class FantasticConfig:
@@ -8662,7 +8665,9 @@ def meter_accent(melody: Melody) -> int:
     return int(round(-1.0 * float(np.mean(accent_products))))
 
 
-def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_order: int = 6) -> Dict:
+def get_complexity_features(
+    melody: Melody, phrase_gap: float = 1.5, max_ngram_order: int = DEFAULT_MAX_NGRAM_ORDER
+) -> Dict:
     """Dynamically collect all complexity features for a melody.
     
     Parameters
@@ -8672,7 +8677,7 @@ def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_o
     phrase_gap : float, optional
         Phrase gap for mtype features (default: 1.5)
     max_ngram_order : int, optional
-        Maximum n-gram order for mtype features (default: 6)
+        Maximum inclusive n-gram length for m-type features (default: 5)
         
     Returns
     -------
@@ -8723,6 +8728,73 @@ def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_o
     
     return features
 
+
+def _fantastic_melody_tokens(melody: Melody, phrase_gap: float) -> list:
+    """Tokenize a melody into FANTASTIC m-type tokens across phrases."""
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+    all_tokens = []
+    for segment in segments:
+        all_tokens.extend(
+            tokenizer.tokenize_melody(segment.pitches, segment.starts, segment.ends)
+        )
+    return all_tokens
+
+
+def _fantastic_melody_tf_df(
+    melody_tokens: list,
+    doc_freqs: dict,
+    max_ngram_order: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Melody TF and corpus DF for m-types with df > 0 (FANTASTIC ``TFDF.tab`` rows)."""
+    tf_values: list[float] = []
+    df_values: list[float] = []
+    if max_ngram_order < 1:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    for n in range(1, max_ngram_order + 1):
+        ngram_counts: dict[tuple, int] = {}
+        for i in range(len(melody_tokens) - n + 1):
+            ngram = tuple(melody_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+
+        for ngram, tf in ngram_counts.items():
+            df = doc_freqs.get(str(ngram), {}).get("count", 0)
+            if df > 0:
+                tf_values.append(float(tf))
+                df_values.append(float(df))
+
+    return np.array(tf_values, dtype=float), np.array(df_values, dtype=float)
+
+
+def _fantastic_log_normalized_tf_df(
+    tf: np.ndarray, df: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """log2-normalized TF and DF vectors as in FANTASTIC ``M-Type_Corpus_Features.R``."""
+    log_tf = np.log2(tf)
+    log_df = np.log2(df)
+    return log_tf / log_tf.sum(), log_df / log_df.sum()
+
+
+def _fantastic_melody_ngram_counts(
+    melody_tokens: list,
+    max_ngram_order: int,
+) -> dict[tuple, int]:
+    """Collapsed melody m-type counts for orders 1 through ``max_ngram_order`` (inclusive)."""
+    all_ngram_counts: dict[tuple, int] = {}
+    if max_ngram_order < 1:
+        return all_ngram_counts
+
+    for n in range(1, max_ngram_order + 1):
+        ngram_counts: dict[tuple, int] = {}
+        for i in range(len(melody_tokens) - n + 1):
+            ngram = tuple(melody_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+        for ngram, tf in ngram_counts.items():
+            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
+    return all_ngram_counts
+
+
 @fantastic
 @lexical_diversity
 @both
@@ -8752,51 +8824,19 @@ def tfdf_spearman(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
     float
         Spearman correlation coefficient between TF and DF
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
     doc_freqs = corpus_stats.get("document_frequencies", {})
-    
-    all_tf = []
-    all_df = []
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+    tokens = _fantastic_melody_tokens(melody, phrase_gap)
+    tf, df = _fantastic_melody_tf_df(tokens, doc_freqs, max_ngram_order)
 
-        if not ngram_counts:
-            continue
-
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                all_tf.append(tf)
-                all_df.append(df)
-
-    if len(all_tf) >= 2:
+    if tf.size >= 2:
         try:
-            tf_variance = np.var(all_tf)
-            df_variance = np.var(all_df)
-            
-            if tf_variance == 0 or df_variance == 0:
+            if np.var(tf) == 0 or np.var(df) == 0:
                 return 0.0
-            else:
-                spearman = scipy.stats.spearmanr(all_tf, all_df)[0]
-                return float(spearman if not np.isnan(spearman) else 0.0)
-        except:
+            spearman = scipy.stats.spearmanr(tf, df)[0]
+            return float(spearman if not np.isnan(spearman) else 0.0)
+        except Exception:
             return 0.0
-    else:
-        return 0.0
+    return 0.0
 
 @fantastic
 @lexical_diversity
@@ -8825,59 +8865,28 @@ def tfdf_kendall(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngra
     float
         Kendall's tau correlation coefficient between TF and DF
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
     doc_freqs = corpus_stats.get("document_frequencies", {})
-    
-    all_tf = []
-    all_df = []
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+    tokens = _fantastic_melody_tokens(melody, phrase_gap)
+    tf, df = _fantastic_melody_tf_df(tokens, doc_freqs, max_ngram_order)
 
-        if not ngram_counts:
-            continue
-
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                all_tf.append(tf)
-                all_df.append(df)
-
-    if len(all_tf) >= 2:
+    if tf.size >= 2:
         try:
-            tf_variance = np.var(all_tf)
-            df_variance = np.var(all_df)
-            
-            if tf_variance == 0 or df_variance == 0:
+            if np.var(tf) == 0 or np.var(df) == 0:
                 return 0.0
-            else:
-                kendall = scipy.stats.kendalltau(all_tf, all_df)[0]
-                return float(kendall if not np.isnan(kendall) else 0.0)
-        except:
+            kendall = scipy.stats.kendalltau(tf, df)[0]
+            return float(kendall if not np.isnan(kendall) else 0.0)
+        except Exception:
             return 0.0
-    else:
-        return 0.0
+    return 0.0
 
 @fantastic
 @lexical_diversity
 @both
 def mean_log_tfdf(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Mean of the inner product of normalized TF and DF vectors.
-    Higher values mean the melody's m-type distribution is better aligned 
-    on the same patterns with the corpus document-frequency profile.
+    """Mean of log2-normalized TF × DF products over m-types.
+
+    Higher values mean stronger alignment between within-melody usage and corpus
+    document-frequency on the same m-types.
 
     Parameters
     ----------
@@ -8893,59 +8902,23 @@ def mean_log_tfdf(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
     Returns
     -------
     float
-        Mean log TF-DF score
+        Mean log2 TF-DF score
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
     doc_freqs = corpus_stats.get("document_frequencies", {})
-    total_docs = len(doc_freqs)
-    
-    tfdf_values = []
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        tf_values = []
-        df_values = []
-        total_tf = sum(ngram_counts.values())
-        
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                tf_values.append(tf)
-                df_values.append(df)
-
-        if tf_values and total_docs > 0:
-            tf_array = np.array(tf_values)
-            df_array = np.array(df_values)
-            tf_norm = tf_array / total_tf
-            df_norm = df_array / total_docs
-            tfdf = np.dot(tf_norm, df_norm)
-            tfdf_values.append(tfdf)
-
-    return float(np.mean(tfdf_values) if tfdf_values else 0.0)
+    tokens = _fantastic_melody_tokens(melody, phrase_gap)
+    tf, df = _fantastic_melody_tf_df(tokens, doc_freqs, max_ngram_order)
+    if tf.size == 0:
+        return 0.0
+    norm_tf, norm_df = _fantastic_log_normalized_tf_df(tf, df)
+    return float(np.mean(norm_tf * norm_df))
 
 @fantastic
 @lexical_diversity
 @both
 def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Normalized log distance between TF and DF distributions.
-    Larger values mean the melody emphasizes different m-types than the corpus-wide prevalence pattern;
+    """Mean absolute difference between log2-normalized TF and DF (FANTASTIC ``norm.log.dist``).
+
+    Larger values mean the melody emphasizes different m-types than corpus prevalence;
     smaller values mean closer distributional match.
 
     Parameters
@@ -8962,60 +8935,23 @@ def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
     Returns
     -------
     float
-        Mean absolute deviation between normalized TF and DF vectors
+        Mean absolute deviation between log2-normalized TF and DF vectors
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
     doc_freqs = corpus_stats.get("document_frequencies", {})
-    total_docs = len(doc_freqs)
-    
-    distances = []
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        tf_values = []
-        df_values = []
-        total_tf = sum(ngram_counts.values())
-        
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                tf_values.append(tf)
-                df_values.append(df)
-
-        if tf_values and total_docs > 0:
-            tf_array = np.array(tf_values)
-            df_array = np.array(df_values)
-            tf_norm = tf_array / total_tf
-            df_norm = df_array / total_docs
-            distances.extend(np.abs(tf_norm - df_norm))
-
-    return float(np.mean(distances) if distances else 0.0)
+    tokens = _fantastic_melody_tokens(melody, phrase_gap)
+    tf, df = _fantastic_melody_tf_df(tokens, doc_freqs, max_ngram_order)
+    if tf.size == 0:
+        return 0.0
+    norm_tf, norm_df = _fantastic_log_normalized_tf_df(tf, df)
+    return float(np.sum(np.abs(norm_tf - norm_df)) / tf.size)
 
 @fantastic
 @lexical_diversity
 @both
 def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Natural logarithm +1 of the largest corpus document frequency among m-types appearing here.
-    Highlights how frequent the most common pattern in the
-    melody is relative to the corpus; large values mean at least one local m-type is commonly used across the
-    reference corpus.
+    """log2 of the largest corpus document frequency among melody m-types. Highlights how 
+    frequent the most common pattern in the melody is relative to the corpus. Large values indicate that the melody 
+    contains at least one pattern that is very frequent in the corpus.
 
     Parameters
     ----------
@@ -9031,46 +8967,20 @@ def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_
     Returns
     -------
     float
-        Maximum log document frequency
+        Maximum log2 document frequency
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
     doc_freqs = corpus_stats.get("document_frequencies", {})
-    
-    max_df = 0
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                max_df = max(max_df, df)
-
-    return float(np.log1p(max_df) if max_df > 0 else 0.0)
+    tokens = _fantastic_melody_tokens(melody, phrase_gap)
+    _, df = _fantastic_melody_tf_df(tokens, doc_freqs, max_ngram_order)
+    return float(np.log2(df.max()) if df.size > 0 else 0.0)
 
 @fantastic
 @lexical_diversity
 @both
 def min_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Natural logarithm +1 of the smallest positive corpus DF among m-types used in the melody.
-    Small values mean that the melody uses at least one pattern 
-    that is relatively rare in the corpus.
+    """log2 of the smallest corpus DF among melody m-types. Highlights how 
+    frequent the least common pattern in the melody is relative to the corpus. Small values indicate that the melody 
+    contains at least one pattern that is very rare in the corpus.
 
     Parameters
     ----------
@@ -9086,46 +8996,21 @@ def min_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_
     Returns
     -------
     float
-        Minimum log document frequency
+        Minimum log2 document frequency
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
     doc_freqs = corpus_stats.get("document_frequencies", {})
-    
-    min_df = float("inf")
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                min_df = min(min_df, df)
-
-    return float(np.log1p(min_df) if min_df < float("inf") else 0.0)
+    tokens = _fantastic_melody_tokens(melody, phrase_gap)
+    _, df = _fantastic_melody_tf_df(tokens, doc_freqs, max_ngram_order)
+    return float(np.log2(df.min()) if df.size > 0 else 0.0)
 
 @fantastic
 @lexical_diversity
 @both
 def mean_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Average natural logarithm +1 of the corpus document frequency over 
-    all melody m-types that have a positive corpus DF. Higher values mean 
-    that the melody uses patterns that are more common in the corpus.
+    """Mean log2 corpus DF over melody m-types.
+    Highlights how frequent the average pattern in the melody is relative to the corpus.
+    Large values indicate that the melody contains patterns that are relatively frequent in the corpus.
+    Small values indicate that the melody contains patterns that are relatively rare in the corpus.
 
     Parameters
     ----------
@@ -9141,45 +9026,12 @@ def mean_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram
     Returns
     -------
     float
-        Mean log document frequency
+        Mean log2 document frequency
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
     doc_freqs = corpus_stats.get("document_frequencies", {})
-    
-    total_log_df = 0.0
-    df_count = 0
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        df_values = []
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                df_values.append(df)
-
-        if df_values:
-            df_array = np.array(df_values)
-            total_log_df += np.sum(np.log1p(df_array))
-            df_count += len(df_array)
-
-    return float(total_log_df / df_count if df_count > 0 else 0.0)
+    tokens = _fantastic_melody_tokens(melody, phrase_gap)
+    _, df = _fantastic_melody_tf_df(tokens, doc_freqs, max_ngram_order)
+    return float(np.mean(np.log2(df)) if df.size > 0 else 0.0)
 
 @fantastic
 @lexical_diversity
@@ -9208,32 +9060,14 @@ def mean_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: flo
     float
         Mean global-local weight
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    all_ngram_counts = {}
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        for ngram, tf in ngram_counts.items():
-            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
+    tokens = _fantastic_melody_tokens(melody, phrase_gap)
+    all_ngram_counts = _fantastic_melody_ngram_counts(tokens, max_ngram_order)
 
     if all_ngram_counts and len(corpus_stats.get("document_frequencies", {})) > 0:
         weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
         combined_weights = weights.combined_weights
         return float(np.mean(combined_weights) if combined_weights else 0.0)
-    else:
-        return 0.0
+    return 0.0
 
 @fantastic
 @lexical_diversity
@@ -9257,32 +9091,14 @@ def std_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: floa
     float
         Standard deviation of global-local weight
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    all_ngram_counts = {}
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        for ngram, tf in ngram_counts.items():
-            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
+    tokens = _fantastic_melody_tokens(melody, phrase_gap)
+    all_ngram_counts = _fantastic_melody_ngram_counts(tokens, max_ngram_order)
 
     if all_ngram_counts and len(corpus_stats.get("document_frequencies", {})) > 0:
         weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
         combined_weights = weights.combined_weights
         return float(np.std(combined_weights, ddof=1) if len(combined_weights) > 1 else 0.0)
-    else:
-        return 0.0
+    return 0.0
 
 @fantastic
 @lexical_diversity
@@ -9309,32 +9125,14 @@ def mean_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, ma
     float
         Mean global weight
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    all_ngram_counts = {}
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        for ngram, tf in ngram_counts.items():
-            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
+    tokens = _fantastic_melody_tokens(melody, phrase_gap)
+    all_ngram_counts = _fantastic_melody_ngram_counts(tokens, max_ngram_order)
 
     if all_ngram_counts and len(corpus_stats.get("document_frequencies", {})) > 0:
         weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
         global_weights = weights.global_weights
         return float(np.mean(global_weights) if global_weights else 0.0)
-    else:
-        return 0.0
+    return 0.0
 
 @fantastic
 @lexical_diversity
@@ -9358,32 +9156,14 @@ def std_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max
     float
         Standard deviation of global weight
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    all_ngram_counts = {}
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        for ngram, tf in ngram_counts.items():
-            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
+    tokens = _fantastic_melody_tokens(melody, phrase_gap)
+    all_ngram_counts = _fantastic_melody_ngram_counts(tokens, max_ngram_order)
 
     if all_ngram_counts and len(corpus_stats.get("document_frequencies", {})) > 0:
         weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
         global_weights = weights.global_weights
         return float(np.std(global_weights, ddof=1) if len(global_weights) > 1 else 0.0)
-    else:
-        return 0.0
+    return 0.0
 
 def get_corpus_features(
     melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int
@@ -9402,130 +9182,50 @@ def get_corpus_features(
     Dict
         Dictionary of corpus-based feature values
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
     doc_freqs = corpus_stats.get("document_frequencies", {})
-    total_docs = len(doc_freqs)
-
-    ngram_data = []
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        # Get document frequencies for all n-grams at once
-        ngram_df_data = {
-            "counts": ngram_counts,
-            "total_tf": sum(ngram_counts.values()),
-            "df_values": [],
-            "tf_values": [],
-            "ngrams": [],
-        }
-
-        # Batch lookup document frequencies
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                ngram_df_data["df_values"].append(df)
-                ngram_df_data["tf_values"].append(tf)
-                ngram_df_data["ngrams"].append(ngram)
-
-        if ngram_df_data["df_values"]:
-            ngram_data.append(ngram_df_data)
+    all_tokens = _fantastic_melody_tokens(melody, phrase_gap)
+    tf, df = _fantastic_melody_tf_df(all_tokens, doc_freqs, max_ngram_order)
 
     features = {}
 
-    # Compute correlation features using pre-computed values
-    if ngram_data:
-        all_tf = []
-        all_df = []
-        for data in ngram_data:
-            all_tf.extend(data["tf_values"])
-            all_df.extend(data["df_values"])
-
-        if len(all_tf) >= 2:
-            try:
-                # Check for no variance to avoid correlation problems
-                tf_variance = np.var(all_tf)
-                df_variance = np.var(all_df)
-                
-                if tf_variance == 0 or df_variance == 0:
-                    # If either array is constant, correlation is undefined
-                    features["tfdf_spearman"] = 0.0
-                    features["tfdf_kendall"] = 0.0
-                else:
-                    spearman = scipy.stats.spearmanr(all_tf, all_df)[0]
-                    kendall = scipy.stats.kendalltau(all_tf, all_df)[0]
-                    features["tfdf_spearman"] = float(
-                        spearman if not np.isnan(spearman) else 0.0
-                    )
-                    features["tfdf_kendall"] = float(
-                        kendall if not np.isnan(kendall) else 0.0
-                    )
-            except:
+    if tf.size >= 2:
+        try:
+            if np.var(tf) == 0 or np.var(df) == 0:
                 features["tfdf_spearman"] = 0.0
                 features["tfdf_kendall"] = 0.0
-        else:
+            else:
+                spearman = scipy.stats.spearmanr(tf, df)[0]
+                kendall = scipy.stats.kendalltau(tf, df)[0]
+                features["tfdf_spearman"] = float(
+                    spearman if not np.isnan(spearman) else 0.0
+                )
+                features["tfdf_kendall"] = float(
+                    kendall if not np.isnan(kendall) else 0.0
+                )
+        except Exception:
             features["tfdf_spearman"] = 0.0
             features["tfdf_kendall"] = 0.0
     else:
         features["tfdf_spearman"] = 0.0
         features["tfdf_kendall"] = 0.0
 
-    # Compute TFDF and distance features
-    tfdf_values = []
-    distances = []
-    max_df = 0
-    min_df = float("inf")
-    total_log_df = 0.0
-    df_count = 0
-
-    for data in ngram_data:
-        # TFDF calculation
-        tf_array = np.array(data["tf_values"])
-        df_array = np.array(data["df_values"])
-        if len(tf_array) > 0:
-            # Normalize vectors
-            tf_norm = tf_array / data["total_tf"]
-            df_norm = df_array / total_docs
-            tfdf = np.dot(tf_norm, df_norm)
-            tfdf_values.append(tfdf)
-
-            # Distance calculation
-            distances.extend(np.abs(tf_norm - df_norm))
-
-            # Track max/min/total log DF
-            max_df = max(max_df, max(data["df_values"]))
-            min_df = min(min_df, min(x for x in data["df_values"] if x > 0))
-            total_log_df += np.sum(np.log1p(df_array))
-            df_count += len(df_array)
-
-    features["mean_log_tfdf"] = float(np.mean(tfdf_values) if tfdf_values else 0.0)
-    features["norm_log_dist"] = float(np.mean(distances) if distances else 0.0)
-    features["max_log_df"] = float(np.log1p(max_df) if max_df > 0 else 0.0)
-    features["min_log_df"] = float(np.log1p(min_df) if min_df < float("inf") else 0.0)
-    features["mean_log_df"] = float(total_log_df / df_count if df_count > 0 else 0.0)
+    if tf.size > 0:
+        norm_tf, norm_df = _fantastic_log_normalized_tf_df(tf, df)
+        features["mean_log_tfdf"] = float(np.mean(norm_tf * norm_df))
+        features["norm_log_dist"] = float(np.sum(np.abs(norm_tf - norm_df)) / tf.size)
+        features["max_log_df"] = float(np.log2(df.max()))
+        features["min_log_df"] = float(np.log2(df.min()))
+        features["mean_log_df"] = float(np.mean(np.log2(df)))
+    else:
+        features["mean_log_tfdf"] = 0.0
+        features["norm_log_dist"] = 0.0
+        features["max_log_df"] = 0.0
+        features["min_log_df"] = 0.0
+        features["mean_log_df"] = 0.0
 
     # Entropy-based weighting features
-    if ngram_data and total_docs > 0:
-        all_ngram_counts = {}
-        for data in ngram_data:
-            for ngram, tf in zip(data["ngrams"], data["tf_values"]):
-                all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
-
+    all_ngram_counts = _fantastic_melody_ngram_counts(all_tokens, max_ngram_order)
+    if all_ngram_counts and doc_freqs:
         weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
         all_combined_weights = weights.combined_weights
         all_global_weights = weights.global_weights
@@ -10974,7 +10674,11 @@ def _setup_default_config(config: Optional[Config]) -> Config:
                     corpus=_DEFAULT_CORPUS,
                 ),
             },
-            fantastic=FantasticConfig(max_ngram_order=6, phrase_gap=1.5, corpus=None),
+            fantastic=FantasticConfig(
+                max_ngram_order=DEFAULT_MAX_NGRAM_ORDER,
+                phrase_gap=1.5,
+                corpus=None,
+            ),
             key_estimation="infer_if_necessary",
         )
     return config
@@ -11053,7 +10757,8 @@ def _setup_corpus_statistics(config: Config, output_file: str) -> Optional[dict]
     # Generate and load corpus stats.
     if not corpus_stats_path.exists():
         logger.info("Corpus statistics file not found. Generating a new one...")
-        make_corpus_stats(fantastic_corpus, str(corpus_stats_path))
+        n_range = (1, config.fantastic.max_ngram_order)
+        make_corpus_stats(fantastic_corpus, str(corpus_stats_path), n_range=n_range)
         logger.info("Corpus statistics generated.")
     else:
         logger.info("Existing corpus statistics file found.")
@@ -11596,7 +11301,7 @@ def get_fantastic_features(
     melody: Melody, 
     corpus_stats: Optional[dict] = None,
     phrase_gap: float = 1.5,
-    max_ngram_order: int = 6
+    max_ngram_order: int = DEFAULT_MAX_NGRAM_ORDER,
 ) -> Dict:
     """Get all FANTASTIC features for a melody.
     
@@ -11609,7 +11314,7 @@ def get_fantastic_features(
     phrase_gap : float, optional
         Gap threshold for phrase segmentation (default: 1.5)
     max_ngram_order : int, optional
-        Maximum n-gram order (default: 6)
+        Maximum inclusive n-gram length (default: 5)
         
     Returns
     -------
@@ -11710,7 +11415,7 @@ def _compute_features_by_source(
     source: str, 
     corpus_stats: Optional[dict] = None,
     phrase_gap: float = 1.5,
-    max_ngram_order: int = 6
+    max_ngram_order: int = DEFAULT_MAX_NGRAM_ORDER,
 ) -> Dict:
     """Compute all features for a melody that are decorated with a specific source.
     
