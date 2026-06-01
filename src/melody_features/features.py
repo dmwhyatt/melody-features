@@ -337,6 +337,90 @@ class IDyOMConfig:
                 raise ValueError(f"corpus path does not exist: {self.corpus}")
 
 
+_IDYOM_MEAN_INFORMATION_CONTENT_EXPORTS = frozenset({
+    "pitch_stm_mean_information_content",
+    "pitch_ltm_mean_information_content",
+    "rhythm_stm_mean_information_content",
+    "rhythm_ltm_mean_information_content",
+})
+
+_DEFAULT_CORPUS = resources.files("melody_features") / "corpora/pearce_default_idyom"
+
+
+def _resolve_idyom_corpus(
+    idyom_config: IDyOMConfig,
+    config_corpus: Optional[os.PathLike] = None,
+    override: Optional[os.PathLike] = None,
+) -> Optional[os.PathLike]:
+    """Helper function to resolve the pretraining corpus for an IDyOM configuration.
+    Mostly used for individual calls, rather than `get_all_features` which uses the Config class
+    to setup all IDyOM configurations at once.
+
+    Resolution order:
+    1. Explicit override (used in batch mode)
+    2. Per-config corpus (IDyOMConfig.corpus)
+    3. Config.corpus (from get_all_features)
+    4. Package default (_DEFAULT_CORPUS)
+
+    Short-term models never use a corpus.
+    """
+    if idyom_config.models == ":stm":
+        return None
+    if override is not None:
+        return override
+    if idyom_config.corpus is not None:
+        return idyom_config.corpus
+    if config_corpus is not None:
+        return config_corpus
+    return _DEFAULT_CORPUS
+
+
+def _default_idyom_configs(corpus: Optional[os.PathLike] = None) -> dict[str, IDyOMConfig]:
+    """Build the standard four IDyOM configurations used by ``get_all_features``.
+
+    Parameters
+    ----------
+    corpus : Optional[os.PathLike]
+        Pretraining corpus for long-term (LTM) models. For the default
+        ``Config`` from ``_setup_default_config``, pass ``_DEFAULT_CORPUS`` so
+        LTM entries match ``Config.corpus`` explicitly. Pass ``None`` only when
+        LTM configs should inherit ``Config.corpus`` at runtime instead.
+    """
+    return {
+        "pitch_stm": IDyOMConfig(
+            target_viewpoints=["cpitch"],
+            source_viewpoints=[("cpitch", "cpint", "cpintfref")],
+            ppm_order=None,
+            models=":stm",
+            corpus=None,
+        ),
+        "pitch_ltm": IDyOMConfig(
+            target_viewpoints=["cpitch"],
+            source_viewpoints=[("cpitch", "cpint", "cpintfref")],
+            ppm_order=None,
+            models=":ltm",
+            corpus=corpus,
+        ),
+        "rhythm_stm": IDyOMConfig(
+            target_viewpoints=["onset"],
+            source_viewpoints=["ioi", "ioi-ratio"],
+            ppm_order=None,
+            models=":stm",
+            corpus=None,
+        ),
+        "rhythm_ltm": IDyOMConfig(
+            target_viewpoints=["onset"],
+            source_viewpoints=["ioi", "ioi-ratio"],
+            ppm_order=None,
+            models=":ltm",
+            corpus=corpus,
+        ),
+    }
+
+
+_DEFAULT_IDYOM_CONFIGS = _default_idyom_configs(_DEFAULT_CORPUS)
+
+
 @dataclass
 class FantasticConfig:
     """Configuration class for FANTASTIC analysis.
@@ -500,6 +584,8 @@ def pitch_standard_deviation(pitches: list[int]) -> float:
     if not pitches or len(pitches) < 2:
         return 0.0
     return float(np.std(pitches, ddof=1))
+
+pitch_variability = pitch_standard_deviation
 
 @jsymbolic
 @pitch_class
@@ -1627,6 +1713,8 @@ def mean_absolute_interval(pitches: list[int]) -> float:
     """
     return float(np.mean([abs(x) for x in pitch_interval(pitches)]))
 
+mean_melodic_interval = mean_absolute_interval
+
 @fantastic
 @interval
 @pitch
@@ -1671,6 +1759,8 @@ def modal_interval(pitches: list[int]) -> int:
     if not intervals_abs:
         return 0
     return int(get_mode(intervals_abs))
+
+most_common_interval = modal_interval
 
 @fantastic
 @complexity
@@ -2445,6 +2535,8 @@ def _get_features_by_type(feature_type: str) -> dict:
     features = {}
     seen_function_ids = set()
     for name, obj in inspect.getmembers(current_module):
+        if name.startswith("_"):
+            continue
         if (inspect.isfunction(obj) and
             hasattr(obj, '_feature_types') and
             feature_type in obj._feature_types):
@@ -2482,6 +2574,8 @@ def _get_features_by_domain(domain: str) -> dict:
     features = {}
     seen_function_ids = set()
     for name, obj in inspect.getmembers(current_module):
+        if name.startswith("_"):
+            continue
         if (inspect.isfunction(obj) and 
             hasattr(obj, '_feature_domain') and 
             obj._feature_domain == domain):
@@ -2521,6 +2615,8 @@ def _get_features_by_domain_and_types(domain: str, allowed_types: list[str]) -> 
     features = {}
     seen_function_ids = set()
     for name, obj in inspect.getmembers(current_module):
+        if name.startswith("_"):
+            continue
         if (inspect.isfunction(obj) and 
             hasattr(obj, '_feature_domain') and 
             obj._feature_domain == domain and
@@ -2716,7 +2812,7 @@ def get_interpolation_contour_features(
 @midi_toolbox
 @contour
 @pitch
-def get_comb_contour_matrix(pitches: list[int]) -> list[list[int]]:
+def comb_contour_matrix(pitches: list[int]) -> list[list[int]]:
     """The Marvin & Laprade (1987) comb contour matrix.
     For a melody with n notes, returns an n x n binary matrix C where
     C[i][j] = 1 if pitch of note j is higher than pitch of note i (p[j] > p[i])
@@ -2743,6 +2839,8 @@ def get_comb_contour_matrix(pitches: list[int]) -> list[list[int]]:
             matrix[row_index][col_index] = 1 if pitch_at_col > pitches[row_index] else 0
 
     return matrix
+
+get_comb_contour_matrix = comb_contour_matrix
 
 @fantastic
 @contour
@@ -3035,9 +3133,10 @@ def duration_entropy(starts: list[float], ends: list[float], tempo: float = 120.
     return float(shannon_entropy(durations))
 
 @fantastic
+@jsymbolic
 @rhythm
 @timing
-def length(starts: list[float]) -> float:
+def length(starts: list[float]) -> int:
     """The total number of notes.
 
     Parameters
@@ -3047,10 +3146,16 @@ def length(starts: list[float]) -> float:
 
     Returns
     -------
-    float
+    int
         Total number of notes
+
+    Note
+    -----
+    This feature is named "Total Number Of Notes" in jSymbolic.
     """
     return len(starts)
+
+total_number_of_notes = length
 
 @novel
 @rhythm
@@ -3097,6 +3202,8 @@ def global_duration(melody: Melody) -> float:
     This feature is named 'Duration in Seconds' in JSymbolic.
     """
     return melody.total_duration
+
+duration_in_seconds = global_duration
 
 @fantastic
 @jsymbolic
@@ -3315,6 +3422,8 @@ def ioi_mean(starts: list[float]) -> float:
         return 0.0
     return float(np.mean(intervals))
 
+average_time_between_attacks = ioi_mean
+
 @idyom
 @jsymbolic
 @rhythm
@@ -3341,6 +3450,7 @@ def ioi_standard_deviation(starts: list[float]) -> float:
         return 0.0
     return float(np.std(intervals, ddof=1))
 
+variability_of_time_between_attacks = ioi_standard_deviation
 
 @idyom
 @rhythm
@@ -5989,24 +6099,6 @@ def dotted_duration_transitions(starts: list[float], ends: list[float], tempo: f
 @jsymbolic
 @rhythm
 @timing
-def total_number_of_notes(starts: list[float]) -> int:
-    """The total number of notes.
-    
-    Parameters
-    ----------
-    starts : list[float]
-        List of note start times
-        
-    Returns
-    -------
-    int
-        Total number of notes
-    """
-    return len(starts)
-
-@jsymbolic
-@rhythm
-@timing
 def amount_of_staccato(starts: list[float], ends: list[float]) -> float:
     """The proportion of notes with a duration shorter than 0.1 seconds.
 
@@ -8203,12 +8295,7 @@ def compltrans(melody: Melody) -> float:
     
     return float(simonton_originality_score)
 
-@midi_toolbox
-@pitch
-@rhythm
-@both
-@complexity
-def complebm(melody: Melody, method: str = 'o') -> float:
+def _complebm(melody: Melody, method: str = 'o') -> float:
     """Expectancy-based melodic complexity, according to Eerola & North (2000).
     Calculated using an expectancy-based model that considers pitch patterns,
     rhythmic features, or both. The complexity score is normalized against the Essen folksong
@@ -8336,6 +8423,235 @@ def complebm(melody: Melody, method: str = 'o') -> float:
         return float(optimal_complexity)
 
 
+@midi_toolbox
+@pitch
+@complexity
+def complebm_pitch(melody: Melody) -> float:
+    """Expectancy-based melodic complexity calculated using pitch patterns only,
+    according to Eerola & North (2000). The complexity score is normalized against
+    the Essen folksong collection, where a score of 5 represents average complexity.
+
+    Citation
+    --------
+    Eerola & North (2000)
+    """
+    return _complebm(melody, "p")
+
+
+@midi_toolbox
+@rhythm
+@complexity
+def complebm_rhythm(melody: Melody) -> float:
+    """Expectancy-based melodic complexity calculated using rhythmic features only,
+    according to Eerola & North (2000). The complexity score is normalized against
+    the Essen folksong collection, where a score of 5 represents average complexity.
+
+    Citation
+    --------
+    Eerola & North (2000)
+    """
+    return _complebm(melody, "r")
+
+
+@midi_toolbox
+@both
+@complexity
+def complebm_optimal(melody: Melody) -> float:
+    """Expectancy-based melodic complexity calculated using an optimal combination
+    of pitch patterns and rhythmic features, according to Eerola & North (2000).
+    The complexity score is normalized against the Essen folksong collection,
+    where a score of 5 represents average complexity.
+
+    Citation
+    --------
+    Eerola & North (2000)
+    """
+    return _complebm(melody, "o")
+
+
+def _melody_idyom_input_directory(melody: Melody) -> tuple[str, list[str]]:
+    """Build a one-melody MIDI directory for IDyOM. Returns (directory, paths to remove)."""
+    import pretty_midi
+
+    cleanup_paths: list[str] = []
+    melody_path = melody.id
+    if (
+        melody_path
+        and str(melody_path).lower().endswith((".mid", ".midi"))
+        and os.path.isfile(str(melody_path))
+    ):
+        temp_dir = tempfile.mkdtemp(prefix="idyom_melody_")
+        cleanup_paths.append(temp_dir)
+        dest = os.path.join(temp_dir, os.path.basename(str(melody_path)))
+        shutil.copy2(str(melody_path), dest)
+        return temp_dir, cleanup_paths
+
+    temp_dir = tempfile.mkdtemp(prefix="idyom_melody_")
+    cleanup_paths.append(temp_dir)
+    temp_midi = os.path.join(temp_dir, "melody.mid")
+    pm = pretty_midi.PrettyMIDI(initial_tempo=melody.tempo)
+    instrument = pretty_midi.Instrument(program=0)
+    for pitch, start, end in zip(melody.pitches, melody.starts, melody.ends):
+        instrument.notes.append(
+            pretty_midi.Note(velocity=80, pitch=pitch, start=start, end=end)
+        )
+    pm.instruments.append(instrument)
+    pm.write(temp_midi)
+    return temp_dir, cleanup_paths
+
+
+def _idyom_mean_information_content(
+    melody: Melody,
+    config_key: str,
+    corpus: Optional[os.PathLike] = None,
+    key_estimation: str = "infer_if_necessary",
+) -> float:
+    """Run IDyOM for one melody and return mean information content."""
+    if config_key not in _DEFAULT_IDYOM_CONFIGS:
+        raise ValueError(
+            f"Unknown IDyOM configuration {config_key!r}; "
+            f"expected one of {sorted(_DEFAULT_IDYOM_CONFIGS)}"
+        )
+
+    idyom_config = _DEFAULT_IDYOM_CONFIGS[config_key]
+    idyom_corpus = _resolve_idyom_corpus(idyom_config, override=corpus)
+
+    input_directory, cleanup_paths = _melody_idyom_input_directory(melody)
+    try:
+        idyom_results = get_idyom_results(
+            input_directory,
+            idyom_config.target_viewpoints,
+            idyom_config.source_viewpoints,
+            idyom_config.models,
+            idyom_config.ppm_order,
+            idyom_corpus,
+            f"IDyOM_{config_key}_Results",
+            key_estimation,
+        )
+    finally:
+        for path in cleanup_paths:
+            if os.path.isdir(path):
+                shutil.rmtree(path, ignore_errors=True)
+
+    melody_features = idyom_results.get("1")
+    if not melody_features or "mean_information_content" not in melody_features:
+        raise RuntimeError(
+            f"IDyOM did not return mean information content for configuration {config_key!r}"
+        )
+    return float(melody_features["mean_information_content"])
+
+
+@idyom
+@expectation
+@pitch
+def pitch_stm_mean_information_content(melody: Melody) -> float:
+    """The average information content across all notes in a melody,
+    calculated using IDyOM's prediction-by-partial-matching (PPM) algorithm.
+    Information content is perceptually related to surprise, and can be calculated
+    for pitches or rhythms.
+
+    Citation
+    --------
+    Pearce, M. (2005)
+    """
+    return _idyom_mean_information_content(melody, "pitch_stm")
+
+
+@idyom
+@expectation
+@pitch
+def pitch_ltm_mean_information_content(melody: Melody) -> float:
+    """The average information content across all notes in a melody,
+    calculated using IDyOM's long-term model (LTM). Information content is
+    perceptually related to surprise, and can be calculated for pitches or rhythms.
+
+    Citation
+    --------
+    Pearce, M. (2005)
+    """
+    return _idyom_mean_information_content(melody, "pitch_ltm")
+
+
+@idyom
+@expectation
+@rhythm
+def rhythm_stm_mean_information_content(melody: Melody) -> float:
+    """The average rhythmic information content across all notes in a melody,
+    calculated using IDyOM's short-term model (STM). Information content is
+    perceptually related to surprise, and can be calculated for pitches or rhythms.
+
+    Citation
+    --------
+    Pearce, M. (2005)
+    """
+    return _idyom_mean_information_content(melody, "rhythm_stm")
+
+
+@idyom
+@expectation
+@rhythm
+def rhythm_ltm_mean_information_content(melody: Melody) -> float:
+    """The average rhythmic information content across all notes in a melody,
+    calculated using IDyOM's long-term model (LTM). Information content is
+    perceptually related to surprise, and can be calculated for pitches or rhythms.
+
+    Citation
+    --------
+    Pearce, M. (2005)
+    """
+    return _idyom_mean_information_content(melody, "rhythm_ltm")
+
+
+@rhythm
+@metre
+@midi_toolbox
+def metric_hierarchy(melody: Melody) -> list[int]:
+    """Metric hierarchy values for each note, indicating the strength of each note
+    position within the known or estimated meter. Higher values indicate stronger
+    metric positions (e.g., downbeat = 5, beat = 4, half-beat = 3, etc.).
+
+    Implementation based on MIDI toolbox metrichierarchy.m.
+    """
+    return _metric_hierarchy(
+        melody.starts,
+        melody.ends,
+        time_signature=melody.meter,
+        tempo=melody.tempo,
+        pitches=melody.pitches,
+    )
+
+
+@rhythm
+@metre
+@midi_toolbox
+def meter_accent(melody: Melody) -> int:
+    """Phenomenal accent synchrony measure, calculated as the negative mean of
+    the product of metric hierarchy, melodic accent, and durational accent
+    for each note. Higher values indicate stronger accent synchrony.
+
+    Implementation based on MIDI toolbox meteraccent.m.
+    """
+    hierarchy_values = metric_hierarchy(melody)
+    if not hierarchy_values:
+        return 0
+
+    melodic_accents = melodic_accent(melody.pitches)
+    durational_accents = duration_accent(melody.starts, melody.ends)
+    min_length = min(len(hierarchy_values), len(melodic_accents), len(durational_accents))
+    if min_length == 0:
+        return 0
+
+    accent_products = [
+        h * m * d
+        for h, m, d in zip(
+            hierarchy_values[:min_length],
+            melodic_accents[:min_length],
+            durational_accents[:min_length],
+        )
+    ]
+    return int(round(-1.0 * float(np.mean(accent_products))))
+
+
 def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_order: int = 6) -> Dict:
     """Dynamically collect all complexity features for a melody.
     
@@ -8367,16 +8683,7 @@ def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_o
             params = list(sig.parameters.keys())
             
             # Call function with appropriate parameters
-            if 'melody' in params and 'method' in params:
-                # Special case for complebm with different methods
-                if name == 'complebm':
-                    features[f"{name}_pitch"] = func(melody, 'p')
-                    features[f"{name}_rhythm"] = func(melody, 'r')
-                    features[f"{name}_optimal"] = func(melody, 'o')
-                    continue
-                else:
-                    result = func(melody, 'o')  # Default method
-            elif 'melody' in params:
+            if 'melody' in params:
                 result = func(melody)
             elif 'starts' in params and 'ends' in params and 'tau' in params:
                 # Functions with tau parameter (duration_accent, mean_duration_accent, duration_accent_std)
@@ -9330,7 +9637,7 @@ def get_contour_features(melody: Melody) -> Dict:
     contour_features["interpolation_contour_class_label"] = interpolation_contour[4]
     contour_features["polynomial_contour_coefficients"] = get_polynomial_contour_features(melody)
     contour_features["huron_contour"] = get_huron_contour_features(melody)
-    contour_features["comb_contour_matrix"] = get_comb_contour_matrix(melody.pitches)
+    contour_features["comb_contour_matrix"] = comb_contour_matrix(melody.pitches)
     return contour_features
 
 
@@ -9353,34 +9660,10 @@ def get_metric_accent_features(melody: Melody) -> Dict:
         - metric_hierarchy: List of hierarchy values for each note
         - meter_accent: Phenomenal accent synchrony measure (from MIDI toolbox meteraccent.m)
     """
-    metric_features = {}
-
-    hierarchy_values = _metric_hierarchy(
-        melody.starts, melody.ends, 
-        time_signature=melody.meter, tempo=melody.tempo, pitches=melody.pitches
-    )
-    metric_features["metric_hierarchy"] = hierarchy_values
-
-    if hierarchy_values:
-        melodic_accents = melodic_accent(melody.pitches)
-        durational_accents = duration_accent(melody.starts, melody.ends)
-
-        min_length = min(len(hierarchy_values), len(melodic_accents), len(durational_accents))
-        if min_length > 0:
-            accent_products = [
-                h * m * d for h, m, d in zip(
-                    hierarchy_values[:min_length],
-                    melodic_accents[:min_length],  
-                    durational_accents[:min_length]
-                )
-            ]
-            metric_features["meter_accent"] = int(round(-1.0 * float(np.mean(accent_products))))
-        else:
-            metric_features["meter_accent"] = 0
-    else:
-        metric_features["meter_accent"] = 0
-    
-    return metric_features
+    return {
+        "metric_hierarchy": metric_hierarchy(melody),
+        "meter_accent": meter_accent(melody),
+    }
 
 
 def _is_beat_histogram_function(func) -> bool:
@@ -9531,6 +9814,9 @@ def get_expectation_features(melody: Melody) -> Dict:
     expectation_functions = _get_features_by_type(FeatureType.EXPECTATION)
 
     for name, func in expectation_functions.items():
+        # IDyOM mean-IC features are computed in batch via get_idyom_results / _run_idyom_analysis
+        if name in _IDYOM_MEAN_INFORMATION_CONTENT_EXPORTS:
+            continue
         try:
             sig = inspect.signature(func)
             params = list(sig.parameters.keys())
@@ -10648,7 +10934,7 @@ def _setup_default_config(config: Optional[Config]) -> Config:
     """
     if config is None:
         config = Config(
-            corpus=resources.files("melody_features") / "corpora/pearce_default_idyom",
+            corpus=_DEFAULT_CORPUS,
             idyom={
                 "pitch_stm": IDyOMConfig(
                     target_viewpoints=["cpitch"],
@@ -10662,7 +10948,7 @@ def _setup_default_config(config: Optional[Config]) -> Config:
                     source_viewpoints=[("cpitch", "cpint", "cpintfref")],
                     ppm_order=None,
                     models=":ltm",
-                    corpus=None,
+                    corpus=_DEFAULT_CORPUS,
                 ),
                 "rhythm_stm": IDyOMConfig(
                     target_viewpoints=["onset"],
@@ -10676,7 +10962,7 @@ def _setup_default_config(config: Optional[Config]) -> Config:
                     source_viewpoints=["ioi", "ioi-ratio"],
                     ppm_order=None,
                     models=":ltm",
-                    corpus=None,
+                    corpus=_DEFAULT_CORPUS,
                 ),
             },
             fantastic=FantasticConfig(max_ngram_order=6, phrase_gap=1.5, corpus=None),
@@ -10936,11 +11222,7 @@ def _run_idyom_analysis(
         return {}
     
     for idyom_name, idyom_config in config.idyom.items():
-        idyom_corpus = (
-            idyom_config.corpus if idyom_config.corpus is not None else config.corpus
-        )
-        if idyom_config.models == ":stm" and idyom_config.corpus is None:
-            idyom_corpus = None
+        idyom_corpus = _resolve_idyom_corpus(idyom_config, config_corpus=config.corpus)
         logger.info(
             f"Running IDyOM analysis for '{idyom_name}' with corpus: {idyom_corpus}"
         )

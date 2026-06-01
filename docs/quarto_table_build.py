@@ -35,13 +35,11 @@ src_dir = script_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 from melody_features import features as features_module
-from melody_features import idyom_interface
 from melody_features.step_contour import StepContour
 from melody_features.interpolation_contour import InterpolationContour
 from melody_features.polynomial_contour import PolynomialContour
 from melody_features.huron_contour import HuronContour
 from melody_features.ngram_counter import NGramCounter
-from melody_features.feature_decorators import lexical_diversity, idyom, expectation, metre, pitch, rhythm, both, complexity, midi_toolbox, contour
 
 
 @dataclass
@@ -58,6 +56,39 @@ class FeatureRow:
 
 
 SECTION_RE = re.compile(r"^([A-Za-z ]+)\n[-]+$", re.MULTILINE)
+
+FEATURE_ALIAS_EXPORTS: dict[str, tuple[str, str]] = {
+    "average_time_between_attacks": ("ioi_mean", "jSymbolic"),
+    "duration_in_seconds": ("global_duration", "jSymbolic"),
+    "mean_melodic_interval": ("mean_absolute_interval", "jSymbolic"),
+    "most_common_interval": ("modal_interval", "jSymbolic"),
+    "pitch_variability": ("pitch_standard_deviation", "jSymbolic"),
+    "variability_of_time_between_attacks": ("ioi_standard_deviation", "jSymbolic"),
+    "total_number_of_notes": ("length", "jSymbolic"),
+}
+
+_CANONICAL_ALIAS_NOTES: dict[str, list[tuple[str, str]]] = {}
+for _alias, (_canonical, _source) in FEATURE_ALIAS_EXPORTS.items():
+    _CANONICAL_ALIAS_NOTES.setdefault(_canonical, []).append((_alias, _source))
+
+
+def _alias_display_name(python_name: str) -> str:
+    return fix_possessive_feature_names(normalize_feature_text(snake_to_title(python_name)))
+
+
+def _alias_note(alternate_python_name: str, source: str) -> str:
+    return f'This feature is named "{_alias_display_name(alternate_python_name)}" in {source}.'
+
+
+def _notes_for_feature(python_name: str, docstring_notes: str) -> str:
+    parts: list[str] = []
+    if docstring_notes:
+        parts.append(docstring_notes)
+    for alternate_name, source in _CANONICAL_ALIAS_NOTES.get(python_name, []):
+        note = _alias_note(alternate_name, source)
+        if note not in parts and all(note not in p for p in parts):
+            parts.append(note)
+    return " ".join(parts)
 
 
 def snake_to_title(name: str) -> str:
@@ -164,6 +195,7 @@ def determine_type_from_return_annotation(obj) -> str:
 
 def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]:
     rows: list[FeatureRow] = []
+    seen_function_ids: set[int] = set()
     repo_root = script_dir.parent
 
     def detect_repo_info() -> tuple[str, str]:
@@ -200,54 +232,6 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
 
     def build_source_url(obj: object) -> str:
         target = obj.fget if isinstance(obj, property) else obj
-
-        # Special handling for IDyOM placeholder functions - link to idyom_interface.py
-        idyom_placeholder_functions = {
-            "pitch_stm_mean_information_content",
-            "pitch_ltm_mean_information_content",
-            "rhythm_stm_mean_information_content",
-            "rhythm_ltm_mean_information_content",
-        }
-        
-        # special handling for complebm: link to complebm function in features.py
-        complebm_functions = {
-            "complebm_pitch",
-            "complebm_rhythm",
-            "complebm_optimal",
-        }
-        
-        func_name = getattr(target, "__name__", None)
-        if func_name in idyom_placeholder_functions:
-            # dynamically find run_idyom line number
-            try:
-                run_idyom_func = getattr(idyom_interface, "run_idyom", None)
-                if run_idyom_func:
-                    _, start_line = inspect.getsourcelines(run_idyom_func)
-                    rel_path = Path("src/melody_features/idyom_interface.py")
-                    quoted_path = quote(rel_path.as_posix())
-                    return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}#L{start_line}"
-            except (OSError, TypeError):
-                pass
-            # Fallback to hardcoded path if dynamic lookup fails
-            rel_path = Path("src/melody_features/idyom_interface.py")
-            quoted_path = quote(rel_path.as_posix())
-            return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}"
-        
-        if func_name in complebm_functions:
-            # dynamically find complebm line number
-            try:
-                complebm_func = getattr(features_module, "complebm", None)
-                if complebm_func:
-                    _, start_line = inspect.getsourcelines(complebm_func)
-                    rel_path = Path("src/melody_features/features.py")
-                    quoted_path = quote(rel_path.as_posix())
-                    return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}#L{start_line}"
-            except (OSError, TypeError):
-                pass
-            # fallback to hardcoded path if dynamic lookup fails
-            rel_path = Path("src/melody_features/features.py")
-            quoted_path = quote(rel_path.as_posix())
-            return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}"
 
         try:
             target_unwrapped = inspect.unwrap(target)
@@ -296,17 +280,15 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         }
         return mapping.get(normalized, raw_name.replace("_", " ").strip().title())
     for name, obj in objs:
-        if name.startswith("get_"):
+        if name.startswith("get_") or name.startswith("_"):
             continue
-        
+        if name in FEATURE_ALIAS_EXPORTS:
+            continue
+
         # Skip InverseEntropyWeighting class
         if name == "InverseEntropyWeighting":
             continue
-        
-        # Skip complebm - we'll add the three variants separately
-        if name == "complebm":
-            continue
-            
+
         is_property = isinstance(obj, property)
         
         if is_property and hasattr(obj, 'fget') and obj.fget is not None:
@@ -315,6 +297,15 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
             feature_types = getattr(obj, "_feature_types", None)
         if not feature_types and not is_property:
             continue
+
+        if not is_property:
+            try:
+                function_id = id(inspect.unwrap(obj))
+            except (AttributeError, ValueError):
+                function_id = id(obj)
+            if function_id in seen_function_ids:
+                continue
+            seen_function_ids.add(function_id)
 
         if "." in name:
             class_name, prop_name = name.split(".", 1)
@@ -365,7 +356,9 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         doc_string = inspect.getdoc(obj.fget) if is_property else inspect.getdoc(obj)
         sections = extract_sections_from_docstring(doc_string or "")
         description = normalize_feature_text(" ".join(sections.get("Preamble", "").split()))
-        notes = normalize_feature_text(" ".join(sections.get("Note", "").split()))
+        doc_notes = normalize_feature_text(" ".join(sections.get("Note", "").split()))
+        feature_python_name = name.split(".", 1)[-1] if "." in name else name
+        notes = _notes_for_feature(feature_python_name, doc_notes)
 
         citation_section = sections.get("Citation", "").strip()
         if citation_section:
@@ -559,164 +552,13 @@ def build_table() -> pd.DataFrame:
             if isinstance(prop_obj, property) and prop_name not in excluded_properties:
                 all_features.append((f"{class_name}.{prop_name}", prop_obj))
     
-    # Add placeholder functions for IDyOM features that are dynamically generated
-    @idyom
-    @expectation
-    @pitch
-    def pitch_stm_mean_information_content(_melody):
-        """The average information content across all notes in a melody,
-        calculated using IDyOM's prediction-by-partial-matching (PPM) algorithm. 
-        Information content is perceptually related to surprise, and can be calculated
-        for pitches or rhythms.
-        
-        Citation
-        --------
-        Pearce, M. (2005)
-        """
-        # Placeholder function for table generation
-
-    @idyom
-    @expectation
-    @pitch
-    def pitch_ltm_mean_information_content(_melody):
-        """The average information content across all notes in a melody,
-        calculated using IDyOM's long-term model (LTM). Information content is
-        perceptually related to surprise, and can be calculated for pitches or rhythms.
-        
-        Citation
-        --------
-        Pearce, M. (2005)
-        """
-        # Placeholder function for table generation
-
-    @idyom
-    @expectation
-    @rhythm
-    def rhythm_stm_mean_information_content(_melody):
-        """The average rhythmic information content across all notes in a melody,
-        calculated using IDyOM's short-term model (STM). Information content is
-        perceptually related to surprise, and can be calculated for pitches or rhythms.
-        
-        Citation
-        --------
-        Pearce, M. (2005)
-        """
-        # Placeholder function for table generation
-
-    @idyom
-    @expectation
-    @rhythm
-    def rhythm_ltm_mean_information_content(_melody):
-        """The average rhythmic information content across all notes in a melody,
-        calculated using IDyOM's long-term model (LTM). Information content is
-        perceptually related to surprise, and can be calculated for pitches or rhythms.
-        
-        Citation
-        --------
-        Pearce, M. (2005)
-        """
-        # Placeholder function for table generation
-    
-    # Add placeholder functions for complebm variants
-    @midi_toolbox
-    @pitch
-    @complexity
-    def complebm_pitch(_melody):
-        """Expectancy-based melodic complexity calculated using pitch patterns only,
-        according to Eerola & North (2000). The complexity score is normalized against
-        the Essen folksong collection, where a score of 5 represents average complexity.
-        
-        Citation
-        --------
-        Eerola & North (2000)
-        """
-        # Placeholder function for table generation
-    
-    @midi_toolbox
-    @rhythm
-    @complexity
-    def complebm_rhythm(_melody):
-        """Expectancy-based melodic complexity calculated using rhythmic features only,
-        according to Eerola & North (2000). The complexity score is normalized against
-        the Essen folksong collection, where a score of 5 represents average complexity.
-        
-        Citation
-        --------
-        Eerola & North (2000)
-        """
-    
-    @midi_toolbox
-    @both
-    @complexity
-    def complebm_optimal(_melody):
-        """Expectancy-based melodic complexity calculated using an optimal combination
-        of pitch patterns and rhythmic features, according to Eerola & North (2000).
-        The complexity score is normalized against the Essen folksong collection,
-        where a score of 5 represents average complexity.
-        
-        Citation
-        --------
-        Eerola & North (2000)
-        """
-
-    
-    # Add placeholder functions for features computed by helper functions
-    # or classes, copied from features.py
-    @midi_toolbox
-    @contour
-    @pitch
-    def comb_contour_matrix(_melody):
-        """The Marvin & Laprade (1987) comb contour matrix.
-        For a melody with n notes, returns an n x n binary matrix where
-        C[i][j] = 1 if pitch of note j is higher than pitch of note i (p[j] > p[i])
-        for i >= j (lower triangle including diagonal), and 0 otherwise.
-        
-        Citation
-        --------
-        Marvin & Laprade (1987)
-        """
- 
-    
-    @rhythm
-    @metre
-    @midi_toolbox
-    def metric_hierarchy(_melody):
-        """Metric hierarchy values for each note, indicating the strength of each note
-        position within the known or estimated meter. Higher values indicate stronger
-        metric positions (e.g., downbeat = 5, beat = 4, half-beat = 3, etc.).
-        
-        Implementation based on MIDI toolbox metrichierarchy.m.
-        """
-    
-    @rhythm
-    @metre
-    @midi_toolbox
-    def meter_accent(_melody):
-        """Phenomenal accent synchrony measure, calculated as the negative mean of
-        the product of metric hierarchy, melodic accent, and durational accent
-        for each note. Higher values indicate stronger accent synchrony.
-        
-        Implementation based on MIDI toolbox meteraccent.m.
-        """
-        # Placeholder function for table generation
-    
-    all_features.extend(
-        [
-            ("pitch_stm_mean_information_content", pitch_stm_mean_information_content),
-            ("pitch_ltm_mean_information_content", pitch_ltm_mean_information_content),
-            ("rhythm_stm_mean_information_content", rhythm_stm_mean_information_content),
-            ("rhythm_ltm_mean_information_content", rhythm_ltm_mean_information_content),
-            ("complebm_pitch", complebm_pitch),
-            ("complebm_rhythm", complebm_rhythm),
-            ("complebm_optimal", complebm_optimal),
-            ("comb_contour_matrix", comb_contour_matrix),
-            ("metric_hierarchy", metric_hierarchy),
-            ("meter_accent", meter_accent),
-        ]
-    )
-    
     rows = collect_feature_rows(all_features)
     return to_dataframe(rows)
+
+
+def count_features() -> int:
+    """Return the number of features included in the summary table."""
+    return len(build_table())
 
 
 def main():
@@ -726,6 +568,7 @@ def main():
     args = parser.parse_args()
 
     df = build_table()
+    feature_count = len(df)
 
     if args.format == "csv":
         df.rename(
@@ -759,7 +602,10 @@ def main():
             f.write("    theme: cosmo\n")
             f.write("    toc: false\n")
             f.write("---\n\n")
-            f.write("This table provides a comprehensive overview of all melody features available in this package.\n\n")
+            f.write(
+                f"This table provides a comprehensive overview of all **{feature_count}** melody features "
+                "available in this package.\n\n"
+            )
             f.write("```{python}\n")
             f.write("#| echo: false\n")
             f.write("import pandas as pd\n")
@@ -1112,6 +958,8 @@ def main():
             f.write("## Feature Types\n\n")
             f.write("- **Descriptor**: Returns a single scalar value (int, float, bool)\n")
             f.write("- **Sequence**: Returns a collection (list, tuple, dict, etc.)\n")
+
+    print(f"Built table with {feature_count} features -> {args.out}", file=sys.stderr)
 
 
 if __name__ == "__main__":
