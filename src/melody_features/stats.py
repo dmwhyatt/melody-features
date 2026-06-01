@@ -77,6 +77,16 @@ def shannon_entropy(values) -> float:
     return -np.sum(probs * np.log2(probs))
 
 
+def midi_toolbox_entropy(distribution) -> float:
+    """Relative entropy per MIDI Toolbox ``entropy.m`` (natural log, / log(n))."""
+    d = np.asarray(distribution, dtype=float).ravel()
+    if d.size == 0:
+        return 0.0
+    d = d / (d.sum() + 1e-12)
+    logd = np.log(d + 1e-12)
+    return float(-np.sum(d * logd) / np.log(d.size))
+
+
 def distribution_entropy(weights) -> float:
     """Base-2 Shannon entropy of a discrete distribution from non-negative weights.
 

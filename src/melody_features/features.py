@@ -93,6 +93,7 @@ from melody_features.feature_histogram import (
 from melody_features.stats import (
     distribution_entropy,
     get_mode,
+    midi_toolbox_entropy,
     range_func,
     shannon_entropy,
     standard_deviation,
@@ -546,6 +547,7 @@ class Config:
 
 @fantastic
 @jsymbolic
+@midi_toolbox
 @absolute
 @pitch
 def pitch_range(pitches: list[int]) -> int:
@@ -560,8 +562,15 @@ def pitch_range(pitches: list[int]) -> int:
     -------
     int
         Range between highest and lowest pitch in semitones
+
+    
+    Notes
+    -----
+    This feature is named 'ambitus' in MIDI Toolbox.
     """
     return int(range_func(pitches))
+
+ambitus = pitch_range
 
 
 @fantastic
@@ -657,11 +666,110 @@ def pitch_entropy(pitches: list[int]) -> float:
     """
     return float(shannon_entropy(pitches))
 
+
+# refstat('kkmaj') / refstat('kkmin') — used by tonality.m / keymode.m
+_KK_MAJ_PROFILE = np.array(
+    [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
+    dtype=float,
+)
+_KK_MIN_PROFILE = np.array(
+    [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17],
+    dtype=float,
+)
+
+
+def _pcdist1_vector(pitches: list[int], starts: list[float], ends: list[float]) -> np.ndarray:
+    pcd = np.zeros(12, dtype=float)
+    if not pitches or not starts or not ends:
+        return pcd
+    accents = duration_accent(starts, ends)
+    n = min(len(pitches), len(accents))
+    for pitch, acc in zip(pitches[:n], accents[:n]):
+        pcd[int(pitch) % 12] += acc
+    return pcd / (pcd.sum() + 1e-12)
+
+
+def _ivdist1_vector(pitches: list[int], starts: list[float], ends: list[float]) -> np.ndarray:
+    ivd = np.zeros(25, dtype=float)
+    if len(pitches) < 2 or not starts or not ends:
+        return ivd
+    accents = duration_accent(starts, ends)
+    intervals = np.diff(np.asarray(pitches, dtype=float))
+    for m, iv in enumerate(intervals.astype(int)):
+        if abs(iv) <= 12 and m + 1 < len(accents):
+            ivd[iv + 12] += accents[m] + accents[m + 1]
+    return ivd / (ivd.sum() + 1e-12)
+
+
+def _durdist1_vector(
+    starts: list[float], ends: list[float], tempo: float = 120.0
+) -> np.ndarray:
+    if not starts or not ends:
+        return np.zeros(9, dtype=float)
+    beat_durs = [
+        (float(end) - float(start)) * (tempo / 60.0)
+        for start, end in zip(starts, ends)
+        if float(end) > float(start)
+    ]
+    if not beat_durs:
+        return np.zeros(9, dtype=float)
+    du = np.round(2 * np.log2(np.asarray(beat_durs, dtype=float))).astype(int)
+    du = du[np.abs(du) <= 4] + 5
+    hist = np.zeros(9, dtype=float)
+    for b in du:
+        if 1 <= b <= 9:
+            hist[b - 1] += 1.0
+    return hist / (hist.sum() + 1e-12)
+
+
+def _kkcc_from_pcd(pcd: np.ndarray) -> np.ndarray:
+    majors = np.array([np.roll(_KK_MAJ_PROFILE, k) for k in range(12)])
+    minors = np.array([np.roll(_KK_MIN_PROFILE, k) for k in range(12)])
+    profiles = np.vstack([majors, minors])
+    pcd = np.asarray(pcd, dtype=float).ravel()
+    corrs = []
+    for profile in profiles:
+        if np.std(pcd) == 0 or np.std(profile) == 0:
+            corrs.append(0.0)
+        else:
+            c = np.corrcoef(pcd, profile)[0, 1]
+            corrs.append(0.0 if np.isnan(c) else float(c))
+    return np.array(corrs)
+
+
+def _keymode_from_pcd(pcd: np.ndarray) -> int:
+    u = _kkcc_from_pcd(pcd)
+    if u[0] > u[12]:
+        return 1
+    if u[0] < u[12]:
+        return 2
+    return 0
+
+
+def _tonality_midi_toolbox(
+    pitches: list[int], starts: list[float], ends: list[float]
+) -> list[float]:
+    if not pitches:
+        return []
+    pcd = _pcdist1_vector(pitches, starts, ends)
+    kk = _KK_MIN_PROFILE if _keymode_from_pcd(pcd) == 2 else _KK_MAJ_PROFILE
+    return [float(kk[int(p) % 12]) for p in pitches]
+
+
+def _notedensity_seconds(starts: list[float]) -> float:
+    if not starts or len(starts) < 2:
+        return 0.0
+    span = float(starts[-1]) - float(starts[0])
+    if span == 0:
+        return 0.0
+    return (len(starts) - 1) / span
+
+
 @midi_toolbox
 @pitch_class
 @pitch
 def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
-    """The distribution of pitch classes in the melody, weighted by the duration of the notes.
+    """Pitch-class distribution weighted by Parncutt duration accent (``pcdist1.m``).
 
     Parameters
     ----------
@@ -675,24 +783,12 @@ def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
     Returns
     -------
     dict
-        Duration-weighted distribution proportion of pitch classes
+        Map from pitch class (0–11) to proportion
     """
     if not pitches or not starts or not ends:
-        return 0.0
-
-    durations = [ends[i] - starts[i] for i in range(len(starts))]
-    # Create weighted list by repeating each pitch class according to its duration
-    weighted_pitch_classes = []
-    for pitch, duration in zip(pitches, durations):
-        pitch_class = pitch % 12
-        # Convert duration to integer number of repetitions (e.g. duration 2.5 -> 25 repetitions)
-        repetitions = max(1, int(duration * 10))  # Ensures at least 1 repetition
-        weighted_pitch_classes.extend([pitch_class] * repetitions)
-
-    if not weighted_pitch_classes:
-        return 0.0
-
-    return distribution_proportions(weighted_pitch_classes)
+        return {}
+    vec = _pcdist1_vector(pitches, starts, ends)
+    return {i: float(vec[i]) for i in range(12) if vec[i] > 0}
 
 @jsymbolic
 @absolute
@@ -1813,7 +1909,7 @@ def _get_durations(starts: list[float], ends: list[float], tempo: float = 120.0)
 @interval
 @pitch
 def ivdist1(pitches: list[int], starts: list[float], ends: list[float], tempo: float = 120.0) -> dict:
-    """The distribution of intervals in the melody, weighted by their durations.
+    """Interval distribution weighted by duration accent (``ivdist1.m``).
 
     Parameters
     ----------
@@ -1829,26 +1925,44 @@ def ivdist1(pitches: list[int], starts: list[float], ends: list[float], tempo: f
     Returns
     -------
     dict
-        Duration-weighted distribution proportion of intervals
+        Map from interval in semitones (-12..12) to proportion
     """
+    del tempo
     if not pitches or not starts or not ends or len(pitches) < 2:
         return {}
+    vec = _ivdist1_vector(pitches, starts, ends)
+    return {i - 12: float(vec[i]) for i in range(25) if vec[i] > 0}
 
-    intervals = pitch_interval(pitches)
-    durations = _get_durations(starts, ends, tempo)
 
-    if not intervals or not durations:
+@midi_toolbox
+@rhythm
+@timing
+def durdist1(
+    starts: list[float], ends: list[float], tempo: float = 120.0
+) -> dict[int, float]:
+    """Note duration distribution in nine log-spaced beat bins (``durdist1.m``).
+
+    Bin centers (in beats): 1/4, √2/4, 1/2, √2/2, 1, √2, 2, 2√2, 4.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note onset times in seconds
+    ends : list[float]
+        Note offset times in seconds
+    tempo : float
+        Tempo in BPM (default 120)
+
+    Returns
+    -------
+    dict[int, float]
+        Map from bin index (1–9) to proportion
+    """
+    if not starts or not ends:
         return {}
+    vec = _durdist1_vector(starts, ends, tempo)
+    return {i + 1: float(vec[i]) for i in range(9) if vec[i] > 0}
 
-    weighted_intervals = []
-    for interval, duration in zip(intervals, durations[:-1]):
-        repetitions = max(1, int(duration * 10))
-        weighted_intervals.extend([interval] * repetitions)
-
-    if not weighted_intervals:
-        return {}
-
-    return distribution_proportions(weighted_intervals)
 
 @midi_toolbox
 @interval
@@ -6431,7 +6545,7 @@ def infer_key_from_pitches(
     
     return key_name, mode
 
-@novel
+@midi_toolbox
 @tonality
 @pitch
 def key(
@@ -6460,6 +6574,10 @@ def key(
     Citation
     ----------
     Krumhansl (1990)
+
+    Notes
+    -----
+    This feature is named 'keyname' in MIDI Toolbox.
     """
     # Infer key using specified algorithm
     key_name, mode = infer_key_from_pitches(melody.pitches, algorithm=key_finding_algorithm)
@@ -6489,7 +6607,8 @@ def key(
             else:
                 # Infer if no MIDI key available
                 return inferred_key if inferred_key else "unknown"
-
+ 
+keyname = key
 
 @fantastic
 @tonality
@@ -7590,67 +7709,57 @@ def mobility(pitches: list[int]) -> list[float]:
     ----------
     pitches : list[int]
         List of MIDI pitch values
-        
+
     Returns
     -------
     list[float]
-        Absolute mobility value for each note in the sequence
+        One mobility value per input pitch (length matches ``pitches``).
 
     Citation
     --------
     von Hippel (2000)
     """
-    if len(pitches) < 2:
-        return [0.0] if len(pitches) == 1 else []
-    
-    mobility_values = [0.0]  # First note gets 0
-    
-    for i in range(2, len(pitches) + 1):  # Start from note 2 (index 1)
-        if i == 2:
-            mobility_values.append(0.0)  # Second note gets 0
-            continue
-            
-        # Calculate mean of previous pitches (notes 1 to i-1)
-        mean_prev = np.mean(pitches[:i-1])
-        
-        # Calculate deviations from mean for correlation
-        p = [pitches[j] - mean_prev for j in range(i-1)]
-        
-        if len(p) < 2:
-            mobility_values.append(0.0)
-            continue
-            
-        # Create lagged series for correlation
-        p_current = p[:-1]  # p[0] to p[i-3]
-        p_lagged = p[1:]    # p[1] to p[i-2]
-        
-        if len(p_current) < 2 or len(p_lagged) < 2:
-            mobility_values.append(0.0)
-            continue
-            
-        # Calculate correlation coefficient
-        try:
-            # Check for variance before computing correlation to avoid zero division errors
-            if np.var(p_current) == 0 or np.var(p_lagged) == 0:
-                correlation = 0.0
-            else:
-                correlation_matrix = np.corrcoef(p_current, p_lagged)
-                correlation = correlation_matrix[0, 1]
-                
-                # Handle NaN correlation (when no variance)
-                if np.isnan(correlation):
-                    correlation = 0.0
-                
-        except (ValueError, np.linalg.LinAlgError):
-            correlation = 0.0
-        
-        # Calculate mobility for current note
-        # mob(i) * (pitch(i) - mean_prev)
-        current_deviation = pitches[i-2] - mean_prev  # Previous note deviation
-        mob_value = correlation * current_deviation
-        mobility_values.append(abs(mob_value))
-    
-    return [float(mob_value) for mob_value in mobility_values]
+    if not pitches:
+        return []
+    if len(pitches) == 1:
+        return [0.0]
+
+    p = np.asarray(pitches, dtype=float)
+    n = len(p)
+
+    # 1-based MATLAB arrays; index 0 unused
+    p_hist = np.zeros(n + 1)
+    p2 = np.zeros(n + 1)
+    mob = np.zeros(n + 1)
+    y = np.zeros(n - 1)
+
+    for i in range(2, n + 1):
+        m_im1 = float(np.mean(p[: i - 1]))
+        p_hist[i - 1] = p[i - 2] - m_im1
+        p2[i] = p[i - 2] - m_im1
+
+        z = np.concatenate([p_hist[1:i], [p_hist[i - 1]]])
+        len_z = len(z)
+        p2_row = p2[1 : len_z + 1]
+        p3 = np.column_stack([p2_row, z])
+
+        if p3.shape[0] >= 2 and np.std(p3[:, 0]) > 0 and np.std(p3[:, 1]) > 0:
+            corr = np.corrcoef(p3, rowvar=False)
+            mob[i] = float(corr[0, 1]) if not np.isnan(corr[0, 1]) else 0.0
+        else:
+            mob[i] = 0.0
+
+        y[i - 2] = mob[i - 1] * (p[i - 1] - m_im1)
+
+    if len(y) >= 2:
+        y[1] = 0.0
+    elif len(y) == 1:
+        y = np.array([y[0], 0.0])
+
+    y = np.abs(np.concatenate([[0.0], y]))
+    if len(y) > n:
+        y = y[:n]
+    return [float(v) for v in y]
 
 @midi_toolbox
 @pitch
@@ -8309,131 +8418,77 @@ def compltrans(melody: Melody) -> float:
     return float(simonton_originality_score)
 
 def _complebm(melody: Melody, method: str = 'o') -> float:
-    """Expectancy-based melodic complexity, according to Eerola & North (2000).
-    Calculated using an expectancy-based model that considers pitch patterns,
-    rhythmic features, or both. The complexity score is normalized against the Essen folksong
-    collection, where a score of 5 represents average complexity (standard deviation = 1).
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-    method : str, optional
-        Complexity method: 'p' = pitch only, 'r' = rhythm only, 'o' = optimal combination
-        
-    Returns
-    -------
-    float
-        Complexity value calibrated to Essen collection (higher = more complex)
+    """Expectancy-based melodic complexity (MIDI Toolbox ``complebm.m``).
+
+    Essen-calibrated: mean 5, SD 1. Methods ``p`` (pitch), ``r`` (rhythm), ``o`` (optimal).
 
     Citation
     --------
     Eerola & North (2000)
     """
     if not melody.pitches or len(melody.pitches) < 2:
-        return 5.0  # Return neutral complexity for edge cases
+        return 5.0
 
     method = method.lower()
+    if method not in ('p', 'r', 'o'):
+        raise ValueError("Method must be 'p' (pitch), 'r' (rhythm), or 'o' (optimal)")
+
+    pitches = melody.pitches
+    starts = melody.starts
+    ends = melody.ends
+    tempo = melody.tempo
+
+    pcd = _pcdist1_vector(pitches, starts, ends)
+    ivd = _ivdist1_vector(pitches, starts, ends)
+    ton = _tonality_midi_toolbox(pitches, starts, ends)
+    dur_acc = duration_accent(starts, ends)
+    n = min(len(ton), len(dur_acc))
+    ton_component = float(np.mean([ton[i] * dur_acc[i] for i in range(n)])) * -1.0 if n else 0.0
+
+    intervals = np.diff(np.asarray(pitches, dtype=float))
+    aveint = float(np.mean(intervals)) if len(intervals) else 0.0
 
     if method == 'p':
         constant = -0.2407
+        y = (
+            constant
+            + aveint * 0.3
+            + midi_toolbox_entropy(pcd) * 1.0
+            + midi_toolbox_entropy(ivd) * 0.8
+            + ton_component
+        ) / 0.9040 + 5.0
+        return float(y)
 
-        melodic_intervals = pitch_interval(melody.pitches)
-        average_interval_component = float(np.mean(melodic_intervals)) * 0.3 if melodic_intervals else 0.0
+    dud = midi_toolbox_entropy(_durdist1_vector(starts, ends, tempo))
+    noteden = _notedensity_seconds(starts)
+    du_sec = [float(e) - float(s) for s, e in zip(starts, ends) if float(e) > float(s)]
+    if len(du_sec) > 1:
+        rhyvar = float(np.std(np.log(du_sec), ddof=1))
+    elif len(du_sec) == 1:
+        rhyvar = 0.0
+    else:
+        rhyvar = 0.0
 
-        pitch_class_distribution = pcdist1(melody.pitches, melody.starts, melody.ends)
-        pitch_class_entropy_component = shannon_entropy(list(pitch_class_distribution.values())) * 1.0 if pitch_class_distribution else 0.0
+    metach = _meter_accent_mean(melody)
 
-        interval_distribution = ivdist1(melody.pitches, melody.starts, melody.ends, melody.tempo)
-        interval_entropy_component = shannon_entropy(list(interval_distribution.values())) * 0.8 if interval_distribution else 0.0
-
-        melodic_attraction_values = melodic_attraction(melody.pitches)
-        duration_accent_values = duration_accent(melody.starts, melody.ends)
-
-        # Align arrays to same length
-        min_length = min(len(melodic_attraction_values), len(duration_accent_values))
-        if min_length > 0:
-            tonality_duration_products = [a * d for a, d in zip(melodic_attraction_values[:min_length], duration_accent_values[:min_length])]
-            tonality_component = float(np.mean(tonality_duration_products)) * -1.0
-        else:
-            tonality_component = 0.0
-
-        # Combine components using Essen-calibrated formula
-        pitch_complexity = (constant + average_interval_component + pitch_class_entropy_component + interval_entropy_component + tonality_component) / 0.9040
-        pitch_complexity = pitch_complexity + 5
-
-    elif method == 'r':
+    if method == 'r':
         constant = -0.7841
+        y = (constant + dud * 0.7 + noteden * 0.2 + rhyvar * 0.5 + metach * 0.5) / 0.3637 + 5.0
+        return float(y)
 
-        note_durations = _get_durations(melody.starts, melody.ends)
-        duration_entropy_component = shannon_entropy(note_durations) * 0.7 if note_durations else 0.0
-
-        note_density_component = note_density(melody) * 0.2
-
-        positive_durations = [d for d in note_durations if d > 0]
-        if positive_durations:
-            log_durations = [math.log(d) for d in positive_durations]
-            rhythmic_variability_component = float(np.std(log_durations, ddof=1)) * 0.5
-        else:
-            rhythmic_variability_component = 0.0
-
-        metric_accent_features = get_metric_accent_features(melody)
-        meter_accent_component = float(metric_accent_features.get("meter_accent", 0)) * 0.5
-
-        # Combine components using Essen-calibrated formula
-        rhythm_complexity = (constant + duration_entropy_component + note_density_component + rhythmic_variability_component + meter_accent_component) / 0.3637
-        rhythm_complexity = rhythm_complexity + 5
-
-    elif method == 'o':
-        constant = -1.9025
-
-        melodic_intervals = pitch_interval(melody.pitches)
-        average_interval_component = float(np.mean(melodic_intervals)) * 0.2 if melodic_intervals else 0.0
-
-        pitch_class_distribution = pcdist1(melody.pitches, melody.starts, melody.ends)
-        pitch_class_entropy_component = shannon_entropy(list(pitch_class_distribution.values())) * 1.5 if pitch_class_distribution else 0.0
-
-        interval_distribution = ivdist1(melody.pitches, melody.starts, melody.ends, melody.tempo)
-        interval_entropy_component = shannon_entropy(list(interval_distribution.values())) * 1.3 if interval_distribution else 0.0
-
-        melodic_attraction_values = melodic_attraction(melody.pitches)
-        duration_accent_values = duration_accent(melody.starts, melody.ends)
-
-        min_length = min(len(melodic_attraction_values), len(duration_accent_values))
-        if min_length > 0:
-            tonality_duration_products = [a * d for a, d in zip(melodic_attraction_values[:min_length], duration_accent_values[:min_length])]
-            tonality_component = float(np.mean(tonality_duration_products)) * -1.0
-        else:
-            tonality_component = 0.0
-
-        note_durations = _get_durations(melody.starts, melody.ends)
-        duration_entropy_component = shannon_entropy(note_durations) * 0.5 if note_durations else 0.0
-
-        note_density_component = note_density(melody) * 0.4
-
-        positive_durations = [d for d in note_durations if d > 0]
-        if positive_durations:
-            log_durations = [math.log(d) for d in positive_durations]
-            rhythmic_variability_component = float(np.std(log_durations, ddof=1)) * 0.9
-        else:
-            rhythmic_variability_component = 0.0
-
-        metric_accent_features = get_metric_accent_features(melody)
-        meter_accent_component = float(metric_accent_features.get("meter_accent", 0)) * 0.8
-
-        # Combine all components using Essen-calibrated formula
-        optimal_complexity = (constant + average_interval_component + pitch_class_entropy_component + interval_entropy_component + tonality_component + duration_entropy_component + note_density_component + rhythmic_variability_component + meter_accent_component) / 1.5034
-        optimal_complexity = optimal_complexity + 5
-
-    else:
-        raise ValueError("Method must be 'p' (pitch), 'r' (rhythm), or 'o' (optimal)")
-    
-    if method == 'p':
-        return float(pitch_complexity)
-    elif method == 'r':
-        return float(rhythm_complexity)
-    else:
-        return float(optimal_complexity)
+    constant = -1.9025
+    y = (
+        constant
+        + aveint * 0.2
+        + midi_toolbox_entropy(ivd) * 1.5
+        + midi_toolbox_entropy(ivd) * 1.3
+        + ton_component
+        + dud * 0.5
+        + noteden * 0.4
+        + rhyvar * 0.9
+        + metach * 0.8
+    ) / 1.5034 + 5.0
+    return float(y)
 
 
 @midi_toolbox
@@ -8634,6 +8689,25 @@ def metric_hierarchy(melody: Melody) -> list[int]:
     )
 
 
+def _meter_accent_mean(melody: Melody) -> float:
+    """``meteraccent.m`` synchrony (float, unrounded)."""
+    hierarchy_values = metric_hierarchy(melody)
+    if not hierarchy_values:
+        return 0.0
+    melodic_accents = melodic_accent(melody.pitches)
+    durational_accents = duration_accent(melody.starts, melody.ends)
+    n = min(len(hierarchy_values), len(melodic_accents), len(durational_accents))
+    if n == 0:
+        return 0.0
+    products = [
+        h * m * d
+        for h, m, d in zip(
+            hierarchy_values[:n], melodic_accents[:n], durational_accents[:n]
+        )
+    ]
+    return float(-1.0 * np.mean(products))
+
+
 @rhythm
 @metre
 @midi_toolbox
@@ -8644,25 +8718,7 @@ def meter_accent(melody: Melody) -> int:
 
     Implementation based on MIDI toolbox meteraccent.m.
     """
-    hierarchy_values = metric_hierarchy(melody)
-    if not hierarchy_values:
-        return 0
-
-    melodic_accents = melodic_accent(melody.pitches)
-    durational_accents = duration_accent(melody.starts, melody.ends)
-    min_length = min(len(hierarchy_values), len(melodic_accents), len(durational_accents))
-    if min_length == 0:
-        return 0
-
-    accent_products = [
-        h * m * d
-        for h, m, d in zip(
-            hierarchy_values[:min_length],
-            melodic_accents[:min_length],
-            durational_accents[:min_length],
-        )
-    ]
-    return int(round(-1.0 * float(np.mean(accent_products))))
+    return int(round(_meter_accent_mean(melody)))
 
 
 def get_complexity_features(
