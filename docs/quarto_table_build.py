@@ -58,6 +58,7 @@ class FeatureRow:
 SECTION_RE = re.compile(r"^([A-Za-z ]+)\n[-]+$", re.MULTILINE)
 
 FEATURE_ALIAS_EXPORTS: dict[str, tuple[str, str]] = {
+    "ambitus": ("pitch_range", "MIDI Toolbox"),
     "average_time_between_attacks": ("ioi_mean", "jSymbolic"),
     "duration_in_seconds": ("global_duration", "jSymbolic"),
     "mean_melodic_interval": ("mean_absolute_interval", "jSymbolic"),
@@ -84,7 +85,10 @@ def _notes_for_feature(python_name: str, docstring_notes: str) -> str:
     parts: list[str] = []
     if docstring_notes:
         parts.append(docstring_notes)
+    doc_lower = docstring_notes.lower()
     for alternate_name, source in _CANONICAL_ALIAS_NOTES.get(python_name, []):
+        if alternate_name.lower() in doc_lower:
+            continue
         note = _alias_note(alternate_name, source)
         if note not in parts and all(note not in p for p in parts):
             parts.append(note)

@@ -100,6 +100,7 @@ from melody_features.stats import (
 )
 from melody_features.step_contour import StepContour
 from melody_features.meter_estimation import (
+    compute_onset_autocorrelation,
     duration_accent as _duration_accent,
     melodic_accent as _melodic_accent,
     metric_hierarchy as _metric_hierarchy,
@@ -564,7 +565,7 @@ def pitch_range(pitches: list[int]) -> int:
         Range between highest and lowest pitch in semitones
 
     
-    Notes
+    Note
     -----
     This feature is named 'ambitus' in MIDI Toolbox.
     """
@@ -2763,6 +2764,32 @@ def _get_features_by_domain_and_types(domain: str, allowed_types: list[str]) -> 
     return features
 
 
+def _invoke_feature(func, melody: Melody, **extra):
+    """Call a feature function, binding ``melody`` fields and extras by parameter name."""
+    sig = inspect.signature(func)
+    if "melody" in sig.parameters:
+        return func(melody)
+
+    kwargs = {}
+    if "pitches" in sig.parameters:
+        kwargs["pitches"] = melody.pitches
+    if "starts" in sig.parameters:
+        kwargs["starts"] = melody.starts
+    if "ends" in sig.parameters:
+        kwargs["ends"] = melody.ends
+    if "tempo" in sig.parameters:
+        kwargs["tempo"] = melody.tempo
+    if "ppqn" in sig.parameters:
+        kwargs["ppqn"] = extra.get("ppqn", 480)
+    if "corpus_stats" in sig.parameters:
+        kwargs["corpus_stats"] = extra.get("corpus_stats")
+    if "phrase_gap" in sig.parameters:
+        kwargs["phrase_gap"] = extra.get("phrase_gap", 1.5)
+    if "max_ngram_order" in sig.parameters:
+        kwargs["max_ngram_order"] = extra.get("max_ngram_order", DEFAULT_MAX_NGRAM_ORDER)
+    return func(**kwargs)
+
+
 def get_pitch_features(melody: Melody) -> Dict:
     """Dynamically collect all pitch features for a melody.
     
@@ -3661,8 +3688,10 @@ def ioi_range(starts: list[float]) -> float:
     Returns
     -------
     float
-        Range of inter-onset intervals
+        Range of inter-onset intervals (0.0 if fewer than two onsets)
     """
+    if len(starts) < 2:
+        return 0.0
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
     return max(intervals) - min(intervals)
 
@@ -6105,13 +6134,18 @@ def minimum_note_duration(starts: list[float], ends: list[float]) -> float:
     ----------
     starts : list[float]
         List of note start times
+    ends : list[float]
+        List of note end times
 
     Returns
     -------
     float
-        Minimum note duration in seconds
+        Minimum note duration in seconds (0.0 if there are no notes)
     """
-    return min([end - start for start, end in zip(starts, ends)])
+    if not starts or not ends:
+        return 0.0
+    durations = [end - start for start, end in zip(starts, ends)]
+    return float(min(durations)) if durations else 0.0
 
 @jsymbolic
 @rhythm
@@ -6406,93 +6440,65 @@ def npvi(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
 @midi_toolbox
 @rhythm
 @timing
-def onset_autocorrelation(starts: list[float], ends: list[float], divisions_per_quarter: int = 4, max_lag_quarters: int = 8) -> list[float]:
+def onset_autocorrelation(
+    starts: list[float],
+    ends: list[float],
+    divisions_per_quarter: int = 4,
+    max_lag_quarters: int = 8,
+    tempo: float = 120.0,
+) -> list[float]:
     """The autocorrelation function of onset times weighted by duration accents.
     This is calculated by weighting the onset times by the duration accents,
     as defined by Parncutt (1994).
-    
+
+    Onsets in ``starts`` are in seconds and converted to quarter-note beats using
+    ``tempo`` before grid quantization.
+
     Parameters
     ----------
     starts : list[float]
-        List of note start times in seconds
+        Note onset times in seconds
     ends : list[float]
-        List of note end times in seconds
+        Note offset times in seconds
     divisions_per_quarter : int, optional
-        Divisions per quarter note, by default 4
+        Grid divisions per quarter note (default 4)
     max_lag_quarters : int, optional
-        Maximum lag in quarter notes, by default 8
-        
+        Maximum lag in quarter notes (default 8)
+    tempo : float, optional
+        Tempo in BPM (default 120)
+
     Returns
     -------
     list[float]
-        Autocorrelation values from lag 0 to max_lag_quarters quarter notes
+        Normalized autocorrelation from lag 0 through ``max_lag_quarters`` quarters
+
+    Citation
+    --------
+    Parncutt (1994)
     """
-    expected_length = max_lag_quarters * divisions_per_quarter + 1
-    
-    if not starts or not ends or len(starts) != len(ends):
-        return [0.0] * expected_length
-    
-    if len(starts) == 0:
-        return [0.0] * expected_length
-    
-    # Get duration accents using Parncutt's model
-    duration_accents = duration_accent(starts, ends)
-    if not duration_accents:
-        return [0.0] * expected_length
-    
-    # Create onset time grid
-    max_onset_time = max(starts) if starts else 0
-    grid_length = divisions_per_quarter * max(2 * max_lag_quarters, int(np.ceil(max_onset_time)) + 1)
-    onset_grid = np.zeros(grid_length)
-    
-    # Place accents at quantized onset positions
-    for note_idx, onset_time in enumerate(starts):
-        if note_idx < len(duration_accents):
-            # Quantize onset time to grid divisions
-            grid_index = int(np.round(onset_time * divisions_per_quarter)) % len(onset_grid)
-            onset_grid[grid_index] += duration_accents[note_idx]
-    
-    # autocorrelation using scipy's cross-correlation function
-    from scipy.signal import correlate
-    
-    # Compute autocorrelation
-    full_autocorr = correlate(onset_grid, onset_grid, mode='full')
-    
-    # Extract the positive lags up to max_lag_quarters
-    center_index = len(full_autocorr) // 2
-    autocorr_result = full_autocorr[center_index:center_index + expected_length]
-    
-    # Normalize by the zero-lag value
-    if autocorr_result[0] != 0:
-        autocorr_result = autocorr_result / autocorr_result[0]
-    else:
-        autocorr_result = np.zeros_like(autocorr_result)
-    
-    return autocorr_result.tolist()
+    return compute_onset_autocorrelation(
+        starts,
+        ends,
+        divisions_per_quarter=divisions_per_quarter,
+        max_lag_quarters=max_lag_quarters,
+        tempo=tempo,
+    )
+
 
 @midi_toolbox
 @rhythm
 @timing
-def onset_autocorr_peak(starts: list[float], ends: list[float], divisions_per_quarter: int = 4, max_lag_quarters: int = 8) -> float:
-    """The maximum onset autocorrelation value (excluding lag 0).
-    
-    Parameters
-    ----------
-    starts : list[float]
-        List of note start times in seconds
-    ends : list[float]
-        List of note end times in seconds
-    divisions_per_quarter : int, optional
-        Divisions per quarter note, by default 4
-    max_lag_quarters : int, optional
-        Maximum lag in quarter notes, by default 8
-        
-    Returns
-    -------
-    float
-        Maximum autocorrelation value excluding lag 0
-    """
-    autocorr_values = onset_autocorrelation(starts, ends, divisions_per_quarter, max_lag_quarters)
+def onset_autocorr_peak(
+    starts: list[float],
+    ends: list[float],
+    divisions_per_quarter: int = 4,
+    max_lag_quarters: int = 8,
+    tempo: float = 120.0,
+) -> float:
+    """Maximum onset autocorrelation excluding lag 0."""
+    autocorr_values = onset_autocorrelation(
+        starts, ends, divisions_per_quarter, max_lag_quarters, tempo
+    )
     if len(autocorr_values) <= 1:
         return 0.0
     return float(max(autocorr_values[1:]))
@@ -8745,34 +8751,15 @@ def get_complexity_features(
     
     for name, func in complexity_functions.items():
         try:
-            # Skip classes/functions that require special handling
             if name in ('InverseEntropyWeighting', 'get_mtype_features'):
                 continue
-                
-            # Get function signature to determine parameters
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            
-            # Call function with appropriate parameters
-            if 'melody' in params:
-                result = func(melody)
-            elif 'starts' in params and 'ends' in params and 'tau' in params:
-                # Functions with tau parameter (duration_accent, mean_duration_accent, duration_accent_std)
-                result = func(melody.starts, melody.ends, 0.5, 2.0)
-            elif 'starts' in params and 'ends' in params:
-                if 'tempo' in params:
-                    result = func(melody.starts, melody.ends, melody.tempo)
-                else:
-                    result = func(melody.starts, melody.ends)
-            elif 'pitches' in params and 'starts' in params and 'ends' in params:
-                result = func(melody.pitches, melody.starts, melody.ends)
-            elif 'pitches' in params:
-                result = func(melody.pitches)
-            else:
-                # Try with melody object
-                result = func(melody)
-            
-            # Store all features as-is (no auto-generation of mean/std)
+
+            result = _invoke_feature(
+                func,
+                melody,
+                phrase_gap=phrase_gap,
+                max_ngram_order=max_ngram_order,
+            )
             features[name] = result
                 
         except Exception as e:
@@ -9498,27 +9485,8 @@ def get_rhythm_features(melody: Melody) -> Dict:
     # Process regular functions first
     for name, func in regular_functions:
         try:
-            # Get function signature to determine parameters
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            
-            # Call function with appropriate parameters
-            if 'melody' in params:
-                result = func(melody)
-            elif 'starts' in params and 'ends' in params and 'tempo' in params:
-                result = func(melody.starts, melody.ends, melody.tempo)
-            elif 'starts' in params and 'ends' in params and 'divisions_per_quarter' in params:
-                result = func(melody.starts, melody.ends, 4, 8)  # Default values
-            elif 'starts' in params and 'ends' in params and 'tau' in params:
-                result = func(melody.starts, melody.ends, 0.5, 2.0)  # Default values
-            elif 'starts' in params and 'ends' in params:
-                result = func(melody.starts, melody.ends)
-            elif 'starts' in params:
-                result = func(melody.starts)
-            else:
-                # Try with melody object
-                result = func(melody)
-            
+            result = _invoke_feature(func, melody)
+
             # Handle functions that return tuples (like ioi_ratio, ioi_contour)
             if isinstance(result, tuple) and len(result) == 2:
                 features[f"{name}_mean"] = result[0]
@@ -9537,24 +9505,8 @@ def get_rhythm_features(melody: Melody) -> Dict:
         
         for name, func in beat_histogram_functions:
             try:
-                # Get function signature to determine parameters
-                sig = inspect.signature(func)
-                params = list(sig.parameters.keys())
-                
-                # Call function with appropriate parameters
-                if 'melody' in params:
-                    result = func(melody)
-                elif 'starts' in params and 'ends' in params and 'tempo' in params:
-                    result = func(melody.starts, melody.ends, melody.tempo)
-                elif 'starts' in params and 'ends' in params:
-                    result = func(melody.starts, melody.ends)
-                elif 'starts' in params:
-                    result = func(melody.starts)
-                else:
-                    # Try with melody object
-                    result = func(melody)
-                
-                # Handle functions that return tuples (like ioi_ratio, ioi_contour)
+                result = _invoke_feature(func, melody)
+
                 if isinstance(result, tuple) and len(result) == 2:
                     features[f"{name}_mean"] = result[0]
                     features[f"{name}_std"] = result[1]
@@ -9584,25 +9536,7 @@ def get_expectation_features(melody: Melody) -> Dict:
         if name in _IDYOM_MEAN_INFORMATION_CONTENT_EXPORTS:
             continue
         try:
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-
-            if 'melody' in params:
-                result = func(melody)
-            elif 'pitches' in params and 'starts' in params and 'ends' in params and 'tempo' in params:
-                result = func(melody.pitches, melody.starts, melody.ends, melody.tempo)
-            elif 'pitches' in params and 'starts' in params and 'ends' in params:
-                result = func(melody.pitches, melody.starts, melody.ends)
-            elif 'pitches' in params:
-                result = func(melody.pitches)
-            elif 'starts' in params and 'ends' in params and 'tempo' in params:
-                result = func(melody.starts, melody.ends, melody.tempo)
-            elif 'starts' in params and 'ends' in params:
-                result = func(melody.starts, melody.ends)
-            elif 'starts' in params:
-                result = func(melody.starts)
-            else:
-                result = func(melody)
+            result = _invoke_feature(func, melody)
 
             # Allow tuple returns to be expanded into mean/std when applicable
             if isinstance(result, tuple) and len(result) == 2 and all(isinstance(x, (int, float)) for x in result):
@@ -9638,23 +9572,7 @@ def get_metre_features(melody: Melody) -> Dict:
     
     for name, func in metre_functions.items():
         try:
-            # Get function signature to determine parameters
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            
-            # Call function with appropriate parameters
-            if 'melody' in params:
-                result = func(melody)
-            elif 'starts' in params and 'ends' in params and 'tempo' in params:
-                result = func(melody.starts, melody.ends, melody.tempo)
-            elif 'starts' in params and 'ends' in params:
-                result = func(melody.starts, melody.ends)
-            elif 'starts' in params:
-                result = func(melody.starts)
-            else:
-                # Try with melody object
-                result = func(melody)
-            
+            result = _invoke_feature(func, melody)
             features[name] = result
                 
         except Exception as e:
@@ -11500,42 +11418,19 @@ def _compute_features_by_source(
     
     for name, func in source_features.items():
         try:
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
+            result = _invoke_feature(
+                func,
+                melody,
+                corpus_stats=corpus_stats,
+                phrase_gap=phrase_gap,
+                max_ngram_order=max_ngram_order,
+            )
 
-            args = []
-            for param in params:
-                if param == "melody":
-                    args.append(melody)
-                elif param == "pitches":
-                    args.append(melody.pitches)
-                elif param == "starts":
-                    args.append(melody.starts)
-                elif param == "ends":
-                    args.append(melody.ends)
-                elif param == "tempo":
-                    args.append(melody.tempo)
-                elif param == "ppqn":
-                    args.append(480)
-                elif param == "corpus_stats":
-                    args.append(corpus_stats)
-                elif param == "phrase_gap":
-                    args.append(phrase_gap)
-                elif param == "max_ngram_order":
-                    args.append(max_ngram_order)
-                else:
-                    if param in sig.parameters and sig.parameters[param].default != inspect.Parameter.empty:
-                        args.append(sig.parameters[param].default)
-                    else:
-                        raise ValueError(f"Unknown parameter: {param}")
-            
-            result = func(*args)
-            
             if hasattr(result, '__dict__') and not isinstance(result, (str, int, float, list, dict)):
                 computed_features.update(result.__dict__)
             else:
                 computed_features[name] = result
-                
+
         except Exception as e:
             logger = logging.getLogger("melody_features")
             logger.warning(f"Could not compute {name}: {e}")
