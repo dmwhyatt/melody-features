@@ -1314,8 +1314,10 @@ def prevalence_of_most_common_pitch(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Proportion of most common pitch
+        Proportion of most common pitch (0.0 if there are no pitches)
     """
+    if not pitches:
+        return 0.0
     return float(pitches.count(most_common_pitch(pitches)) / len(pitches))
 
 @jsymbolic
@@ -1689,8 +1691,10 @@ def importance_of_bass_register(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Proportion of MIDI pitch numbers that are between 0 and 54
+        Proportion of MIDI pitch numbers that are between 0 and 54 (0.0 if there are no pitches)
     """
+    if not pitches:
+        return 0.0
     return float(sum(1 for pitch in pitches if 0 <= pitch <= 54) / len(pitches))
 
 @jsymbolic
@@ -1707,8 +1711,10 @@ def importance_of_middle_register(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Proportion of MIDI pitch numbers that are between 55 and 72
+        Proportion of MIDI pitch numbers that are between 55 and 72 (0.0 if there are no pitches)
     """
+    if not pitches:
+        return 0.0
     return float(sum(1 for pitch in pitches if 55 <= pitch <= 72) / len(pitches))
 
 @jsymbolic
@@ -1725,8 +1731,10 @@ def importance_of_high_register(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Proportion of MIDI pitch numbers that are between 73 and 127
+        Proportion of MIDI pitch numbers that are between 73 and 127 (0.0 if there are no pitches)
     """
+    if not pitches:
+        return 0.0
     return float(sum(1 for pitch in pitches if 73 <= pitch <= 127) / len(pitches))
 
 
