@@ -5,6 +5,8 @@ This module provides autocorrelation-based meter estimation functions that can b
 used as fallbacks when MIDI files don't contain explicit time signature information.
 """
 
+from typing import Optional
+
 import numpy as np
 from scipy.signal import correlate
 
@@ -139,7 +141,7 @@ def melodic_accent(pitches: list[int]) -> list[float]:
 def compute_onset_autocorrelation(
     starts: list[float],
     ends: list[float],
-    pitches: list[int] | None = None,
+    pitches: Optional[list[int]] = None,
     accent_type: str = "duration",
     divisions_per_quarter: int = 4,
     max_lag_quarters: int = 8,

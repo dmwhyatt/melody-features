@@ -1,5 +1,6 @@
 import os
 import tempfile
+from typing import Optional
 
 import mido
 
@@ -20,7 +21,7 @@ from melody_features.representations import Melody
 
 def _build_test_melody(
     pitches: list[int],
-    key_signature: str | None = None,
+    key_signature: Optional[str] = None,
     tempo_bpm: int = 120,
 ) -> Melody:
     midi = mido.MidiFile()

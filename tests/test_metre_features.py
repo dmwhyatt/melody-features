@@ -1,4 +1,5 @@
 import math
+from typing import Optional
 
 from melody_features.features import (
     number_of_unique_time_signatures,
@@ -14,8 +15,8 @@ def _build_melody(
     pitches: list[int],
     *,
     tempo: float = 120.0,
-    tempo_changes: list[tuple[float, float]] | None = None,
-    all_time_signatures: list[tuple[float, int, int]] | None = None,
+    tempo_changes: Optional[list[tuple[float, float]]] = None,
+    all_time_signatures: Optional[list[tuple[float, int, int]]] = None,
 ) -> Melody:
     notes = []
     for start, end, pitch in zip(starts, ends, pitches):
