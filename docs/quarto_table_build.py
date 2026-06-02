@@ -63,9 +63,17 @@ FEATURE_ALIAS_EXPORTS: dict[str, tuple[str, str]] = {
     "duration_in_seconds": ("global_duration", "jSymbolic"),
     "mean_melodic_interval": ("mean_absolute_interval", "jSymbolic"),
     "most_common_interval": ("modal_interval", "jSymbolic"),
+    "number_of_common_pitches_classes": ("number_of_common_pitch_classes", "local legacy export"),
     "pitch_variability": ("pitch_standard_deviation", "jSymbolic"),
     "variability_of_time_between_attacks": ("ioi_standard_deviation", "jSymbolic"),
     "total_number_of_notes": ("length", "jSymbolic"),
+}
+
+FEATURE_DISPLAY_NAME_OVERRIDES: dict[str, str] = {
+    "compltrans": "Melodic Originality (Compltrans)",
+    "complebm_pitch": "Expectancy Complexity Pitch (Complebm)",
+    "complebm_rhythm": "Expectancy Complexity Rhythm (Complebm)",
+    "complebm_optimal": "Expectancy Complexity Optimal (Complebm)",
 }
 
 _CANONICAL_ALIAS_NOTES: dict[str, list[tuple[str, str]]] = {}
@@ -329,6 +337,8 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         else:
             pretty_name = snake_to_title(name)
 
+        pretty_name = FEATURE_DISPLAY_NAME_OVERRIDES.get(name, pretty_name)
+
         # Apply possessive fixes and acronym normalization to the display name
         pretty_name = fix_possessive_feature_names(normalize_feature_text(pretty_name))
 
@@ -426,6 +436,9 @@ def to_dataframe(rows: list[FeatureRow]) -> pd.DataFrame:
     return df
 
 def _get_feature_category(obj, domain: str = None, feature_name: str = None) -> str:
+    if feature_name in {"mean_melodic_accent", "melodic_accent_std"}:
+        return "Complexity"
+
     """Determine the feature category based on the actual feature type decorator.
     Returns a comma-separated string of categories for features that belong to multiple categories.
     
@@ -540,6 +553,11 @@ def _get_feature_category(obj, domain: str = None, feature_name: str = None) -> 
 
 
 def build_table() -> pd.DataFrame:
+    """Build the exported feature table from atomic feature callables only.
+
+    Convention: helper/aggregator wrappers (for example `get_*`) are intentionally
+    excluded so the table contains only user-facing scalar/sequence feature atoms.
+    """
     members = inspect.getmembers(features_module)
     
     all_features = []
