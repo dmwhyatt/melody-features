@@ -11,6 +11,7 @@ class NGramCounter:
     def __init__(self):
         """Initialize an empty n-gram counter."""
         self.ngram_counts = {}
+        self.ngram_counts_by_order = {}
         self._total_tokens = None
         self._freq_spec = None
         self._count_values = None
@@ -27,6 +28,7 @@ class NGramCounter:
         """
         # Clear previous counts and caches
         self.ngram_counts = {}
+        self.ngram_counts_by_order = {}
         self._total_tokens = None
         self._freq_spec = None
         self._count_values = None
@@ -34,13 +36,16 @@ class NGramCounter:
         # Count n-grams for each possible length up to max_order
         max_length = min(max_order, len(tokens))
         for length in range(1, max_length + 1):
+            counts_for_length = self.ngram_counts_by_order.setdefault(length, {})
             for i in range(len(tokens) - length + 1):
                 ngram = tuple(tokens[i : i + length])
                 self.ngram_counts[ngram] = self.ngram_counts.get(ngram, 0) + 1
+                counts_for_length[ngram] = counts_for_length.get(ngram, 0) + 1
 
     def reset(self) -> None:
         """Reset the n-gram counter to empty."""
         self.ngram_counts = {}
+        self.ngram_counts_by_order = {}
         self._total_tokens = None
         self._freq_spec = None
         self._count_values = None
@@ -65,9 +70,10 @@ class NGramCounter:
 
     @property
     def total_tokens(self) -> int:
-        """Total number of tokens in the sequence."""
+        """Underlying unigram token count of the sequence."""
         if self._total_tokens is None:
-            self._total_tokens = sum(self.ngram_counts.values())
+            unigram_counts = self.ngram_counts_by_order.get(1, {})
+            self._total_tokens = sum(unigram_counts.values())
         return self._total_tokens
 
     @property
@@ -98,7 +104,7 @@ class NGramCounter:
             if len(self.count_values) <= 1:
                 import warnings
 
-                warnings.warn("Cannot calculate Yule's K for sequence of length <= 1")
+                warnings.warn("Cannot calculate Yule's K when distinct n-gram types <= 1")
                 return float("nan")
 
             n = self.total_tokens
@@ -120,8 +126,8 @@ class NGramCounter:
 
     @property
     def simpsons_d(self) -> float:
-        """Simpson's D measure of diversity. This feature measures the rate of m-type
-        repetition in a similar way to Yule's K.
+        """Simpson's D concentration index over m-type counts.
+        Higher values indicate greater concentration/repetition (lower diversity).
         
         Citation
         --------
@@ -132,7 +138,7 @@ class NGramCounter:
                 import warnings
 
                 warnings.warn(
-                    "Cannot calculate Simpson's D for sequence of length <= 1"
+                    "Cannot calculate Simpson's D when distinct n-gram types <= 1"
                 )
                 return float("nan")
 
@@ -161,7 +167,7 @@ class NGramCounter:
             if len(self.count_values) <= 1:
                 import warnings
 
-                warnings.warn("Cannot calculate Sichel's S for sequence of length <= 1")
+                warnings.warn("Cannot calculate Sichel's S when distinct n-gram types <= 1")
                 return float("nan")
 
             v = len(self.ngram_counts)
@@ -189,7 +195,7 @@ class NGramCounter:
             if len(self.count_values) <= 1:
                 import warnings
 
-                warnings.warn("Cannot calculate Honoré's H for sequence of length <= 1")
+                warnings.warn("Cannot calculate Honoré's H when distinct n-gram types <= 1")
                 return float("nan")
 
             n = self.total_tokens
@@ -208,22 +214,29 @@ class NGramCounter:
 
     @property
     def mean_entropy(self) -> float:
-        """Calculate the zeroth-order base-2 entropy of m-types across all n-gram lengths."""
+        """Mean zeroth-order m-type entropy across counted n-gram orders."""
         try:
             if len(self.count_values) <= 1:
                 import warnings
 
                 warnings.warn(
-                    "Cannot calculate mean entropy for sequence of length <= 1"
+                    "Cannot calculate mean entropy when distinct n-gram types <= 1"
                 )
                 return float("nan")
 
-            n = self.total_tokens
-            if n == 0:
+            entropies = []
+            for counts_by_ngram in self.ngram_counts_by_order.values():
+                n = sum(counts_by_ngram.values())
+                if n <= 0:
+                    continue
+                probs = [count / n for count in counts_by_ngram.values() if count > 0]
+                if probs:
+                    entropies.append(-sum(p * math.log2(p) for p in probs))
+
+            if not entropies:
                 return float("nan")
 
-            probs = [count / n for count in self.count_values]
-            return -sum(p * math.log(p) for p in probs)
+            return float(sum(entropies) / len(entropies))
         except Exception as e:
             import warnings
 
@@ -240,17 +253,22 @@ class NGramCounter:
                 import warnings
 
                 warnings.warn(
-                    "Cannot calculate mean productivity for sequence of length <= 1"
+                    "Cannot calculate mean productivity when distinct n-gram types <= 1"
                 )
                 return float("nan")
 
-            v = len(self.ngram_counts)
-            v1 = self.freq_spec.get(1, 0)
+            productivities = []
+            for counts_by_ngram in self.ngram_counts_by_order.values():
+                n = sum(counts_by_ngram.values())
+                if n <= 0:
+                    continue
+                v1 = sum(1 for count in counts_by_ngram.values() if count == 1)
+                productivities.append(v1 / n)
 
-            if v == 0:
+            if not productivities:
                 return float("nan")
 
-            return v1 / v if v > 0 else float("nan")
+            return float(sum(productivities) / len(productivities))
         except Exception as e:
             import warnings
 

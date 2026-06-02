@@ -91,13 +91,16 @@ from melody_features.feature_histogram import (
     create_melodic_interval_histogram,
 )
 from melody_features.stats import (
+    distribution_entropy,
     get_mode,
+    midi_toolbox_entropy,
     range_func,
     shannon_entropy,
     standard_deviation,
 )
 from melody_features.step_contour import StepContour
 from melody_features.meter_estimation import (
+    compute_onset_autocorrelation,
     duration_accent as _duration_accent,
     melodic_accent as _melodic_accent,
     metric_hierarchy as _metric_hierarchy,
@@ -337,6 +340,93 @@ class IDyOMConfig:
                 raise ValueError(f"corpus path does not exist: {self.corpus}")
 
 
+_IDYOM_MEAN_INFORMATION_CONTENT_EXPORTS = frozenset({
+    "pitch_stm_mean_information_content",
+    "pitch_ltm_mean_information_content",
+    "rhythm_stm_mean_information_content",
+    "rhythm_ltm_mean_information_content",
+})
+
+_DEFAULT_CORPUS = resources.files("melody_features") / "corpora/pearce_default_idyom"
+
+
+def _resolve_idyom_corpus(
+    idyom_config: IDyOMConfig,
+    config_corpus: Optional[os.PathLike] = None,
+    override: Optional[os.PathLike] = None,
+) -> Optional[os.PathLike]:
+    """Helper function to resolve the pretraining corpus for an IDyOM configuration.
+    Mostly used for individual calls, rather than `get_all_features` which uses the Config class
+    to setup all IDyOM configurations at once.
+
+    Resolution order:
+    1. Explicit override (used in batch mode)
+    2. Per-config corpus (IDyOMConfig.corpus)
+    3. Config.corpus (from get_all_features)
+    4. Package default (_DEFAULT_CORPUS)
+
+    Short-term models never use a corpus.
+    """
+    if idyom_config.models == ":stm":
+        return None
+    if override is not None:
+        return override
+    if idyom_config.corpus is not None:
+        return idyom_config.corpus
+    if config_corpus is not None:
+        return config_corpus
+    return _DEFAULT_CORPUS
+
+
+def _default_idyom_configs(corpus: Optional[os.PathLike] = None) -> dict[str, IDyOMConfig]:
+    """Build the standard four IDyOM configurations used by ``get_all_features``.
+
+    Parameters
+    ----------
+    corpus : Optional[os.PathLike]
+        Pretraining corpus for long-term (LTM) models. For the default
+        ``Config`` from ``_setup_default_config``, pass ``_DEFAULT_CORPUS`` so
+        LTM entries match ``Config.corpus`` explicitly. Pass ``None`` only when
+        LTM configs should inherit ``Config.corpus`` at runtime instead.
+    """
+    return {
+        "pitch_stm": IDyOMConfig(
+            target_viewpoints=["cpitch"],
+            source_viewpoints=[("cpitch", "cpint", "cpintfref")],
+            ppm_order=None,
+            models=":stm",
+            corpus=None,
+        ),
+        "pitch_ltm": IDyOMConfig(
+            target_viewpoints=["cpitch"],
+            source_viewpoints=[("cpitch", "cpint", "cpintfref")],
+            ppm_order=None,
+            models=":ltm",
+            corpus=corpus,
+        ),
+        "rhythm_stm": IDyOMConfig(
+            target_viewpoints=["onset"],
+            source_viewpoints=["ioi", "ioi-ratio"],
+            ppm_order=None,
+            models=":stm",
+            corpus=None,
+        ),
+        "rhythm_ltm": IDyOMConfig(
+            target_viewpoints=["onset"],
+            source_viewpoints=["ioi", "ioi-ratio"],
+            ppm_order=None,
+            models=":ltm",
+            corpus=corpus,
+        ),
+    }
+
+
+_DEFAULT_IDYOM_CONFIGS = _default_idyom_configs(_DEFAULT_CORPUS)
+
+# Inclusive maximum m-type length (FANTASTIC n.limits default: 1–5).
+DEFAULT_MAX_NGRAM_ORDER = 5
+
+
 @dataclass
 class FantasticConfig:
     """Configuration class for FANTASTIC analysis.
@@ -458,22 +548,31 @@ class Config:
 
 @fantastic
 @jsymbolic
+@midi_toolbox
 @absolute
 @pitch
 def pitch_range(pitches: list[int]) -> int:
-    """Subtract the lowest pitch number in the melody from the highest.
-
+    """
+    Subtract the lowest pitch number in the melody from the highest.
+    
     Parameters
     ----------
     pitches : list[int]
         List of MIDI pitch values
-
+    
     Returns
     -------
     int
         Range between highest and lowest pitch in semitones
+    
+    
+    Note
+    -----
+    This feature is named `ambitus` in MIDI Toolbox.
     """
     return int(range_func(pitches))
+
+ambitus = pitch_range
 
 
 @fantastic
@@ -492,14 +591,12 @@ def pitch_standard_deviation(pitches: list[int]) -> float:
     -------
     float
         Standard deviation of pitches
-
-    Note
-    -----
-    This feature is named 'Pitch Variability' in JSymbolic.
     """
     if not pitches or len(pitches) < 2:
         return 0.0
     return float(np.std(pitches, ddof=1))
+
+pitch_variability = pitch_standard_deviation
 
 @jsymbolic
 @pitch_class
@@ -567,11 +664,110 @@ def pitch_entropy(pitches: list[int]) -> float:
     """
     return float(shannon_entropy(pitches))
 
+
+# refstat('kkmaj') / refstat('kkmin') — used by tonality.m / keymode.m
+_KK_MAJ_PROFILE = np.array(
+    [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
+    dtype=float,
+)
+_KK_MIN_PROFILE = np.array(
+    [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17],
+    dtype=float,
+)
+
+
+def _pcdist1_vector(pitches: list[int], starts: list[float], ends: list[float]) -> np.ndarray:
+    pcd = np.zeros(12, dtype=float)
+    if not pitches or not starts or not ends:
+        return pcd
+    accents = duration_accent(starts, ends)
+    n = min(len(pitches), len(accents))
+    for pitch, acc in zip(pitches[:n], accents[:n]):
+        pcd[int(pitch) % 12] += acc
+    return pcd / (pcd.sum() + 1e-12)
+
+
+def _ivdist1_vector(pitches: list[int], starts: list[float], ends: list[float]) -> np.ndarray:
+    ivd = np.zeros(25, dtype=float)
+    if len(pitches) < 2 or not starts or not ends:
+        return ivd
+    accents = duration_accent(starts, ends)
+    intervals = np.diff(np.asarray(pitches, dtype=float))
+    for m, iv in enumerate(intervals.astype(int)):
+        if abs(iv) <= 12 and m + 1 < len(accents):
+            ivd[iv + 12] += accents[m] + accents[m + 1]
+    return ivd / (ivd.sum() + 1e-12)
+
+
+def _durdist1_vector(
+    starts: list[float], ends: list[float], tempo: float = 120.0
+) -> np.ndarray:
+    if not starts or not ends:
+        return np.zeros(9, dtype=float)
+    beat_durs = [
+        (float(end) - float(start)) * (tempo / 60.0)
+        for start, end in zip(starts, ends)
+        if float(end) > float(start)
+    ]
+    if not beat_durs:
+        return np.zeros(9, dtype=float)
+    du = np.round(2 * np.log2(np.asarray(beat_durs, dtype=float))).astype(int)
+    du = du[np.abs(du) <= 4] + 5
+    hist = np.zeros(9, dtype=float)
+    for b in du:
+        if 1 <= b <= 9:
+            hist[b - 1] += 1.0
+    return hist / (hist.sum() + 1e-12)
+
+
+def _kkcc_from_pcd(pcd: np.ndarray) -> np.ndarray:
+    majors = np.array([np.roll(_KK_MAJ_PROFILE, k) for k in range(12)])
+    minors = np.array([np.roll(_KK_MIN_PROFILE, k) for k in range(12)])
+    profiles = np.vstack([majors, minors])
+    pcd = np.asarray(pcd, dtype=float).ravel()
+    corrs = []
+    for profile in profiles:
+        if np.std(pcd) == 0 or np.std(profile) == 0:
+            corrs.append(0.0)
+        else:
+            c = np.corrcoef(pcd, profile)[0, 1]
+            corrs.append(0.0 if np.isnan(c) else float(c))
+    return np.array(corrs)
+
+
+def _keymode_from_pcd(pcd: np.ndarray) -> int:
+    u = _kkcc_from_pcd(pcd)
+    if u[0] > u[12]:
+        return 1
+    if u[0] < u[12]:
+        return 2
+    return 0
+
+
+def _tonality_midi_toolbox(
+    pitches: list[int], starts: list[float], ends: list[float]
+) -> list[float]:
+    if not pitches:
+        return []
+    pcd = _pcdist1_vector(pitches, starts, ends)
+    kk = _KK_MIN_PROFILE if _keymode_from_pcd(pcd) == 2 else _KK_MAJ_PROFILE
+    return [float(kk[int(p) % 12]) for p in pitches]
+
+
+def _notedensity_seconds(starts: list[float]) -> float:
+    if not starts or len(starts) < 2:
+        return 0.0
+    span = float(starts[-1]) - float(starts[0])
+    if span == 0:
+        return 0.0
+    return (len(starts) - 1) / span
+
+
 @midi_toolbox
 @pitch_class
 @pitch
 def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
-    """The distribution of pitch classes in the melody, weighted by the duration of the notes.
+    """Pitch-class distribution weighted by Parncutt duration accent.
 
     Parameters
     ----------
@@ -585,24 +781,12 @@ def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
     Returns
     -------
     dict
-        Duration-weighted distribution proportion of pitch classes
+        Map from pitch class (0–11) to proportion
     """
     if not pitches or not starts or not ends:
-        return 0.0
-
-    durations = [ends[i] - starts[i] for i in range(len(starts))]
-    # Create weighted list by repeating each pitch class according to its duration
-    weighted_pitch_classes = []
-    for pitch, duration in zip(pitches, durations):
-        pitch_class = pitch % 12
-        # Convert duration to integer number of repetitions (e.g. duration 2.5 -> 25 repetitions)
-        repetitions = max(1, int(duration * 10))  # Ensures at least 1 repetition
-        weighted_pitch_classes.extend([pitch_class] * repetitions)
-
-    if not weighted_pitch_classes:
-        return 0.0
-
-    return distribution_proportions(weighted_pitch_classes)
+        return {}
+    vec = _pcdist1_vector(pitches, starts, ends)
+    return {i: float(vec[i]) for i in range(12) if vec[i] > 0}
 
 @jsymbolic
 @absolute
@@ -686,8 +870,8 @@ def last_pitch_class(pitches: list[int]) -> int:
 @jsymbolic
 @absolute
 @pitch
-def basic_pitch_histogram(pitches: list[int]) -> dict:
-    """A histogram of pitch values within the range of input pitches.
+def basic_pitch_histogram(pitches: list[int]) -> dict[int, int]:
+    """A histogram of pitch values and their counts, with one pitch bin per non-zero count.
 
     Parameters
     ----------
@@ -696,29 +880,26 @@ def basic_pitch_histogram(pitches: list[int]) -> dict:
 
     Returns
     -------
-    dict
-        Dictionary mapping pitch values to counts
+    dict[int, int]
+        Mapping from MIDI pitch (0–127) to note count. Only pitches with count > 0 are included.
 
     Note
     ----
-    We use the histogram in the range of input pitches to reduce the output size. An implementation
-    that is truer to the original jSymbolic implementation would return 128 bins (0-127) regardless of how any different pitches are present.
+    We only return bins for pitches that have a count > 0. An implementation that is truer to the original jSymbolic 
+    implementation would return 128 bins (0-127) regardless of how any different pitches are present.
     However, we believe our approach is more concise and easier to understand for many purposes.
     """
     if not pitches:
         return {}
 
-    # Use number of unique pitches as number of bins, with minimum of 1
-    # we return this instead of the full PitchHistogram object to reduce simplify the output
-    # as the PitchHistogram object would return 128 bins (0-127) regardless of how any different pitches are present
-    num_midi_notes = max(1, len(set(pitches)))
-    return histogram_bins(pitches, num_midi_notes)
+    histogram = PitchHistogram(pitches).histogram
+    return {pitch: count for pitch, count in histogram.items() if count > 0}
 
 @jsymbolic
 @absolute
 @pitch
 def melodic_pitch_variety(pitches: list[int], starts: list[float], tempo: float = 120.0, ppqn: int = 480) -> float:
-    """The average number of notes that pass before a pitch is repeated.
+    """The average number of onset positions before a pitch is repeated.
     
     Parameters
     ----------
@@ -734,7 +915,7 @@ def melodic_pitch_variety(pitches: list[int], starts: list[float], tempo: float 
     Returns
     -------
     float
-        Average number of notes before pitch repetition
+        Average number of distinct onset positions before pitch repetition.
     """
     if not pitches or len(pitches) < 2:
         return 0.0
@@ -889,8 +1070,10 @@ def mean_pitch(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Mean pitch value
+        Mean pitch value, or 0.0 for empty input
     """
+    if not pitches:
+        return 0.0
     return float(np.mean(pitches))
 
 @jsymbolic
@@ -907,8 +1090,16 @@ def mean_pitch_class(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Mean pitch class value, so between 0 and 11
+        Linear arithmetic mean pitch class value (between 0 and 11)
+
+    Note
+    ----
+    This is a linear (non-circular) mean over pitch classes. For example, pitch
+    classes near the wraparound boundary (e.g., 11 and 0) are averaged
+    numerically rather than on the unit circle.
     """
+    if not pitches:
+        return 0.0
     return float(np.mean([pitch % 12 for pitch in pitches]))
 
 @jsymbolic
@@ -970,7 +1161,7 @@ def number_of_unique_pitch_classes(pitches: list[int]) -> int:
 @jsymbolic
 @pitch_class
 @pitch
-def number_of_common_pitches_classes(pitches: list[int]) -> int:
+def number_of_common_pitch_classes(pitches: list[int]) -> int:
     """The number of pitch classes that appear in at least 20% of total notes.
 
     Parameters
@@ -986,6 +1177,10 @@ def number_of_common_pitches_classes(pitches: list[int]) -> int:
     pcs = [pitch % 12 for pitch in pitches]
     significant_pcs = n_percent_significant_values(pcs, threshold=0.2)
     return int(len(significant_pcs))
+
+
+# backwards-compatible alias (typo preserved for semantic versioning).
+number_of_common_pitches_classes = number_of_common_pitch_classes
 
 @jsymbolic
 @absolute
@@ -1029,9 +1224,10 @@ def number_of_common_pitches(pitches: list[int]) -> int:
 @absolute
 @pitch
 def tessitura(pitches: list[int]) -> list[float]:
-    """Tessitura is based on standard deviation from median pitch height. The median range 
+    """
+    Tessitura is based on standard deviation from median pitch height. The median range 
     of the melody tends to be favoured and thus more expected. Tessitura predicts 
-    whether listeners expect tones close to median pitch height. Higher tessitura values
+    whether listeners expect tones close to median pitch height. Higher `tessitura` values
     correspond to melodies that have a wider range of pitches.
     
     Parameters
@@ -1042,12 +1238,11 @@ def tessitura(pitches: list[int]) -> list[float]:
     Returns
     -------
     list[float]
-        Absolute tessitura value for each note in the sequence
-
+        Absolute local tessitura value for each note in sequence
+    
     Citation
     ---------
     von Hippel (2000).
-    
     """
     if len(pitches) < 2:
         return [0.0] if len(pitches) == 1 else []
@@ -1077,7 +1272,8 @@ def tessitura(pitches: list[int]) -> list[float]:
 @absolute
 @pitch
 def mean_tessitura(pitches: list[int]) -> float:
-    """The arithmetic mean of the sequence of tessitura values.
+    """
+    The arithmetic mean of local `tessitura` values.
     
     Parameters
     ----------
@@ -1098,7 +1294,8 @@ def mean_tessitura(pitches: list[int]) -> float:
 @absolute
 @pitch
 def tessitura_std(pitches: list[int]) -> float:
-    """The standard deviation of the sequence of tessitura values.
+    """
+    The standard deviation of the sequence of `tessitura` values.
     
     Parameters
     ----------
@@ -1130,8 +1327,10 @@ def prevalence_of_most_common_pitch(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Proportion of most common pitch
+        Proportion of most common pitch (0.0 if there are no pitches)
     """
+    if not pitches:
+        return 0.0
     return float(pitches.count(most_common_pitch(pitches)) / len(pitches))
 
 @jsymbolic
@@ -1306,6 +1505,7 @@ def folded_fifths_pitch_class_histogram(pitches: list[int]) -> dict:
     -------
     dict
         Dictionary mapping pitch classes to counts, arranged according to the circle of fifths
+        (using jSymbolic's Folded Fifths Pitch Class Histogram)
     """
     # again, we don't use the histogram object for this one to simplify the output
     pcs = [pitch % 12 for pitch in pitches]
@@ -1411,7 +1611,8 @@ def pitch_class_kurtosis_after_folding(pitches: list[int]) -> float:
 @pitch_class
 @pitch
 def strong_tonal_centres(pitches: list[int]) -> float:
-    """The number of isolated peaks in the pitch class histogram that each account for at least 9% of notes.
+    """Counts the number of isolated peaks in the pitch class histogram that each account for at least 9% of notes, 
+    arranged according to the circle of fifths.
 
     Parameters
     ----------
@@ -1505,8 +1706,10 @@ def importance_of_bass_register(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Proportion of MIDI pitch numbers that are between 0 and 54
+        Proportion of MIDI pitch numbers that are between 0 and 54 (0.0 if there are no pitches)
     """
+    if not pitches:
+        return 0.0
     return float(sum(1 for pitch in pitches if 0 <= pitch <= 54) / len(pitches))
 
 @jsymbolic
@@ -1523,8 +1726,10 @@ def importance_of_middle_register(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Proportion of MIDI pitch numbers that are between 55 and 72
+        Proportion of MIDI pitch numbers that are between 55 and 72 (0.0 if there are no pitches)
     """
+    if not pitches:
+        return 0.0
     return float(sum(1 for pitch in pitches if 55 <= pitch <= 72) / len(pitches))
 
 @jsymbolic
@@ -1541,8 +1746,10 @@ def importance_of_high_register(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Proportion of MIDI pitch numbers that are between 73 and 127
+        Proportion of MIDI pitch numbers that are between 73 and 127 (0.0 if there are no pitches)
     """
+    if not pitches:
+        return 0.0
     return float(sum(1 for pitch in pitches if 73 <= pitch <= 127) / len(pitches))
 
 
@@ -1621,11 +1828,10 @@ def mean_absolute_interval(pitches: list[int]) -> float:
     float
         Mean absolute interval size in semitones
 
-    Note
-    -----
-    This feature is named 'Mean Melodic Interval' in JSymbolic.
     """
     return float(np.mean([abs(x) for x in pitch_interval(pitches)]))
+
+mean_melodic_interval = mean_absolute_interval
 
 @fantastic
 @interval
@@ -1662,15 +1868,14 @@ def modal_interval(pitches: list[int]) -> int:
     int
         Most frequent interval size in semitones
 
-    Note
-    -----
-    This feature is named 'Most Common Interval' in JSymbolic.
     """
 
     intervals_abs = [abs(x) for x in pitch_interval(pitches)]
     if not intervals_abs:
         return 0
     return int(get_mode(intervals_abs))
+
+most_common_interval = modal_interval
 
 @fantastic
 @complexity
@@ -1686,7 +1891,12 @@ def interval_entropy(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Shannon entropy of interval sizes
+        Shannon entropy of signed melodic intervals (in semitones).
+
+    Note
+    -----
+    Uses signed intervals rather than absolute interval sizes,
+    consistent with FANTASTIC implementation.
     """
     return float(shannon_entropy(pitch_interval(pitches)))
 
@@ -1722,7 +1932,7 @@ def _get_durations(starts: list[float], ends: list[float], tempo: float = 120.0)
 @interval
 @pitch
 def ivdist1(pitches: list[int], starts: list[float], ends: list[float], tempo: float = 120.0) -> dict:
-    """The distribution of intervals in the melody, weighted by their durations.
+    """Interval distribution weighted by duration accent.
 
     Parameters
     ----------
@@ -1738,34 +1948,53 @@ def ivdist1(pitches: list[int], starts: list[float], ends: list[float], tempo: f
     Returns
     -------
     dict
-        Duration-weighted distribution proportion of intervals
+        Map from interval in semitones (-12..12) to proportion
     """
+    del tempo
     if not pitches or not starts or not ends or len(pitches) < 2:
         return {}
+    vec = _ivdist1_vector(pitches, starts, ends)
+    return {i - 12: float(vec[i]) for i in range(25) if vec[i] > 0}
 
-    intervals = pitch_interval(pitches)
-    durations = _get_durations(starts, ends, tempo)
 
-    if not intervals or not durations:
+@midi_toolbox
+@rhythm
+@timing
+def durdist1(
+    starts: list[float], ends: list[float], tempo: float = 120.0
+) -> dict[int, float]:
+    """Note duration distribution in nine log-spaced beat bins.
+
+    Bin centers (in beats): 1/4, √2/4, 1/2, √2/2, 1, √2, 2, 2√2, 4.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note onset times in seconds
+    ends : list[float]
+        Note offset times in seconds
+    tempo : float
+        Tempo in BPM (default 120)
+
+    Returns
+    -------
+    dict[int, float]
+        Map from bin index (1–9) to proportion
+    """
+    if not starts or not ends:
         return {}
+    vec = _durdist1_vector(starts, ends, tempo)
+    return {i + 1: float(vec[i]) for i in range(9) if vec[i] > 0}
 
-    weighted_intervals = []
-    for interval, duration in zip(intervals, durations[:-1]):
-        repetitions = max(1, int(duration * 10))
-        weighted_intervals.extend([interval] * repetitions)
-
-    if not weighted_intervals:
-        return {}
-
-    return distribution_proportions(weighted_intervals)
 
 @midi_toolbox
 @interval
 @pitch
 def ivdirdist1(pitches: list[int]) -> dict[int, float]:
-    """The proportion of upward intervals for each interval size (1-12 semitones).
-    Returns the proportion of upward intervals for each interval size in the melody
-    as a dictionary mapping interval sizes to their directional bias values.
+    """Directional interval bias for each interval size (1-12 semitones).
+
+    For each absolute interval size n, this computes:
+    ``(p(+n) - p(-n)) / (p(+n) + p(-n))``.
     
     Parameters
     ----------
@@ -1888,6 +2117,11 @@ def interval_direction_mean(pitches: list[int]) -> float:
     -------
     float
         Mean of interval directions
+
+    Note
+    ----
+    Unisons contribute 0 to both numerator and denominator because the mean is
+    taken over the full direction sequence {-1, 0, 1}.
     """
     directions = interval_direction(pitches)
     
@@ -1910,7 +2144,11 @@ def interval_direction_std(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Standard deviation of interval directions
+        Population standard deviation of interval directions
+
+    Note
+    ----
+    Uses population variance (divide by N)
     """
     directions = interval_direction(pitches)
     
@@ -2082,8 +2320,8 @@ def distance_between_most_prevalent_melodic_intervals(pitches: list[int]) -> flo
 @jsymbolic
 @interval
 @pitch
-def melodic_interval_histogram(pitches: list[int]) -> dict:
-    """A histogram of interval sizes.
+def melodic_interval_histogram(pitches: list[int]) -> dict[int, int]:
+    """Histogram of absolute melodic interval sizes in semitones.
 
     Parameters
     ----------
@@ -2092,12 +2330,24 @@ def melodic_interval_histogram(pitches: list[int]) -> dict:
 
     Returns
     -------
-    dict
-        Dictionary mapping interval sizes to counts
+    dict[int, int]
+        Mapping from interval size (0–127 semitones) to count. Only sizes with count > 0 are included.
+
+    Note
+    ----
+    We only return bins for intervals that have a count > 0. An implementation that is truer to the original jSymbolic 
+    implementation would return 128 bins (0-127) regardless of how any different intervals are present.
     """
     intervals = pitch_interval(pitches)
-    num_intervals = max(1, int(range_func(intervals)))
-    return histogram_bins(intervals, num_intervals)
+    if not intervals:
+        return {}
+
+    histogram: dict[int, int] = {}
+    for interval in intervals:
+        size = abs(interval)
+        if 0 <= size <= 127:
+            histogram[size] = histogram.get(size, 0) + 1
+    return histogram
 
 @jsymbolic
 @interval
@@ -2263,7 +2513,7 @@ def melodic_sevenths(pitches: list[int]) -> float:
 @jsymbolic
 @interval
 @pitch
-def melodic_octaves(pitches: list[int]) -> int:
+def melodic_octaves(pitches: list[int]) -> float:
     """The proportion of intervals that are octaves (12 semitones).
     
     Parameters
@@ -2293,6 +2543,11 @@ def minor_major_third_ratio(pitches: list[int]) -> float:
     -------
     float
         Ratio of minor thirds to major thirds, or 0.0 if no major thirds exist
+
+    Note
+    ----
+    To match jSymbolic behavior, this returns 0.0 when there are no major
+    thirds (including cases where minor thirds are present).
     """
     minor_thirds = variable_melodic_intervals(pitches, 3)
     major_thirds = variable_melodic_intervals(pitches, 4)
@@ -2317,6 +2572,10 @@ def direction_of_melodic_motion(pitches: list[int]) -> float:
     -------
     float
         Proportion of upward melodic motion (0.0 to 1.0), or -1.0 if no intervals
+
+    Note
+    ----
+    This feature excludes unisons from its denominator and maps only to [0, 1].
     """
     intervals = pitch_interval(pitches)
     if not intervals:
@@ -2445,6 +2704,8 @@ def _get_features_by_type(feature_type: str) -> dict:
     features = {}
     seen_function_ids = set()
     for name, obj in inspect.getmembers(current_module):
+        if name.startswith("_"):
+            continue
         if (inspect.isfunction(obj) and
             hasattr(obj, '_feature_types') and
             feature_type in obj._feature_types):
@@ -2482,6 +2743,8 @@ def _get_features_by_domain(domain: str) -> dict:
     features = {}
     seen_function_ids = set()
     for name, obj in inspect.getmembers(current_module):
+        if name.startswith("_"):
+            continue
         if (inspect.isfunction(obj) and 
             hasattr(obj, '_feature_domain') and 
             obj._feature_domain == domain):
@@ -2521,6 +2784,8 @@ def _get_features_by_domain_and_types(domain: str, allowed_types: list[str]) -> 
     features = {}
     seen_function_ids = set()
     for name, obj in inspect.getmembers(current_module):
+        if name.startswith("_"):
+            continue
         if (inspect.isfunction(obj) and 
             hasattr(obj, '_feature_domain') and 
             obj._feature_domain == domain and
@@ -2538,6 +2803,32 @@ def _get_features_by_domain_and_types(domain: str, allowed_types: list[str]) -> 
                 features[name] = obj
     
     return features
+
+
+def _invoke_feature(func, melody: Melody, **extra):
+    """Call a feature function, binding ``melody`` fields and extras by parameter name."""
+    sig = inspect.signature(func)
+    if "melody" in sig.parameters:
+        return func(melody)
+
+    kwargs = {}
+    if "pitches" in sig.parameters:
+        kwargs["pitches"] = melody.pitches
+    if "starts" in sig.parameters:
+        kwargs["starts"] = melody.starts
+    if "ends" in sig.parameters:
+        kwargs["ends"] = melody.ends
+    if "tempo" in sig.parameters:
+        kwargs["tempo"] = melody.tempo
+    if "ppqn" in sig.parameters:
+        kwargs["ppqn"] = extra.get("ppqn", 480)
+    if "corpus_stats" in sig.parameters:
+        kwargs["corpus_stats"] = extra.get("corpus_stats")
+    if "phrase_gap" in sig.parameters:
+        kwargs["phrase_gap"] = extra.get("phrase_gap", 1.5)
+    if "max_ngram_order" in sig.parameters:
+        kwargs["max_ngram_order"] = extra.get("max_ngram_order", DEFAULT_MAX_NGRAM_ORDER)
+    return func(**kwargs)
 
 
 def get_pitch_features(melody: Melody) -> Dict:
@@ -2656,8 +2947,12 @@ def get_pitch_class_features(melody: Melody) -> Dict:
 @contour
 @pitch
 def get_step_contour_features(
-    pitches: list[int], starts: list[float], ends: list[float], tempo: float = 120.0
-) -> StepContour:
+    pitches: list[int],
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    method: str = "amads",
+) -> Tuple[float, float, float]:
     """Calculate step contour features.
 
     Parameters
@@ -2668,11 +2963,13 @@ def get_step_contour_features(
         List of note start times
     ends : list[float]
         List of note end times
+    method : str, optional
+        Contour statistic method, either "amads" or "fantastic". Defaults to "amads".
 
     Returns
     -------
-    StepContour
-        StepContour object with global variation, direction and local variation
+    Tuple[float, float, float]
+        StepContour-derived values: global variation, global direction, and local variation
     """
     if not pitches or not starts or not ends or len(pitches) < 2:
         return 0.0, 0.0, 0.0
@@ -2681,7 +2978,7 @@ def get_step_contour_features(
     if not durations:
         return 0.0, 0.0, 0.0
 
-    sc = StepContour(pitches, durations)
+    sc = StepContour(pitches, durations, method=method)
     return sc.global_variation, sc.global_direction, sc.local_variation
 
 @fantastic
@@ -2689,7 +2986,7 @@ def get_step_contour_features(
 @pitch
 def get_interpolation_contour_features(
     pitches: list[int], starts: list[float]
-) -> InterpolationContour:
+) -> Tuple[int, float, float, float, str]:
     """Calculate interpolation contour features.
 
     Parameters
@@ -2701,8 +2998,9 @@ def get_interpolation_contour_features(
 
     Returns
     -------
-    InterpolationContour
-        InterpolationContour object with direction, gradient and class features
+    Tuple[int, float, float, float, str]
+        Interpolation contour values:
+        global direction, mean absolute gradient, gradient std, direction changes, class label
     """
     ic = InterpolationContour(pitches, starts)
     return (
@@ -2716,7 +3014,7 @@ def get_interpolation_contour_features(
 @midi_toolbox
 @contour
 @pitch
-def get_comb_contour_matrix(pitches: list[int]) -> list[list[int]]:
+def comb_contour_matrix(pitches: list[int]) -> list[list[int]]:
     """The Marvin & Laprade (1987) comb contour matrix.
     For a melody with n notes, returns an n x n binary matrix C where
     C[i][j] = 1 if pitch of note j is higher than pitch of note i (p[j] > p[i])
@@ -2744,12 +3042,14 @@ def get_comb_contour_matrix(pitches: list[int]) -> list[list[int]]:
 
     return matrix
 
+get_comb_contour_matrix = comb_contour_matrix
+
 @fantastic
 @contour
 @pitch
 def get_polynomial_contour_features(
     melody: Melody
-) -> PolynomialContour:
+) -> List[float]:
     """Calculate polynomial contour features.
 
     Parameters
@@ -2850,7 +3150,7 @@ def mean_tempo(melody: Melody) -> float:
 @rhythm
 @timing
 def tempo_variability(melody: Melody) -> float:
-    """The variability of tempo of the melody.
+    """The duration-weighted variability of tempo across the melody.
 
     Parameters
     ----------
@@ -2860,11 +3160,47 @@ def tempo_variability(melody: Melody) -> float:
     Returns
     -------
     float
-        Tempo variability of melody
+        Weighted population standard deviation (BPM) of tempo segments.
     """
-    if not melody.tempo_changes or len(melody.tempo_changes) < 2:
+    if not melody.tempo_changes:
         return 0.0
-    return float(np.std([tempo for time, tempo in melody.tempo_changes], ddof=1))
+    if not melody.ends:
+        return 0.0
+
+    total_duration = max(melody.ends)
+    if total_duration <= 0.0:
+        return 0.0
+
+    segments: list[tuple[float, float]] = []
+    current_time = 0.0
+    current_tempo = float(melody.tempo)
+
+    for change_time, new_tempo in melody.tempo_changes:
+        change_time = float(change_time)
+        if change_time <= current_time:
+            current_tempo = float(new_tempo)
+            continue
+        segment_end = min(change_time, total_duration)
+        segment_duration = segment_end - current_time
+        if segment_duration > 0.0:
+            segments.append((segment_duration, current_tempo))
+        current_time = segment_end
+        current_tempo = float(new_tempo)
+        if current_time >= total_duration:
+            break
+
+    if current_time < total_duration:
+        segments.append((total_duration - current_time, current_tempo))
+
+    if not segments:
+        return 0.0
+
+    weighted_mean = sum(duration * tempo for duration, tempo in segments) / total_duration
+    weighted_variance = (
+        sum(duration * ((tempo - weighted_mean) ** 2) for duration, tempo in segments)
+        / total_duration
+    )
+    return float(np.sqrt(weighted_variance))
 
 @fantastic
 @rhythm
@@ -2893,7 +3229,7 @@ def duration_range(starts: list[float], ends: list[float], tempo: float = 120.0)
 @rhythm
 @timing
 def mean_duration(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """The mean note duration in quarter notes.
+    """The mean note duration in quarter notes, computed from the raw durations.
 
     Parameters
     ----------
@@ -2907,7 +3243,11 @@ def mean_duration(starts: list[float], ends: list[float], tempo: float = 120.0) 
     Returns
     -------
     float
-        Mean note duration in quarter notes
+        Mean raw note duration in quarter notes
+
+    Note
+    ----
+    We use raw durations here (in the style of FANTASTIC), rather than jSymbolic's quantized rhythmic-value bins.
     """
     durations = _get_durations(starts, ends, tempo)
     if not durations:
@@ -2919,19 +3259,25 @@ def mean_duration(starts: list[float], ends: list[float], tempo: float = 120.0) 
 @rhythm
 @timing
 def average_note_duration(starts: list[float], ends: list[float]) -> float:
-    """The average note duration in seconds.
-
+    """
+    The average note duration in seconds.
+    
     Parameters
     ----------
     starts : list[float]
         List of note start times
     ends : list[float]
         List of note end times
-
+    
     Returns
     -------
     float
         Average note duration in seconds
+    
+    Note
+    ----
+    This feature reports duration in seconds, unlike quarter-note duration means
+    such as `mean_duration` and `mean_rhythmic_value`.
     """
     durations = [end - start for start, end in zip(starts, ends)]
     if not durations:
@@ -2989,8 +3335,9 @@ def variability_of_note_durations(starts: list[float], ends: list[float]) -> flo
 @rhythm
 @timing
 def modal_duration(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """The most common note duration in quarter notes.
-
+    """
+    The modal raw note duration in quarter notes.
+    
     Parameters
     ----------
     starts : list[float]
@@ -2999,11 +3346,17 @@ def modal_duration(starts: list[float], ends: list[float], tempo: float = 120.0)
         List of note end times (in seconds)
     tempo : float
         Tempo in BPM (beats per minute), default 120.0
-
+    
     Returns
     -------
     float
-        Most frequent note duration in quarter notes
+        Most frequent raw note duration in quarter notes
+    
+    Note
+    ----
+    This computes the mode of raw quarter-note durations, so differs
+    from jSymbolic `most_common_rhythmic_value`, which uses the modal
+    bin in a 12-bin rhythmic-value histogram.
     """
     durations = _get_durations(starts, ends, tempo)
     if not durations:
@@ -3035,9 +3388,10 @@ def duration_entropy(starts: list[float], ends: list[float], tempo: float = 120.
     return float(shannon_entropy(durations))
 
 @fantastic
+@jsymbolic
 @rhythm
 @timing
-def length(starts: list[float]) -> float:
+def length(starts: list[float]) -> int:
     """The total number of notes.
 
     Parameters
@@ -3047,10 +3401,13 @@ def length(starts: list[float]) -> float:
 
     Returns
     -------
-    float
+    int
         Total number of notes
+
     """
     return len(starts)
+
+total_number_of_notes = length
 
 @novel
 @rhythm
@@ -3092,11 +3449,10 @@ def global_duration(melody: Melody) -> float:
     float
         Total duration of the MIDI sequence in seconds
 
-    Note
-    -----
-    This feature is named 'Duration in Seconds' in JSymbolic.
     """
     return melody.total_duration
+
+duration_in_seconds = global_duration
 
 @fantastic
 @jsymbolic
@@ -3198,7 +3554,7 @@ def note_density_per_quarter_note(melody: Melody) -> float:
     float
         Average number of notes per quarter note duration
     """
-    if not melody.starts or len(melody.starts) < 2:
+    if not melody.starts:
         return 0.0
 
     quarter_note_duration = 60.0 / melody.tempo
@@ -3294,53 +3650,58 @@ def ioi(starts: list[float]) -> list[float]:
 @rhythm
 @interval
 def ioi_mean(starts: list[float]) -> float:
-    """The arithmetic mean of inter-onset intervals.
-
+    """
+    The arithmetic mean of inter-onset intervals.
+    
     Parameters
     ----------
     starts : list[float]
         List of note start times
-
+    
     Returns
     -------
     float
         Mean of inter-onset intervals
-
+    
     Note
     ----
-    This is called average_time_between_attacks in jSymbolic.
+    This is called `average_time_between_attacks` in jSymbolic.
     """
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
     if not intervals:
         return 0.0
     return float(np.mean(intervals))
 
+average_time_between_attacks = ioi_mean
+
 @idyom
 @jsymbolic
 @rhythm
 @interval
 def ioi_standard_deviation(starts: list[float]) -> float:
-    """The standard deviation of inter-onset intervals.
-
+    """
+    The standard deviation of inter-onset intervals.
+    
     Parameters
     ----------
     starts : list[float]
         List of note start times
-
+    
     Returns
     -------
     float
         Standard deviation of inter-onset intervals
-
+    
     Note
     ----
-    This is called variability_of_time_between_attacks in jSymbolic.
+    This is called `variability_of_time_between_attacks` in jSymbolic.
     """
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
     if not intervals:
         return 0.0
     return float(np.std(intervals, ddof=1))
 
+variability_of_time_between_attacks = ioi_standard_deviation
 
 @idyom
 @rhythm
@@ -3424,8 +3785,10 @@ def ioi_range(starts: list[float]) -> float:
     Returns
     -------
     float
-        Range of inter-onset intervals
+        Range of inter-onset intervals (0.0 if fewer than two onsets)
     """
+    if len(starts) < 2:
+        return 0.0
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
     return max(intervals) - min(intervals)
 
@@ -3433,7 +3796,7 @@ def ioi_range(starts: list[float]) -> float:
 @rhythm
 @interval
 def ioi_contour(starts: list[float]) -> list[int]:
-    """The sequence of IOI contour values (-1: shorter, 0: same, 1: longer).
+    """The sequence of IOI-ratio contour values (-1: shorter, 0: same, 1: longer).
 
     Parameters
     ----------
@@ -3444,6 +3807,11 @@ def ioi_contour(starts: list[float]) -> list[int]:
     -------
     list[int]
         Sequence of contour values
+
+    Note
+    ----
+    This contour is computed from ratios of consecutive IOIs, so it requires at
+    least three onsets.
     """
     if len(starts) < 3:
         return []
@@ -3689,6 +4057,12 @@ def prevalence_of_short_rhythmic_values(starts: list[float], ends: list[float], 
     -------
     float
         Proportion in [0, 1] for bins 0, 1 and 2 combined (0.0 if no durations)
+
+    Note
+    ----
+    Rhythmic-bin families overlap by construction in jSymbolic 
+    (e.g., short/medium/long), so these prevalence values are not mutually
+    exclusive and can sum to more than 1.0.
     """
     durations_qn = _get_durations(starts, ends, tempo)
     if not durations_qn:
@@ -3719,6 +4093,12 @@ def prevalence_of_medium_rhythmic_values(starts: list[float], ends: list[float],
     -------
     float
         Proportion in [0, 1] for bins 2..6 combined (0.0 if no durations)
+
+    Note
+    ----
+    Rhythmic-bin families overlap by construction in jSymbolic 
+    (e.g., short/medium/long), so these prevalence values are not mutually
+    exclusive and can sum to more than 1.0.
     """
     durations_qn = _get_durations(starts, ends, tempo)
     if not durations_qn:
@@ -3755,6 +4135,12 @@ def prevalence_of_long_rhythmic_values(starts: list[float], ends: list[float], t
     -------
     float
         Proportion in [0, 1] for bins 6 to 11 combined (0.0 if no durations)
+
+    Note
+    ----
+    Rhythmic-bin families overlap by construction in jSymbolic 
+    (e.g., short/medium/long), so these prevalence values are not mutually
+    exclusive and can sum to more than 1.0.
     """
     durations_qn = _get_durations(starts, ends, tempo)
     if not durations_qn:
@@ -3847,7 +4233,7 @@ def prevalence_of_dotted_notes(starts: list[float], ends: list[float], tempo: fl
 @rhythm
 @timing
 def shortest_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """The shortest rhythmic value (in quarter notes) among non-empty bins.
+    """The shortest quantized (non-zero) rhythmic-bin value (in quarter notes).
     
     Parameters
     ----------
@@ -3861,7 +4247,12 @@ def shortest_rhythmic_value(starts: list[float], ends: list[float], tempo: float
     Returns
     -------
     float
-        Shortest rhythmic value (in quarter notes) among non-empty bins (0.0 if empty)
+        Shortest quantized rhythmic-bin ideal value in quarter notes (0.0 if empty)
+
+    Note
+    ----
+    This returns the ideal value of the shortest occupied histogram bin, not
+    the raw minimum note duration.
     """
     durations_qn = _get_durations(starts, ends, tempo)
     if not durations_qn:
@@ -3880,7 +4271,7 @@ def shortest_rhythmic_value(starts: list[float], ends: list[float], tempo: float
 @rhythm
 @timing
 def longest_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """The longest rhythmic value (in quarter notes) among non-empty bins.
+    """The longest quantized rhythmic-bin value (in quarter notes).
     
     Parameters
     ----------
@@ -3894,7 +4285,12 @@ def longest_rhythmic_value(starts: list[float], ends: list[float], tempo: float 
     Returns
     -------
     float
-        Longest rhythmic value (in quarter notes) among non-empty bins (0.0 if empty)
+        Longest quantized rhythmic-bin ideal value in quarter notes (0.0 if empty)
+
+    Note
+    ----
+    This returns the ideal value of the longest occupied histogram bin, not the
+    raw maximum note duration.
     """
     durations_qn = _get_durations(starts, ends, tempo)
     if not durations_qn:
@@ -3913,7 +4309,7 @@ def longest_rhythmic_value(starts: list[float], ends: list[float], tempo: float 
 @rhythm
 @timing
 def mean_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """The mean rhythmic value (in quarter notes) using the normalized histogram, weighted by the frequency of the rhythmic value.
+    """The mean quantized rhythmic value in quarter notes.
     
     Parameters
     ----------
@@ -3927,7 +4323,11 @@ def mean_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 1
     Returns
     -------
     float
-        Weighted mean rhythmic value (in quarter notes) using normalized histogram (0.0 if empty)
+        Weighted mean rhythmic-bin ideal value in quarter notes (0.0 if empty)
+
+    Note
+    ----
+    Uses histogram-bin ideal values rather than raw note durations.
     """
     durations_qn = _get_durations(starts, ends, tempo)
     if not durations_qn:
@@ -3948,7 +4348,8 @@ def mean_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 1
 @rhythm
 @timing
 def most_common_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """The modal rhythmic value (in quarter notes).
+    """
+    The modal quantized rhythmic value (in quarter notes).
     
     Parameters
     ----------
@@ -3958,11 +4359,15 @@ def most_common_rhythmic_value(starts: list[float], ends: list[float], tempo: fl
         Note end times (seconds)
     tempo : float, optional
         Tempo in BPM (only used to convert seconds to quarter notes)
-
+    
     Returns
     -------
     float
-        Modal rhythmic value (in quarter notes) (0.0 if empty or all-zero)
+        Modal rhythmic-bin ideal value in quarter notes (0.0 if empty or all-zero)
+    
+    Note
+    ----
+    Uses rhythmic-value mode from a 12-bin histogram. Differs from `modal_duration`, which computes a raw-duration mode in quarter-note units.
     """
     durations_qn = _get_durations(starts, ends, tempo)
     if not durations_qn:
@@ -4347,6 +4752,12 @@ def complete_rests_fraction(
     -------
     float
         Fraction of total duration during which no pitched notes are sounding (0.0 if no durations)
+
+    Note
+    ----
+    This feature includes all complete silent runs (including those shorter than
+    0.1 quarter notes), whereas other complete-rest summary statistics apply a
+    minimum 0.1 quarter-note threshold.
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -4592,7 +5003,7 @@ def _compute_beat_histogram_tables(
     return tuple(tuple(row) for row in normal_table), tuple(tuple(row) for row in std_table)
 
 def _count_strong_pulses(table: list[list[float]], column_index: int = 0) -> float:
-    """Count peaks in BPM bins 40..200 whose thresholded value in the given column > 0.001."""
+    """Count peaks in BPM bins 40-200 whose thresholded value in the given column is non-zero."""
     if not table:
         return 0.0
     n = len(table)
@@ -4600,7 +5011,7 @@ def _count_strong_pulses(table: list[list[float]], column_index: int = 0) -> flo
     max_bpm = min(200, n - 1)
     count = 0
     for b in range(min_bpm, max_bpm + 1):
-        if table[b][column_index] > 0.001:
+        if table[b][column_index] > 0.0:
             count += 1
     return float(count)
 
@@ -4807,7 +5218,14 @@ def harmonicity_of_two_strongest_rhythmic_pulses(
     Returns
     -------
     float
-        Ratio of higher to lower bin index of the two strongest rhythmic pulses (0.0 if no durations)
+        Ratio of higher to lower bin index of the two strongest rhythmic pulses
+        (0.0 if no durations).
+
+    Note
+    ----
+    The first peak is selected from the raw beat histogram 
+    and the second peak is selected from the thresholded
+    peak table (column 1), excluding the first peak bin.
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -4880,7 +5298,14 @@ def harmonicity_of_two_strongest_rhythmic_pulses_tempo_standardized(
     Returns
     -------
     float
-        Ratio of higher to lower bin index of the two strongest rhythmic pulses (120-BPM standardized histogram) (0.0 if no durations)
+        Ratio of higher to lower bin index of the two strongest rhythmic pulses
+        (120-BPM standardized histogram) (0.0 if no durations).
+
+    Note
+    ----
+    The first peak is selected from the standardized histogram values 
+    from the standardized histogram values and the second peak is selected from the
+    standardized thresholded peak table (column 1), excluding the first peak bin.
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -5534,7 +5959,10 @@ def polyrhythms(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """The fraction of beat histogram peaks that are not integer multiples/factors of the highest peak.
+    """The fraction of strong beat-histogram peaks related to the strongest peak.
+
+    Among peaks at least 30% as tall as the maximum, returns the proportion whose bin is
+    an integer multiple/factor of the strongest (multipliers 1, 2, 3, 4, 6, 8; ±3 bins).
 
     Parameters
     ----------
@@ -5550,7 +5978,7 @@ def polyrhythms(
     Returns
     -------
     float
-        Fraction of beat histogram peaks that are not integer multiples/factors of the highest peak (0.0 if no durations)
+        ``hits / n_peaks``, or ``0.0`` if there are no qualifying peaks.
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -5596,7 +6024,10 @@ def polyrhythms_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """The fraction of beat histogram peaks that are not integer multiples/factors of the highest peak using tempo-standardized histogram.
+    """The fraction of strong beat-histogram peaks related to the strongest peak using the tempo-standardized beat histogram.
+
+    Among peaks at least 30% as tall as the maximum, returns the proportion whose bin is
+    an integer multiple/factor of the strongest (multipliers 1, 2, 3, 4, 6, 8; ±3 bins).
 
     Parameters
     ----------
@@ -5612,7 +6043,7 @@ def polyrhythms_tempo_standardized(
     Returns
     -------
     float
-        Fraction of beat histogram peaks that are not integer multiples/factors of the highest peak using tempo-standardized histogram (0.0 if no durations)
+        ``hits / n_peaks``, or ``0.0`` if there are no qualifying peaks.
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -5657,7 +6088,7 @@ def number_of_strong_rhythmic_pulses(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """The count of BPM bins with pulses greater than 0.001.
+    """The count of BPM bins with strong rhythmic pulses (> 0.1 in the underlying beat histogram).
 
     Parameters
     ----------
@@ -5673,7 +6104,8 @@ def number_of_strong_rhythmic_pulses(
     Returns
     -------
     float
-        Count of BPM bins with sufficiently strong pulses (> 0.001) (0.0 if no durations)
+        Count of BPM bins 40-200 with a thresholded strong-pulse value (> 0.1 in the
+        underlying beat histogram), or 0.0 if no durations.
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -5691,7 +6123,7 @@ def number_of_strong_rhythmic_pulses_tempo_standardized(
     tempo: float = 120.0,
     ppqn: int = 480,
 ) -> float:
-    """The count of BPM bins with pulses greater than 0.001 using the tempo-standardized beat histogram.
+    """The count of BPM bins with strong pulses (> 0.1 in the underlying standardized beat histogram).
 
     Parameters
     ----------
@@ -5707,7 +6139,8 @@ def number_of_strong_rhythmic_pulses_tempo_standardized(
     Returns
     -------
     float
-        Count of BPM bins with sufficiently strong pulses (> 0.001) (0.0 if no durations)
+        Count of BPM bins 40-200 with a thresholded strong-pulse value (> 0.1 in the
+        underlying standardized histogram), or 0.0 if no durations.
     """
     _, std_table = _compute_beat_histogram_tables(tuple(starts), tuple(ends), tempo, ppqn)
     return _count_strong_pulses(list(std_table), column_index=0)
@@ -5862,13 +6295,18 @@ def minimum_note_duration(starts: list[float], ends: list[float]) -> float:
     ----------
     starts : list[float]
         List of note start times
+    ends : list[float]
+        List of note end times
 
     Returns
     -------
     float
-        Minimum note duration in seconds
+        Minimum note duration in seconds (0.0 if there are no notes)
     """
-    return min([end - start for start, end in zip(starts, ends)])
+    if not starts or not ends:
+        return 0.0
+    durations = [end - start for start, end in zip(starts, ends)]
+    return float(min(durations)) if durations else 0.0
 
 @jsymbolic
 @rhythm
@@ -5903,6 +6341,8 @@ def equal_duration_transitions(starts: list[float], ends: list[float], tempo: fl
         List of note start times  
     ends : list[float]
         List of note end times
+    tempo : float, optional
+        Included for API consistency; not used in this calculation.
         
     Returns
     -------
@@ -5934,6 +6374,8 @@ def half_duration_transitions(starts: list[float], ends: list[float], tempo: flo
         List of note start times
     ends : list[float]
         List of note end times
+    tempo : float, optional
+        Included for API consistency; not used in this calculation.
 
     Returns
     -------
@@ -5966,6 +6408,8 @@ def dotted_duration_transitions(starts: list[float], ends: list[float], tempo: f
         List of note start times
     ends : list[float]
         List of note end times
+    tempo : float, optional
+        Included for API consistency; not used in this calculation.
         
     Returns
     -------
@@ -5989,24 +6433,6 @@ def dotted_duration_transitions(starts: list[float], ends: list[float], tempo: f
 @jsymbolic
 @rhythm
 @timing
-def total_number_of_notes(starts: list[float]) -> int:
-    """The total number of notes.
-    
-    Parameters
-    ----------
-    starts : list[float]
-        List of note start times
-        
-    Returns
-    -------
-    int
-        Total number of notes
-    """
-    return len(starts)
-
-@jsymbolic
-@rhythm
-@timing
 def amount_of_staccato(starts: list[float], ends: list[float]) -> float:
     """The proportion of notes with a duration shorter than 0.1 seconds.
 
@@ -6020,7 +6446,12 @@ def amount_of_staccato(starts: list[float], ends: list[float]) -> float:
     Returns
     -------
     float
-        Amount of staccato
+        Fraction of notes shorter than 0.1 seconds
+
+    Note
+    ----
+    Though this feature is named `Amount Of Staccato`, it is a
+    fixed-duration cutoff statistic rather than symbolic articulation parsing.
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -6029,6 +6460,10 @@ def amount_of_staccato(starts: list[float], ends: list[float]) -> float:
         return 0.0
     short_count = sum(1 for d in durations_seconds if d < 0.1)
     return float(short_count / len(durations_seconds))
+
+
+# readable alias
+short_note_fraction = amount_of_staccato
 
 @midi_toolbox
 @rhythm
@@ -6181,93 +6616,65 @@ def npvi(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
 @midi_toolbox
 @rhythm
 @timing
-def onset_autocorrelation(starts: list[float], ends: list[float], divisions_per_quarter: int = 4, max_lag_quarters: int = 8) -> list[float]:
+def onset_autocorrelation(
+    starts: list[float],
+    ends: list[float],
+    divisions_per_quarter: int = 4,
+    max_lag_quarters: int = 8,
+    tempo: float = 120.0,
+) -> list[float]:
     """The autocorrelation function of onset times weighted by duration accents.
     This is calculated by weighting the onset times by the duration accents,
     as defined by Parncutt (1994).
-    
+
+    Onsets are converted to quarter-note beats using
+    tempo before grid quantization.
+
     Parameters
     ----------
     starts : list[float]
-        List of note start times in seconds
+        Note onset times in seconds
     ends : list[float]
-        List of note end times in seconds
+        Note offset times in seconds
     divisions_per_quarter : int, optional
-        Divisions per quarter note, by default 4
+        Grid divisions per quarter note (default 4)
     max_lag_quarters : int, optional
-        Maximum lag in quarter notes, by default 8
-        
+        Maximum lag in quarter notes (default 8)
+    tempo : float, optional
+        Tempo in BPM (default 120)
+
     Returns
     -------
     list[float]
-        Autocorrelation values from lag 0 to max_lag_quarters quarter notes
+        Normalized autocorrelation from lag 0 through ``max_lag_quarters`` quarters
+
+    Citation
+    --------
+    Parncutt (1994)
     """
-    expected_length = max_lag_quarters * divisions_per_quarter + 1
-    
-    if not starts or not ends or len(starts) != len(ends):
-        return [0.0] * expected_length
-    
-    if len(starts) == 0:
-        return [0.0] * expected_length
-    
-    # Get duration accents using Parncutt's model
-    duration_accents = duration_accent(starts, ends)
-    if not duration_accents:
-        return [0.0] * expected_length
-    
-    # Create onset time grid
-    max_onset_time = max(starts) if starts else 0
-    grid_length = divisions_per_quarter * max(2 * max_lag_quarters, int(np.ceil(max_onset_time)) + 1)
-    onset_grid = np.zeros(grid_length)
-    
-    # Place accents at quantized onset positions
-    for note_idx, onset_time in enumerate(starts):
-        if note_idx < len(duration_accents):
-            # Quantize onset time to grid divisions
-            grid_index = int(np.round(onset_time * divisions_per_quarter)) % len(onset_grid)
-            onset_grid[grid_index] += duration_accents[note_idx]
-    
-    # autocorrelation using scipy's cross-correlation function
-    from scipy.signal import correlate
-    
-    # Compute autocorrelation
-    full_autocorr = correlate(onset_grid, onset_grid, mode='full')
-    
-    # Extract the positive lags up to max_lag_quarters
-    center_index = len(full_autocorr) // 2
-    autocorr_result = full_autocorr[center_index:center_index + expected_length]
-    
-    # Normalize by the zero-lag value
-    if autocorr_result[0] != 0:
-        autocorr_result = autocorr_result / autocorr_result[0]
-    else:
-        autocorr_result = np.zeros_like(autocorr_result)
-    
-    return autocorr_result.tolist()
+    return compute_onset_autocorrelation(
+        starts,
+        ends,
+        divisions_per_quarter=divisions_per_quarter,
+        max_lag_quarters=max_lag_quarters,
+        tempo=tempo,
+    )
+
 
 @midi_toolbox
 @rhythm
 @timing
-def onset_autocorr_peak(starts: list[float], ends: list[float], divisions_per_quarter: int = 4, max_lag_quarters: int = 8) -> float:
-    """The maximum onset autocorrelation value (excluding lag 0).
-    
-    Parameters
-    ----------
-    starts : list[float]
-        List of note start times in seconds
-    ends : list[float]
-        List of note end times in seconds
-    divisions_per_quarter : int, optional
-        Divisions per quarter note, by default 4
-    max_lag_quarters : int, optional
-        Maximum lag in quarter notes, by default 8
-        
-    Returns
-    -------
-    float
-        Maximum autocorrelation value excluding lag 0
-    """
-    autocorr_values = onset_autocorrelation(starts, ends, divisions_per_quarter, max_lag_quarters)
+def onset_autocorr_peak(
+    starts: list[float],
+    ends: list[float],
+    divisions_per_quarter: int = 4,
+    max_lag_quarters: int = 8,
+    tempo: float = 120.0,
+) -> float:
+    """Maximum onset autocorrelation excluding lag 0."""
+    autocorr_values = onset_autocorrelation(
+        starts, ends, divisions_per_quarter, max_lag_quarters, tempo
+    )
     if len(autocorr_values) <= 1:
         return 0.0
     return float(max(autocorr_values[1:]))
@@ -6320,15 +6727,83 @@ def infer_key_from_pitches(
     
     return key_name, mode
 
-@novel
+
+def _normalize_key_root(root: str) -> str:
+    """Normalize key root names to a canonical display form."""
+    if not root:
+        return root
+    root = root.strip()
+    if not root:
+        return root
+    return root[0].upper() + root[1:]
+
+
+def _canonical_key_string(key_name: Optional[str], mode: Optional[str]) -> Optional[str]:
+    """Return canonical key strings like 'C major' or 'F# minor'."""
+    if not key_name or not mode:
+        return None
+    mode_normalized = mode.strip().lower()
+    if mode_normalized not in {"major", "minor"}:
+        return None
+    root = _normalize_key_root(key_name)
+    return f"{root} {mode_normalized}"
+
+
+def _resolve_key_for_melody(
+    melody: Melody,
+    key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary",
+    key_finding_algorithm: Literal["krumhansl_schmuckler"] = "krumhansl_schmuckler",
+) -> Optional[str]:
+    """Resolve a melody key using the requested key-estimation policy."""
+    inferred_key = None
+    inferred_key_name, inferred_mode = infer_key_from_pitches(
+        melody.pitches, algorithm=key_finding_algorithm
+    )
+    inferred_key = _canonical_key_string(inferred_key_name, inferred_mode)
+
+    key_from_melody = None
+    if melody.has_key_signature:
+        key_sig = melody.key_signature
+        if key_sig and len(key_sig) >= 2:
+            key_root = key_sig[0]
+            mode = key_sig[1]
+            if isinstance(key_root, str) and key_root.endswith("m") and mode == "minor":
+                key_root = key_root[:-1]
+            key_from_melody = _canonical_key_string(key_root, mode)
+
+    if key_estimation == "always_infer":
+        return inferred_key
+
+    if key_estimation == "always_read_from_file":
+        if key_from_melody is None:
+            raise ValueError(f"No key signature found in MIDI file: {melody.id}")
+        return key_from_melody
+
+    # key_estimation == "infer_if_necessary"
+    return key_from_melody if key_from_melody is not None else inferred_key
+
+
+def _tonality_correlations_for_key(correlations: list[tuple[str, float]], key_string: str) -> list[tuple[str, float]]:
+    """Return correlations reordered so the requested key is first."""
+    normalized_target = key_string.lower()
+    for index, (candidate_key, _) in enumerate(correlations):
+        if candidate_key.lower() == normalized_target:
+            if index == 0:
+                return correlations
+            return [correlations[index], *correlations[:index], *correlations[index + 1 :]]
+    # Fallback keeps downstream scalar helpers deterministic for chosen key.
+    return [(key_string, 1.0), *correlations]
+
+@midi_toolbox
 @tonality
 @pitch
 def key(
     melody: Melody,
-    key_estimation: str = "infer_if_necessary",
+    key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary",
     key_finding_algorithm: Literal["krumhansl_schmuckler"] = "krumhansl_schmuckler"
 ) -> str:
-    """The key of the melody, either read from the MIDI file or estimated using
+    """
+    The key of the melody, either read from the MIDI file or estimated using
     the specified key finding algorithm, depending on the key estimation strategy.
     
     Parameters
@@ -6349,36 +6824,19 @@ def key(
     Citation
     ----------
     Krumhansl (1990)
-    """
-    # Infer key using specified algorithm
-    key_name, mode = infer_key_from_pitches(melody.pitches, algorithm=key_finding_algorithm)
-    inferred_key = f"{key_name} {mode}" if key_name and mode else None
     
-    # Determine which key to use based on strategy
-    if key_estimation == "always_infer":
-        # Always use inferred key
-        return inferred_key if inferred_key else "unknown"
-    else:
-        # Try to read from MIDI file
-        key_from_melody = None
-        if melody.has_key_signature:
-            key_sig = melody.key_signature
-            if key_sig:
-                key_from_melody = f"{key_sig[0]} {key_sig[1]}"
-        
-        if key_estimation == "always_read_from_file":
-            if key_from_melody is None:
-                raise ValueError(f"No key signature found in MIDI file: {melody.id}")
-            return key_from_melody
-        else:
-            # key_estimation == "infer_if_necessary"
-            if key_from_melody is not None:
-                # Use key from MIDI
-                return key_from_melody
-            else:
-                # Infer if no MIDI key available
-                return inferred_key if inferred_key else "unknown"
-
+    Note
+    -----
+    This feature is named `keyname` in MIDI Toolbox.
+    """
+    resolved_key = _resolve_key_for_melody(
+        melody,
+        key_estimation=key_estimation,
+        key_finding_algorithm=key_finding_algorithm,
+    )
+    return resolved_key if resolved_key else "unknown"
+ 
+keyname = key
 
 @fantastic
 @tonality
@@ -6403,7 +6861,9 @@ def tonalness(pitches: list[int]) -> float:
     """
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlation = compute_tonality_vector(pitch_classes)
-    return correlation[0][1]
+    if not correlation:
+        return 0.0
+    return abs(correlation[0][1])
 
 @fantastic
 @tonality
@@ -6425,21 +6885,21 @@ def tonal_clarity(pitches: list[int]) -> float:
     -------
     float
         Ratio between highest and second highest key correlation values.
-        Returns 1.0 if fewer than 2 correlation values.
+        Returns ``0.0`` when top/second correlations are unavailable or near-zero.
     """
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
 
     if len(correlations) < 2:
-        return -1.0
+        return 0.0
 
     # Get top 2 correlation values
     top_corr = abs(correlations[0][1])
     second_corr = abs(correlations[1][1])
 
     # Avoid division by zero
-    if second_corr == 0:
-        return 1.0
+    if top_corr <= 0 or second_corr <= 0:
+        return 0.0
 
     return top_corr / second_corr
 
@@ -6458,21 +6918,21 @@ def tonal_spike(pitches: list[int]) -> float:
     -------
     float
         Ratio between highest correlation value and sum of all others.
-        Returns 1.0 if fewer than 2 correlation values or sum is zero.
+        Returns ``0.0`` when top/other correlations are unavailable or near-zero.
     """
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
 
     if len(correlations) < 2:
-        return -1.0
+        return 0.0
 
     # Get highest correlation and sum of rest
     top_corr = abs(correlations[0][1])
     other_sum = sum(abs(corr[1]) for corr in correlations[1:])
 
     # Avoid division by zero
-    if other_sum == 0:
-        return 1.0
+    if top_corr <= 0 or other_sum <= 0:
+        return 0.0
 
     return top_corr / other_sum
 
@@ -6480,7 +6940,8 @@ def tonal_spike(pitches: list[int]) -> float:
 @complexity
 @pitch
 def tonal_entropy(pitches: list[int]) -> float:
-    """The zeroth-order base-2 entropy of all key correlations.
+    """Zeroth-order base-2 entropy of the 24-key Krumhansl-Schmuckler key correlation distribution. 
+    Normalizes the correlation values to a probability mass over all 24 major/minor keys, then computes Shannon entropy.
 
     Parameters
     ----------
@@ -6490,19 +6951,12 @@ def tonal_entropy(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Entropy of the tonality vector correlation distribution
+        Entropy in bits; ``0.0`` if all correlations are zero.
     """
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
-    if not correlations:
-        return -1.0
-
-    # Calculate entropy of correlation distribution
-    # Extract just the correlation values and normalize them to positive values
-    corr_values = [abs(corr[1]) for corr in correlations]
-
-    # Calculate entropy of the correlation distribution
-    return shannon_entropy(corr_values)
+    weights = [abs(value) for _, value in correlations]
+    return float(distribution_entropy(weights))
 
 
 def _get_key_distances() -> dict[str, int]:
@@ -6547,8 +7001,13 @@ def _get_key_distances() -> dict[str, int]:
 @idyom
 @tonality
 @pitch
-def referent(melody: Melody) -> int:
-    """Calculate the referent (root note) of a melody.
+def referent(
+    melody: Melody,
+    key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary",
+    key_finding_algorithm: Literal["krumhansl_schmuckler"] = "krumhansl_schmuckler",
+) -> int:
+    """
+    Calculate the `referent` (pitch-class root) of a melody.
     
     Parameters
     ----------
@@ -6558,18 +7017,19 @@ def referent(melody: Melody) -> int:
     Returns
     -------
     int
-        The referent (root note) of the strongest key
+        Pitch class in semitones above C for the resolved key root;
+        returns -1 when no key can be resolved.
     """
-    pitches = melody.pitches
-    pitch_classes = [pitch % 12 for pitch in pitches]
-    correlations = compute_tonality_vector(pitch_classes)
-    
-    if correlations:
-        key_name = correlations[0][0].split()[0]
-        key_distances = _get_key_distances()
-        return key_distances[key_name]
-    else:
+    resolved_key = _resolve_key_for_melody(
+        melody,
+        key_estimation=key_estimation,
+        key_finding_algorithm=key_finding_algorithm,
+    )
+    if not resolved_key:
         return -1
+    key_name = resolved_key.split()[0]
+    key_distances = _get_key_distances()
+    return key_distances.get(key_name, -1)
 
 @partitura
 @tonality
@@ -6583,7 +7043,7 @@ def tonal_tension(
     alpha: float = ALPHA,
     beta: float = BETA,
     tonality_vector: Optional[list] = None,
-    key_estimation: str = "infer_if_necessary",
+    key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary",
     key_finding_algorithm: Literal["krumhansl_schmuckler"] = "krumhansl_schmuckler"
 ) -> dict:
     """Computes tension ribbons using the tonal tension algorithm. 
@@ -6610,7 +7070,7 @@ def tonal_tension(
         Preference for iv vs IV in minor key (0-1). Default is 0.75.
     tonality_vector : list, optional
         Pre-computed tonality vector (list of (key_name, correlation) tuples). Default is None.
-    key_estimation : str, optional
+    key_estimation : Literal["always_read_from_file", "infer_if_necessary", "always_infer"], optional
         Key estimation strategy: "always_read_from_file", "infer_if_necessary", or "always_infer".
         Default is "infer_if_necessary".
     key_finding_algorithm : Literal["krumhansl_schmuckler"], optional
@@ -6619,8 +7079,9 @@ def tonal_tension(
     Returns
     -------
     dict
-        Dictionary containing the tonal tension features: `cloud_diameter`, 
-        `cloud_momentum`, `tensile_strain`, ordered by `onset`.
+        Dictionary containing tonal tension values keyed by
+        `cloud_diameter`, `cloud_momentum`, and `tensile_strain`,
+        along with onset-aligned index fields from Partitura.
 
     Citation
     --------
@@ -7100,8 +7561,7 @@ def temperley_likelihood(pitches: list[int]) -> float:
 @tonality
 @pitch
 def tonalness_histogram(pitches: list[int]) -> dict:
-    """
-    A histogram of Krumhansl-Schmuckler correlation values.
+    """Equal-width histogram of all 24 Krumhansl-Schmuckler key correlations.
 
     Parameters
     ----------
@@ -7111,14 +7571,15 @@ def tonalness_histogram(pitches: list[int]) -> dict:
     Returns
     -------
     dict
-        Histogram of KS correlation values
+        Bin-range strings mapped to counts (24 correlations, 24 bins).
 
     Citation
     --------
     Krumhansl (1990)
     """
-    p = [p % 12 for p in pitches]
-    return histogram_bins(compute_tonality_vector(p)[0][1], 24)
+    pitch_classes = [p % 12 for p in pitches]
+    correlation_values = [value for _, value in compute_tonality_vector(pitch_classes)]
+    return histogram_bins(correlation_values, 24)
 
 @idyom
 @midi_toolbox
@@ -7407,8 +7868,9 @@ def stepwise_motion(pitches: list[int]) -> float:
 @midi_toolbox
 @pitch
 @complexity
-def gradus(pitches: list[int]) -> int:
-    """The degree of melodiousness based on Euler's gradus suavitatis.
+def gradus(pitches: list[int]) -> float:
+    """
+    The degree of melodiousness based on Euler's `gradus` suavitatis.
     
     Parameters
     ----------
@@ -7418,15 +7880,15 @@ def gradus(pitches: list[int]) -> int:
     Citation
     --------
     Euler (1739)
-
+    
     Returns
     -------
-    int
+    float
         Mean gradus suavitatis value across all intervals, where lower values 
         indicate higher melodiousness.
     """
     if len(pitches) < 2:
-        return 0
+        return 0.0
     
     # Calculate intervals and collapse to within one octave (interval classes)
     intervals = [abs(pitches[i+1] - pitches[i]) for i in range(len(pitches) - 1)]
@@ -7470,13 +7932,14 @@ def gradus(pitches: list[int]) -> int:
             
         gradus_values.append(float(gradus))
     
-    return int(np.mean(gradus_values)) if gradus_values else 0
+    return float(np.mean(gradus_values)) if gradus_values else 0.0
 
 @midi_toolbox
 @pitch
 @expectation
 def mobility(pitches: list[int]) -> list[float]:
-    """The melodic mobility for each note based on von Hippel (2000).
+    """
+    The melodic `mobility` for each note based on von Hippel (2000).
     Mobility describes why melodies change direction after large skips by 
     observing that they would otherwise run out of the comfortable melodic range.
     It uses lag-one autocorrelation between successive pitch heights.
@@ -7485,73 +7948,64 @@ def mobility(pitches: list[int]) -> list[float]:
     ----------
     pitches : list[int]
         List of MIDI pitch values
-        
+    
     Returns
     -------
     list[float]
-        Absolute mobility value for each note in the sequence
-
+        One mobility value per input pitch (length matches ``pitches``).
+    
     Citation
     --------
     von Hippel (2000)
     """
-    if len(pitches) < 2:
-        return [0.0] if len(pitches) == 1 else []
-    
-    mobility_values = [0.0]  # First note gets 0
-    
-    for i in range(2, len(pitches) + 1):  # Start from note 2 (index 1)
-        if i == 2:
-            mobility_values.append(0.0)  # Second note gets 0
-            continue
-            
-        # Calculate mean of previous pitches (notes 1 to i-1)
-        mean_prev = np.mean(pitches[:i-1])
-        
-        # Calculate deviations from mean for correlation
-        p = [pitches[j] - mean_prev for j in range(i-1)]
-        
-        if len(p) < 2:
-            mobility_values.append(0.0)
-            continue
-            
-        # Create lagged series for correlation
-        p_current = p[:-1]  # p[0] to p[i-3]
-        p_lagged = p[1:]    # p[1] to p[i-2]
-        
-        if len(p_current) < 2 or len(p_lagged) < 2:
-            mobility_values.append(0.0)
-            continue
-            
-        # Calculate correlation coefficient
-        try:
-            # Check for variance before computing correlation to avoid zero division errors
-            if np.var(p_current) == 0 or np.var(p_lagged) == 0:
-                correlation = 0.0
-            else:
-                correlation_matrix = np.corrcoef(p_current, p_lagged)
-                correlation = correlation_matrix[0, 1]
-                
-                # Handle NaN correlation (when no variance)
-                if np.isnan(correlation):
-                    correlation = 0.0
-                
-        except (ValueError, np.linalg.LinAlgError):
-            correlation = 0.0
-        
-        # Calculate mobility for current note
-        # mob(i) * (pitch(i) - mean_prev)
-        current_deviation = pitches[i-2] - mean_prev  # Previous note deviation
-        mob_value = correlation * current_deviation
-        mobility_values.append(abs(mob_value))
-    
-    return [float(mob_value) for mob_value in mobility_values]
+    if not pitches:
+        return []
+    if len(pitches) == 1:
+        return [0.0]
+
+    p = np.asarray(pitches, dtype=float)
+    n = len(p)
+
+    # 1-based MATLAB arrays; index 0 unused
+    p_hist = np.zeros(n + 1)
+    p2 = np.zeros(n + 1)
+    mob = np.zeros(n + 1)
+    y = np.zeros(n - 1)
+
+    for i in range(2, n + 1):
+        m_im1 = float(np.mean(p[: i - 1]))
+        p_hist[i - 1] = p[i - 2] - m_im1
+        p2[i] = p[i - 2] - m_im1
+
+        z = np.concatenate([p_hist[1:i], [p_hist[i - 1]]])
+        len_z = len(z)
+        p2_row = p2[1 : len_z + 1]
+        p3 = np.column_stack([p2_row, z])
+
+        if p3.shape[0] >= 2 and np.std(p3[:, 0]) > 0 and np.std(p3[:, 1]) > 0:
+            corr = np.corrcoef(p3, rowvar=False)
+            mob[i] = float(corr[0, 1]) if not np.isnan(corr[0, 1]) else 0.0
+        else:
+            mob[i] = 0.0
+
+        y[i - 2] = mob[i - 1] * (p[i - 1] - m_im1)
+
+    if len(y) >= 2:
+        y[1] = 0.0
+    elif len(y) == 1:
+        y = np.array([y[0], 0.0])
+
+    y = np.abs(np.concatenate([[0.0], y]))
+    if len(y) > n:
+        y = y[:n]
+    return [float(v) for v in y]
 
 @midi_toolbox
 @pitch
 @expectation
 def mean_mobility(pitches: list[int]) -> float:
-    """The arithmetic mean of the mobility values across all notes.
+    """
+    The arithmetic mean of the `mobility` values across all notes.
     
     Parameters
     ----------
@@ -7573,7 +8027,8 @@ def mean_mobility(pitches: list[int]) -> float:
 @pitch
 @expectation
 def mobility_std(pitches: list[int]) -> float:
-    """The standard deviation of the mobility values across all notes.
+    """
+    The standard deviation of the `mobility` values across all notes.
     
     Parameters
     ----------
@@ -7637,6 +8092,12 @@ def melodic_attraction(pitches: list[int]) -> list[float]:
     -------
     list[float]
         Melodic attraction values for each note (0-1 scale, higher = more attraction)
+
+    Notes
+    -----
+    Uses anchoring weights, directed motion, and scaled output. We
+    currently validate it via structural and range tests rather than a full
+    one-to-one parity fixture set from MIDI Toolbox example corpora.
     """
     if len(pitches) < 2:
         return [0.0] if len(pitches) == 1 else []
@@ -7673,7 +8134,7 @@ def melodic_attraction(pitches: list[int]) -> list[float]:
     for i in range(1, len(directions)):
         if directions[i] == 0:
             motion.append(0)
-        elif i == 0 or directions[i-1] == 0:  # First direction or after repetition
+        elif directions[i-1] == 0:  # After a repetition, treat as continuation onset
             motion.append(1)
         elif directions[i] == directions[i-1]:  # Continuation
             motion.append(1)
@@ -8203,140 +8664,313 @@ def compltrans(melody: Melody) -> float:
     
     return float(simonton_originality_score)
 
-@midi_toolbox
-@pitch
-@rhythm
-@both
-@complexity
-def complebm(melody: Melody, method: str = 'o') -> float:
-    """Expectancy-based melodic complexity, according to Eerola & North (2000).
-    Calculated using an expectancy-based model that considers pitch patterns,
-    rhythmic features, or both. The complexity score is normalized against the Essen folksong
-    collection, where a score of 5 represents average complexity (standard deviation = 1).
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-    method : str, optional
-        Complexity method: 'p' = pitch only, 'r' = rhythm only, 'o' = optimal combination
-        
-    Returns
-    -------
-    float
-        Complexity value calibrated to Essen collection (higher = more complex)
+def _complebm(melody: Melody, method: str = 'o') -> float:
+    """Expectancy-based melodic complexity (MIDI Toolbox ``complebm.m``).
+
+    Essen-calibrated: mean 5, SD 1. Methods ``p`` (pitch), ``r`` (rhythm), ``o`` (optimal).
 
     Citation
     --------
     Eerola & North (2000)
     """
     if not melody.pitches or len(melody.pitches) < 2:
-        return 5.0  # Return neutral complexity for edge cases
+        return 5.0
 
     method = method.lower()
+    if method not in ('p', 'r', 'o'):
+        raise ValueError("Method must be 'p' (pitch), 'r' (rhythm), or 'o' (optimal)")
+
+    pitches = melody.pitches
+    starts = melody.starts
+    ends = melody.ends
+    tempo = melody.tempo
+
+    pcd = _pcdist1_vector(pitches, starts, ends)
+    ivd = _ivdist1_vector(pitches, starts, ends)
+    ton = _tonality_midi_toolbox(pitches, starts, ends)
+    dur_acc = duration_accent(starts, ends)
+    n = min(len(ton), len(dur_acc))
+    ton_component = float(np.mean([ton[i] * dur_acc[i] for i in range(n)])) * -1.0 if n else 0.0
+
+    intervals = np.diff(np.asarray(pitches, dtype=float))
+    aveint = float(np.mean(intervals)) if len(intervals) else 0.0
 
     if method == 'p':
         constant = -0.2407
+        y = (
+            constant
+            + aveint * 0.3
+            + midi_toolbox_entropy(pcd) * 1.0
+            + midi_toolbox_entropy(ivd) * 0.8
+            + ton_component
+        ) / 0.9040 + 5.0
+        return float(y)
 
-        melodic_intervals = pitch_interval(melody.pitches)
-        average_interval_component = float(np.mean(melodic_intervals)) * 0.3 if melodic_intervals else 0.0
+    dud = midi_toolbox_entropy(_durdist1_vector(starts, ends, tempo))
+    noteden = _notedensity_seconds(starts)
+    du_sec = [float(e) - float(s) for s, e in zip(starts, ends) if float(e) > float(s)]
+    if len(du_sec) > 1:
+        rhyvar = float(np.std(np.log(du_sec), ddof=1))
+    elif len(du_sec) == 1:
+        rhyvar = 0.0
+    else:
+        rhyvar = 0.0
 
-        pitch_class_distribution = pcdist1(melody.pitches, melody.starts, melody.ends)
-        pitch_class_entropy_component = shannon_entropy(list(pitch_class_distribution.values())) * 1.0 if pitch_class_distribution else 0.0
+    metach = _meter_accent_mean(melody)
 
-        interval_distribution = ivdist1(melody.pitches, melody.starts, melody.ends, melody.tempo)
-        interval_entropy_component = shannon_entropy(list(interval_distribution.values())) * 0.8 if interval_distribution else 0.0
-
-        melodic_attraction_values = melodic_attraction(melody.pitches)
-        duration_accent_values = duration_accent(melody.starts, melody.ends)
-
-        # Align arrays to same length
-        min_length = min(len(melodic_attraction_values), len(duration_accent_values))
-        if min_length > 0:
-            tonality_duration_products = [a * d for a, d in zip(melodic_attraction_values[:min_length], duration_accent_values[:min_length])]
-            tonality_component = float(np.mean(tonality_duration_products)) * -1.0
-        else:
-            tonality_component = 0.0
-
-        # Combine components using Essen-calibrated formula
-        pitch_complexity = (constant + average_interval_component + pitch_class_entropy_component + interval_entropy_component + tonality_component) / 0.9040
-        pitch_complexity = pitch_complexity + 5
-
-    elif method == 'r':
+    if method == 'r':
         constant = -0.7841
+        y = (constant + dud * 0.7 + noteden * 0.2 + rhyvar * 0.5 + metach * 0.5) / 0.3637 + 5.0
+        return float(y)
 
-        note_durations = _get_durations(melody.starts, melody.ends)
-        duration_entropy_component = shannon_entropy(note_durations) * 0.7 if note_durations else 0.0
-
-        note_density_component = note_density(melody) * 0.2
-
-        positive_durations = [d for d in note_durations if d > 0]
-        if positive_durations:
-            log_durations = [math.log(d) for d in positive_durations]
-            rhythmic_variability_component = float(np.std(log_durations, ddof=1)) * 0.5
-        else:
-            rhythmic_variability_component = 0.0
-
-        metric_accent_features = get_metric_accent_features(melody)
-        meter_accent_component = float(metric_accent_features.get("meter_accent", 0)) * 0.5
-
-        # Combine components using Essen-calibrated formula
-        rhythm_complexity = (constant + duration_entropy_component + note_density_component + rhythmic_variability_component + meter_accent_component) / 0.3637
-        rhythm_complexity = rhythm_complexity + 5
-
-    elif method == 'o':
-        constant = -1.9025
-
-        melodic_intervals = pitch_interval(melody.pitches)
-        average_interval_component = float(np.mean(melodic_intervals)) * 0.2 if melodic_intervals else 0.0
-
-        pitch_class_distribution = pcdist1(melody.pitches, melody.starts, melody.ends)
-        pitch_class_entropy_component = shannon_entropy(list(pitch_class_distribution.values())) * 1.5 if pitch_class_distribution else 0.0
-
-        interval_distribution = ivdist1(melody.pitches, melody.starts, melody.ends, melody.tempo)
-        interval_entropy_component = shannon_entropy(list(interval_distribution.values())) * 1.3 if interval_distribution else 0.0
-
-        melodic_attraction_values = melodic_attraction(melody.pitches)
-        duration_accent_values = duration_accent(melody.starts, melody.ends)
-
-        min_length = min(len(melodic_attraction_values), len(duration_accent_values))
-        if min_length > 0:
-            tonality_duration_products = [a * d for a, d in zip(melodic_attraction_values[:min_length], duration_accent_values[:min_length])]
-            tonality_component = float(np.mean(tonality_duration_products)) * -1.0
-        else:
-            tonality_component = 0.0
-
-        note_durations = _get_durations(melody.starts, melody.ends)
-        duration_entropy_component = shannon_entropy(note_durations) * 0.5 if note_durations else 0.0
-
-        note_density_component = note_density(melody) * 0.4
-
-        positive_durations = [d for d in note_durations if d > 0]
-        if positive_durations:
-            log_durations = [math.log(d) for d in positive_durations]
-            rhythmic_variability_component = float(np.std(log_durations, ddof=1)) * 0.9
-        else:
-            rhythmic_variability_component = 0.0
-
-        metric_accent_features = get_metric_accent_features(melody)
-        meter_accent_component = float(metric_accent_features.get("meter_accent", 0)) * 0.8
-
-        # Combine all components using Essen-calibrated formula
-        optimal_complexity = (constant + average_interval_component + pitch_class_entropy_component + interval_entropy_component + tonality_component + duration_entropy_component + note_density_component + rhythmic_variability_component + meter_accent_component) / 1.5034
-        optimal_complexity = optimal_complexity + 5
-
-    else:
-        raise ValueError("Method must be 'p' (pitch), 'r' (rhythm), or 'o' (optimal)")
-    
-    if method == 'p':
-        return float(pitch_complexity)
-    elif method == 'r':
-        return float(rhythm_complexity)
-    else:
-        return float(optimal_complexity)
+    constant = -1.9025
+    y = (
+        constant
+        + aveint * 0.2
+        + midi_toolbox_entropy(ivd) * 1.5
+        + midi_toolbox_entropy(ivd) * 1.3
+        + ton_component
+        + dud * 0.5
+        + noteden * 0.4
+        + rhyvar * 0.9
+        + metach * 0.8
+    ) / 1.5034 + 5.0
+    return float(y)
 
 
-def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_order: int = 6) -> Dict:
+@midi_toolbox
+@pitch
+@complexity
+def complebm_pitch(melody: Melody) -> float:
+    """Expectancy-based melodic complexity calculated using pitch patterns only,
+    according to Eerola & North (2000). The complexity score is normalized against
+    the Essen folksong collection, where a score of 5 represents average complexity.
+
+    Citation
+    --------
+    Eerola & North (2000)
+    """
+    return _complebm(melody, "p")
+
+
+@midi_toolbox
+@rhythm
+@complexity
+def complebm_rhythm(melody: Melody) -> float:
+    """Expectancy-based melodic complexity calculated using rhythmic features only,
+    according to Eerola & North (2000). The complexity score is normalized against
+    the Essen folksong collection, where a score of 5 represents average complexity.
+
+    Citation
+    --------
+    Eerola & North (2000)
+    """
+    return _complebm(melody, "r")
+
+
+@midi_toolbox
+@both
+@complexity
+def complebm_optimal(melody: Melody) -> float:
+    """Expectancy-based melodic complexity calculated using an optimal combination
+    of pitch patterns and rhythmic features, according to Eerola & North (2000).
+    The complexity score is normalized against the Essen folksong collection,
+    where a score of 5 represents average complexity.
+
+    Citation
+    --------
+    Eerola & North (2000)
+    """
+    return _complebm(melody, "o")
+
+
+def _melody_idyom_input_directory(melody: Melody) -> tuple[str, list[str]]:
+    """Build a one-melody MIDI directory for IDyOM. Returns (directory, paths to remove)."""
+    import pretty_midi
+
+    cleanup_paths: list[str] = []
+    melody_path = melody.id
+    if (
+        melody_path
+        and str(melody_path).lower().endswith((".mid", ".midi"))
+        and os.path.isfile(str(melody_path))
+    ):
+        temp_dir = tempfile.mkdtemp(prefix="idyom_melody_")
+        cleanup_paths.append(temp_dir)
+        dest = os.path.join(temp_dir, os.path.basename(str(melody_path)))
+        shutil.copy2(str(melody_path), dest)
+        return temp_dir, cleanup_paths
+
+    temp_dir = tempfile.mkdtemp(prefix="idyom_melody_")
+    cleanup_paths.append(temp_dir)
+    temp_midi = os.path.join(temp_dir, "melody.mid")
+    pm = pretty_midi.PrettyMIDI(initial_tempo=melody.tempo)
+    instrument = pretty_midi.Instrument(program=0)
+    for pitch, start, end in zip(melody.pitches, melody.starts, melody.ends):
+        instrument.notes.append(
+            pretty_midi.Note(velocity=80, pitch=pitch, start=start, end=end)
+        )
+    pm.instruments.append(instrument)
+    pm.write(temp_midi)
+    return temp_dir, cleanup_paths
+
+
+def _idyom_mean_information_content(
+    melody: Melody,
+    config_key: str,
+    corpus: Optional[os.PathLike] = None,
+    key_estimation: str = "infer_if_necessary",
+) -> float:
+    """Run IDyOM for one melody and return mean information content."""
+    if config_key not in _DEFAULT_IDYOM_CONFIGS:
+        raise ValueError(
+            f"Unknown IDyOM configuration {config_key!r}; "
+            f"expected one of {sorted(_DEFAULT_IDYOM_CONFIGS)}"
+        )
+
+    idyom_config = _DEFAULT_IDYOM_CONFIGS[config_key]
+    idyom_corpus = _resolve_idyom_corpus(idyom_config, override=corpus)
+
+    input_directory, cleanup_paths = _melody_idyom_input_directory(melody)
+    try:
+        idyom_results = get_idyom_results(
+            input_directory,
+            idyom_config.target_viewpoints,
+            idyom_config.source_viewpoints,
+            idyom_config.models,
+            idyom_config.ppm_order,
+            idyom_corpus,
+            f"IDyOM_{config_key}_Results",
+            key_estimation,
+        )
+    finally:
+        for path in cleanup_paths:
+            if os.path.isdir(path):
+                shutil.rmtree(path, ignore_errors=True)
+
+    melody_features = idyom_results.get("1")
+    if not melody_features or "mean_information_content" not in melody_features:
+        raise RuntimeError(
+            f"IDyOM did not return mean information content for configuration {config_key!r}"
+        )
+    return float(melody_features["mean_information_content"])
+
+
+@idyom
+@expectation
+@pitch
+def pitch_stm_mean_information_content(melody: Melody) -> float:
+    """The average information content across all notes in a melody,
+    calculated using IDyOM's prediction-by-partial-matching (PPM) algorithm.
+    Information content is perceptually related to surprise, and can be calculated
+    for pitches or rhythms.
+
+    Citation
+    --------
+    Pearce, M. (2005)
+    """
+    return _idyom_mean_information_content(melody, "pitch_stm")
+
+
+@idyom
+@expectation
+@pitch
+def pitch_ltm_mean_information_content(melody: Melody) -> float:
+    """The average information content across all notes in a melody,
+    calculated using IDyOM's long-term model (LTM). Information content is
+    perceptually related to surprise, and can be calculated for pitches or rhythms.
+
+    Citation
+    --------
+    Pearce, M. (2005)
+    """
+    return _idyom_mean_information_content(melody, "pitch_ltm")
+
+
+@idyom
+@expectation
+@rhythm
+def rhythm_stm_mean_information_content(melody: Melody) -> float:
+    """The average rhythmic information content across all notes in a melody,
+    calculated using IDyOM's short-term model (STM). Information content is
+    perceptually related to surprise, and can be calculated for pitches or rhythms.
+
+    Citation
+    --------
+    Pearce, M. (2005)
+    """
+    return _idyom_mean_information_content(melody, "rhythm_stm")
+
+
+@idyom
+@expectation
+@rhythm
+def rhythm_ltm_mean_information_content(melody: Melody) -> float:
+    """The average rhythmic information content across all notes in a melody,
+    calculated using IDyOM's long-term model (LTM). Information content is
+    perceptually related to surprise, and can be calculated for pitches or rhythms.
+
+    Citation
+    --------
+    Pearce, M. (2005)
+    """
+    return _idyom_mean_information_content(melody, "rhythm_ltm")
+
+
+@rhythm
+@metre
+@midi_toolbox
+def metric_hierarchy(melody: Melody) -> list[int]:
+    """Metric hierarchy values for each note, indicating the strength of each note
+    position within the known or estimated meter. Higher values indicate stronger
+    metric positions (e.g., downbeat = 5, beat = 4, half-beat = 3, etc.).
+
+    Implementation based on MIDI toolbox metrichierarchy.m.
+    """
+    return _metric_hierarchy(
+        melody.starts,
+        melody.ends,
+        time_signature=melody.meter,
+        tempo=melody.tempo,
+        pitches=melody.pitches,
+    )
+
+
+def _meter_accent_mean(melody: Melody) -> float:
+    """``meteraccent.m`` synchrony (float, unrounded)."""
+    hierarchy_values = metric_hierarchy(melody)
+    if not hierarchy_values:
+        return 0.0
+    melodic_accents = melodic_accent(melody.pitches)
+    durational_accents = duration_accent(melody.starts, melody.ends)
+    n = min(len(hierarchy_values), len(melodic_accents), len(durational_accents))
+    if n == 0:
+        return 0.0
+    products = [
+        h * m * d
+        for h, m, d in zip(
+            hierarchy_values[:n], melodic_accents[:n], durational_accents[:n]
+        )
+    ]
+    return float(-1.0 * np.mean(products))
+
+
+@rhythm
+@metre
+@midi_toolbox
+def meter_accent(melody: Melody) -> int:
+    """Phenomenal accent synchrony measure, calculated as the negative mean of
+    the product of metric hierarchy, melodic accent, and durational accent
+    for each note. Higher values indicate stronger accent synchrony.
+
+    Implementation based on MIDI toolbox meteraccent.m.
+    """
+    return int(round(_meter_accent_mean(melody)))
+
+
+def get_complexity_features(
+    melody: Melody, phrase_gap: float = 1.5, max_ngram_order: int = DEFAULT_MAX_NGRAM_ORDER
+) -> Dict:
     """Dynamically collect all complexity features for a melody.
     
     Parameters
@@ -8346,7 +8980,7 @@ def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_o
     phrase_gap : float, optional
         Phrase gap for mtype features (default: 1.5)
     max_ngram_order : int, optional
-        Maximum n-gram order for mtype features (default: 6)
+        Maximum inclusive n-gram length for m-type features (default: 5)
         
     Returns
     -------
@@ -8358,53 +8992,203 @@ def get_complexity_features(melody: Melody, phrase_gap: float = 1.5, max_ngram_o
     
     for name, func in complexity_functions.items():
         try:
-            # Skip classes/functions that require special handling
             if name in ('InverseEntropyWeighting', 'get_mtype_features'):
                 continue
-                
-            # Get function signature to determine parameters
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            
-            # Call function with appropriate parameters
-            if 'melody' in params and 'method' in params:
-                # Special case for complebm with different methods
-                if name == 'complebm':
-                    features[f"{name}_pitch"] = func(melody, 'p')
-                    features[f"{name}_rhythm"] = func(melody, 'r')
-                    features[f"{name}_optimal"] = func(melody, 'o')
-                    continue
-                else:
-                    result = func(melody, 'o')  # Default method
-            elif 'melody' in params:
-                result = func(melody)
-            elif 'starts' in params and 'ends' in params and 'tau' in params:
-                # Functions with tau parameter (duration_accent, mean_duration_accent, duration_accent_std)
-                result = func(melody.starts, melody.ends, 0.5, 2.0)
-            elif 'starts' in params and 'ends' in params:
-                if 'tempo' in params:
-                    result = func(melody.starts, melody.ends, melody.tempo)
-                else:
-                    result = func(melody.starts, melody.ends)
-            elif 'pitches' in params and 'starts' in params and 'ends' in params:
-                result = func(melody.pitches, melody.starts, melody.ends)
-            elif 'pitches' in params:
-                result = func(melody.pitches)
-            else:
-                # Try with melody object
-                result = func(melody)
-            
-            # Store all features as-is (no auto-generation of mean/std)
+
+            result = _invoke_feature(
+                func,
+                melody,
+                phrase_gap=phrase_gap,
+                max_ngram_order=max_ngram_order,
+            )
             features[name] = result
                 
         except Exception as e:
             print(f"Warning: Could not compute {name}: {e}")
             features[name] = None
 
-    mtype_features = get_mtype_features(melody, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order)
-    features.update(mtype_features)
-    
     return features
+
+
+def get_lexical_diversity_features(
+    melody: Melody,
+    phrase_gap: float = 1.5,
+    max_ngram_order: int = DEFAULT_MAX_NGRAM_ORDER,
+) -> Dict:
+    """Collect lexical-diversity (m-type) features for a melody.
+
+    Corpus-dependent lexical-diversity features (e.g. TF/DF correlations) are
+    computed in :func:`get_corpus_features` instead.
+    """
+    return get_mtype_features(
+        melody, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
+    )
+
+
+def get_complexity_feature_bundle(
+    melody: Melody,
+    phrase_gap: float = 1.5,
+    max_ngram_order: int = DEFAULT_MAX_NGRAM_ORDER,
+) -> Dict:
+    """Return complexity and lexical-diversity features for export."""
+    return {
+        **get_complexity_features(
+            melody, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
+        ),
+        **get_lexical_diversity_features(
+            melody, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
+        ),
+    }
+
+
+def _fantastic_melody_tokens(melody: Melody, phrase_gap: float) -> list:
+    """Tokenize a melody into FANTASTIC m-type tokens across phrases."""
+    tokenizer = FantasticTokenizer()
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
+    all_tokens = []
+    for segment in segments:
+        all_tokens.extend(
+            tokenizer.tokenize_melody(segment.pitches, segment.starts, segment.ends)
+        )
+    return all_tokens
+
+
+def _fantastic_melody_tf_df(
+    melody_tokens: list,
+    doc_freqs: dict,
+    max_ngram_order: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Melody TF and corpus DF for m-types with df > 0 (FANTASTIC ``TFDF.tab`` rows)."""
+    tf_values: list[float] = []
+    df_values: list[float] = []
+    if max_ngram_order < 1:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    for n in range(1, max_ngram_order + 1):
+        ngram_counts: dict[tuple, int] = {}
+        for i in range(len(melody_tokens) - n + 1):
+            ngram = tuple(melody_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+
+        for ngram, tf in ngram_counts.items():
+            df = doc_freqs.get(str(ngram), {}).get("count", 0)
+            if df > 0:
+                tf_values.append(float(tf))
+                df_values.append(float(df))
+
+    return np.array(tf_values, dtype=float), np.array(df_values, dtype=float)
+
+
+def _fantastic_log_normalized_tf_df(
+    tf: np.ndarray, df: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """log2-normalized TF and DF vectors as in FANTASTIC ``M-Type_Corpus_Features.R``."""
+    log_tf = np.log2(tf)
+    log_df = np.log2(df)
+    return log_tf / log_tf.sum(), log_df / log_df.sum()
+
+
+def _fantastic_melody_ngram_counts(
+    melody_tokens: list,
+    max_ngram_order: int,
+) -> dict[tuple, int]:
+    """Collapsed melody m-type counts for orders 1 through ``max_ngram_order`` (inclusive)."""
+    all_ngram_counts: dict[tuple, int] = {}
+    if max_ngram_order < 1:
+        return all_ngram_counts
+
+    for n in range(1, max_ngram_order + 1):
+        ngram_counts: dict[tuple, int] = {}
+        for i in range(len(melody_tokens) - n + 1):
+            ngram = tuple(melody_tokens[i : i + n])
+            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
+        for ngram, tf in ngram_counts.items():
+            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
+    return all_ngram_counts
+
+
+def _fantastic_min_tie_ranks(values: np.ndarray) -> np.ndarray:
+    """Return 1-based ranks with FANTASTIC-compatible minimum tie policy."""
+    if values.size == 0:
+        return np.array([], dtype=float)
+    order = np.argsort(values, kind="mergesort")
+    sorted_vals = values[order]
+    ranks = np.empty(values.size, dtype=float)
+    i = 0
+    while i < values.size:
+        j = i
+        while j < values.size and sorted_vals[j] == sorted_vals[i]:
+            j += 1
+        min_rank = float(i + 1)
+        ranks[order[i:j]] = min_rank
+        i = j
+    return ranks
+
+
+def _compute_corpus_feature_bundle(
+    melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int
+) -> Dict[str, float]:
+    """Compute all corpus features from one shared TF/DF + weighting pipeline."""
+    doc_freqs = corpus_stats.get("document_frequencies", {})
+    all_tokens = _fantastic_melody_tokens(melody, phrase_gap)
+    tf, df = _fantastic_melody_tf_df(all_tokens, doc_freqs, max_ngram_order)
+
+    features: dict[str, float] = {
+        "tfdf_spearman": 0.0,
+        "tfdf_kendall": 0.0,
+        "mean_log_tfdf": 0.0,
+        "norm_log_dist": 0.0,
+        "max_log_df": 0.0,
+        "min_log_df": 0.0,
+        "mean_log_df": 0.0,
+        "mean_global_local_weight": 0.0,
+        "std_global_local_weight": 0.0,
+        "mean_global_weight": 0.0,
+        "std_global_weight": 0.0,
+    }
+
+    if tf.size >= 2 and np.var(tf) > 0 and np.var(df) > 0:
+        try:
+            # FANTASTIC uses ties.method="min"; mirror that explicitly.
+            tf_ranks = _fantastic_min_tie_ranks(tf)
+            df_ranks = _fantastic_min_tie_ranks(df)
+            spearman = scipy.stats.spearmanr(tf_ranks, df_ranks)[0]
+            kendall = scipy.stats.kendalltau(tf_ranks, df_ranks)[0]
+            features["tfdf_spearman"] = float(spearman if not np.isnan(spearman) else 0.0)
+            features["tfdf_kendall"] = float(kendall if not np.isnan(kendall) else 0.0)
+        except Exception:
+            pass
+
+    if tf.size > 0:
+        norm_tf, norm_df = _fantastic_log_normalized_tf_df(tf, df)
+        features["mean_log_tfdf"] = float(np.mean(norm_tf * norm_df))
+        features["norm_log_dist"] = float(np.sum(np.abs(norm_tf - norm_df)) / tf.size)
+        features["max_log_df"] = float(np.log2(df.max()))
+        features["min_log_df"] = float(np.log2(df.min()))
+        features["mean_log_df"] = float(np.mean(np.log2(df)))
+
+    all_ngram_counts = _fantastic_melody_ngram_counts(all_tokens, max_ngram_order)
+    if all_ngram_counts and doc_freqs:
+        weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
+        all_combined_weights = weights.combined_weights
+        all_global_weights = weights.global_weights
+        if all_combined_weights:
+            features["mean_global_local_weight"] = float(np.mean(all_combined_weights))
+            features["std_global_local_weight"] = float(
+                np.std(all_combined_weights, ddof=1)
+                if len(all_combined_weights) > 1
+                else 0.0
+            )
+        if all_global_weights:
+            features["mean_global_weight"] = float(np.mean(all_global_weights))
+            features["std_global_weight"] = float(
+                np.std(all_global_weights, ddof=1)
+                if len(all_global_weights) > 1
+                else 0.0
+            )
+
+    return features
+
 
 @fantastic
 @lexical_diversity
@@ -8416,8 +9200,8 @@ def tfdf_spearman(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
 
     Notes
     -----
-    FANTASTIC assigns the minimum rank to every value in a tie group; SciPy's ``spearmanr`` uses
-    average ranks for ties, so the coefficient may differ slightly from the original implementation.
+    Ties are ranked with the minimum-rank policy (`ties.method="min"`),
+    then Spearman correlation is computed over those ranks.
 
     Parameters
     ----------
@@ -8435,51 +9219,9 @@ def tfdf_spearman(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
     float
         Spearman correlation coefficient between TF and DF
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    doc_freqs = corpus_stats.get("document_frequencies", {})
-    
-    all_tf = []
-    all_df = []
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                all_tf.append(tf)
-                all_df.append(df)
-
-    if len(all_tf) >= 2:
-        try:
-            tf_variance = np.var(all_tf)
-            df_variance = np.var(all_df)
-            
-            if tf_variance == 0 or df_variance == 0:
-                return 0.0
-            else:
-                spearman = scipy.stats.spearmanr(all_tf, all_df)[0]
-                return float(spearman if not np.isnan(spearman) else 0.0)
-        except:
-            return 0.0
-    else:
-        return 0.0
+    return _compute_corpus_feature_bundle(
+        melody, corpus_stats, phrase_gap, max_ngram_order
+    )["tfdf_spearman"]
 
 @fantastic
 @lexical_diversity
@@ -8507,60 +9249,24 @@ def tfdf_kendall(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngra
     -------
     float
         Kendall's tau correlation coefficient between TF and DF
+
+    Notes
+    -----
+    Ties are first converted to minimum ranks, then Kendall's
+    tau is computed over the resulting rank vectors.
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    doc_freqs = corpus_stats.get("document_frequencies", {})
-    
-    all_tf = []
-    all_df = []
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                all_tf.append(tf)
-                all_df.append(df)
-
-    if len(all_tf) >= 2:
-        try:
-            tf_variance = np.var(all_tf)
-            df_variance = np.var(all_df)
-            
-            if tf_variance == 0 or df_variance == 0:
-                return 0.0
-            else:
-                kendall = scipy.stats.kendalltau(all_tf, all_df)[0]
-                return float(kendall if not np.isnan(kendall) else 0.0)
-        except:
-            return 0.0
-    else:
-        return 0.0
+    return _compute_corpus_feature_bundle(
+        melody, corpus_stats, phrase_gap, max_ngram_order
+    )["tfdf_kendall"]
 
 @fantastic
 @lexical_diversity
 @both
 def mean_log_tfdf(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Mean of the inner product of normalized TF and DF vectors.
-    Higher values mean the melody's m-type distribution is better aligned 
-    on the same patterns with the corpus document-frequency profile.
+    """Mean of log2-normalized TF × DF products over m-types.
+
+    Higher values mean stronger alignment between within-melody usage and corpus
+    document-frequency on the same m-types.
 
     Parameters
     ----------
@@ -8576,59 +9282,19 @@ def mean_log_tfdf(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
     Returns
     -------
     float
-        Mean log TF-DF score
+        Mean log2 TF-DF score
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    doc_freqs = corpus_stats.get("document_frequencies", {})
-    total_docs = len(doc_freqs)
-    
-    tfdf_values = []
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        tf_values = []
-        df_values = []
-        total_tf = sum(ngram_counts.values())
-        
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                tf_values.append(tf)
-                df_values.append(df)
-
-        if tf_values and total_docs > 0:
-            tf_array = np.array(tf_values)
-            df_array = np.array(df_values)
-            tf_norm = tf_array / total_tf
-            df_norm = df_array / total_docs
-            tfdf = np.dot(tf_norm, df_norm)
-            tfdf_values.append(tfdf)
-
-    return float(np.mean(tfdf_values) if tfdf_values else 0.0)
+    return _compute_corpus_feature_bundle(
+        melody, corpus_stats, phrase_gap, max_ngram_order
+    )["mean_log_tfdf"]
 
 @fantastic
 @lexical_diversity
 @both
 def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Normalized log distance between TF and DF distributions.
-    Larger values mean the melody emphasizes different m-types than the corpus-wide prevalence pattern;
+    """Mean absolute difference between log2-normalized TF and DF.
+
+    Larger values mean the melody emphasizes different m-types than corpus prevalence;
     smaller values mean closer distributional match.
 
     Parameters
@@ -8645,60 +9311,19 @@ def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
     Returns
     -------
     float
-        Mean absolute deviation between normalized TF and DF vectors
+        Mean absolute deviation between log2-normalized TF and DF vectors
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    doc_freqs = corpus_stats.get("document_frequencies", {})
-    total_docs = len(doc_freqs)
-    
-    distances = []
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        tf_values = []
-        df_values = []
-        total_tf = sum(ngram_counts.values())
-        
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                tf_values.append(tf)
-                df_values.append(df)
-
-        if tf_values and total_docs > 0:
-            tf_array = np.array(tf_values)
-            df_array = np.array(df_values)
-            tf_norm = tf_array / total_tf
-            df_norm = df_array / total_docs
-            distances.extend(np.abs(tf_norm - df_norm))
-
-    return float(np.mean(distances) if distances else 0.0)
+    return _compute_corpus_feature_bundle(
+        melody, corpus_stats, phrase_gap, max_ngram_order
+    )["norm_log_dist"]
 
 @fantastic
 @lexical_diversity
 @both
 def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Natural logarithm +1 of the largest corpus document frequency among m-types appearing here.
-    Highlights how frequent the most common pattern in the
-    melody is relative to the corpus; large values mean at least one local m-type is commonly used across the
-    reference corpus.
+    """log2 of the largest corpus document frequency among melody m-types. Highlights how 
+    frequent the most common pattern in the melody is relative to the corpus. Large values indicate that the melody 
+    contains at least one pattern that is very frequent in the corpus.
 
     Parameters
     ----------
@@ -8714,46 +9339,19 @@ def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_
     Returns
     -------
     float
-        Maximum log document frequency
+        Maximum log2 document frequency
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    doc_freqs = corpus_stats.get("document_frequencies", {})
-    
-    max_df = 0
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                max_df = max(max_df, df)
-
-    return float(np.log1p(max_df) if max_df > 0 else 0.0)
+    return _compute_corpus_feature_bundle(
+        melody, corpus_stats, phrase_gap, max_ngram_order
+    )["max_log_df"]
 
 @fantastic
 @lexical_diversity
 @both
 def min_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Natural logarithm +1 of the smallest positive corpus DF among m-types used in the melody.
-    Small values mean that the melody uses at least one pattern 
-    that is relatively rare in the corpus.
+    """log2 of the smallest corpus DF among melody m-types. Highlights how 
+    frequent the least common pattern in the melody is relative to the corpus. Small values indicate that the melody 
+    contains at least one pattern that is very rare in the corpus.
 
     Parameters
     ----------
@@ -8769,46 +9367,20 @@ def min_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_
     Returns
     -------
     float
-        Minimum log document frequency
+        Minimum log2 document frequency
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    doc_freqs = corpus_stats.get("document_frequencies", {})
-    
-    min_df = float("inf")
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                min_df = min(min_df, df)
-
-    return float(np.log1p(min_df) if min_df < float("inf") else 0.0)
+    return _compute_corpus_feature_bundle(
+        melody, corpus_stats, phrase_gap, max_ngram_order
+    )["min_log_df"]
 
 @fantastic
 @lexical_diversity
 @both
 def mean_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Average natural logarithm +1 of the corpus document frequency over 
-    all melody m-types that have a positive corpus DF. Higher values mean 
-    that the melody uses patterns that are more common in the corpus.
+    """Mean log2 corpus DF over melody m-types.
+    Highlights how frequent the average pattern in the melody is relative to the corpus.
+    Large values indicate that the melody contains patterns that are relatively frequent in the corpus.
+    Small values indicate that the melody contains patterns that are relatively rare in the corpus.
 
     Parameters
     ----------
@@ -8824,56 +9396,21 @@ def mean_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram
     Returns
     -------
     float
-        Mean log document frequency
+        Mean log2 document frequency
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    doc_freqs = corpus_stats.get("document_frequencies", {})
-    
-    total_log_df = 0.0
-    df_count = 0
-    
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        df_values = []
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                df_values.append(df)
-
-        if df_values:
-            df_array = np.array(df_values)
-            total_log_df += np.sum(np.log1p(df_array))
-            df_count += len(df_array)
-
-    return float(total_log_df / df_count if df_count > 0 else 0.0)
+    return _compute_corpus_feature_bundle(
+        melody, corpus_stats, phrase_gap, max_ngram_order
+    )["mean_log_df"]
 
 @fantastic
 @lexical_diversity
 @both
 def mean_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Mean combined local-global weights for n-grams.
-    The combined weight of an m-type is the product of the local and global weights.
-    It summarises the relationship between distinctiveness of an m-type compared to the corpus
-    and its frequency in the melody. A high combined weight indicates that the m-type is both
-    distinctive and frequent in the melody, while a low combined weight indicates that the m-type
-    is either not distinctive or not frequent in the melody.
+    The combined weight of an m-type is the product of local and global weights.
+    In this implementation, unseen m-types (DF=0) receive a neutral global weight of 1.0.
+    Higher values therefore indicate either high local frequency, higher global weight,
+    or both. This relates to the percept of distinctiveness.
 
     Parameters
     ----------
@@ -8891,32 +9428,9 @@ def mean_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: flo
     float
         Mean global-local weight
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    all_ngram_counts = {}
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        for ngram, tf in ngram_counts.items():
-            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
-
-    if all_ngram_counts and len(corpus_stats.get("document_frequencies", {})) > 0:
-        weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
-        combined_weights = weights.combined_weights
-        return float(np.mean(combined_weights) if combined_weights else 0.0)
-    else:
-        return 0.0
+    return _compute_corpus_feature_bundle(
+        melody, corpus_stats, phrase_gap, max_ngram_order
+    )["mean_global_local_weight"]
 
 @fantastic
 @lexical_diversity
@@ -8940,32 +9454,9 @@ def std_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: floa
     float
         Standard deviation of global-local weight
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    all_ngram_counts = {}
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        for ngram, tf in ngram_counts.items():
-            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
-
-    if all_ngram_counts and len(corpus_stats.get("document_frequencies", {})) > 0:
-        weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
-        combined_weights = weights.combined_weights
-        return float(np.std(combined_weights, ddof=1) if len(combined_weights) > 1 else 0.0)
-    else:
-        return 0.0
+    return _compute_corpus_feature_bundle(
+        melody, corpus_stats, phrase_gap, max_ngram_order
+    )["std_global_local_weight"]
 
 @fantastic
 @lexical_diversity
@@ -8973,8 +9464,8 @@ def std_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: floa
 def mean_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Mean global weight across m-types.
 
-    Higher values mean that the m-types in the melody are more globally informative (more unexpected),
-    while lower values mean that the m-types in the melody are less globally informative (more expected). 
+    Higher values mean the m-types are less globally informative (more expected);
+    lower values mean they are more globally informative (more distinctive).
 
     Parameters
     ----------
@@ -8992,32 +9483,9 @@ def mean_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, ma
     float
         Mean global weight
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    all_ngram_counts = {}
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        for ngram, tf in ngram_counts.items():
-            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
-
-    if all_ngram_counts and len(corpus_stats.get("document_frequencies", {})) > 0:
-        weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
-        global_weights = weights.global_weights
-        return float(np.mean(global_weights) if global_weights else 0.0)
-    else:
-        return 0.0
+    return _compute_corpus_feature_bundle(
+        melody, corpus_stats, phrase_gap, max_ngram_order
+    )["mean_global_weight"]
 
 @fantastic
 @lexical_diversity
@@ -9041,32 +9509,9 @@ def std_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max
     float
         Standard deviation of global weight
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    all_ngram_counts = {}
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        for ngram, tf in ngram_counts.items():
-            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
-
-    if all_ngram_counts and len(corpus_stats.get("document_frequencies", {})) > 0:
-        weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
-        global_weights = weights.global_weights
-        return float(np.std(global_weights, ddof=1) if len(global_weights) > 1 else 0.0)
-    else:
-        return 0.0
+    return _compute_corpus_feature_bundle(
+        melody, corpus_stats, phrase_gap, max_ngram_order
+    )["std_global_weight"]
 
 def get_corpus_features(
     melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int
@@ -9085,153 +9530,9 @@ def get_corpus_features(
     Dict
         Dictionary of corpus-based feature values
     """
-    tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    doc_freqs = corpus_stats.get("document_frequencies", {})
-    total_docs = len(doc_freqs)
-
-    ngram_data = []
-    for n in range(1, max_ngram_order):
-        ngram_counts = {}
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        if not ngram_counts:
-            continue
-
-        # Get document frequencies for all n-grams at once
-        ngram_df_data = {
-            "counts": ngram_counts,
-            "total_tf": sum(ngram_counts.values()),
-            "df_values": [],
-            "tf_values": [],
-            "ngrams": [],
-        }
-
-        # Batch lookup document frequencies
-        for ngram, tf in ngram_counts.items():
-            ngram_str = str(ngram)
-            df = doc_freqs.get(ngram_str, {}).get("count", 0)
-            if df > 0:
-                ngram_df_data["df_values"].append(df)
-                ngram_df_data["tf_values"].append(tf)
-                ngram_df_data["ngrams"].append(ngram)
-
-        if ngram_df_data["df_values"]:
-            ngram_data.append(ngram_df_data)
-
-    features = {}
-
-    # Compute correlation features using pre-computed values
-    if ngram_data:
-        all_tf = []
-        all_df = []
-        for data in ngram_data:
-            all_tf.extend(data["tf_values"])
-            all_df.extend(data["df_values"])
-
-        if len(all_tf) >= 2:
-            try:
-                # Check for no variance to avoid correlation problems
-                tf_variance = np.var(all_tf)
-                df_variance = np.var(all_df)
-                
-                if tf_variance == 0 or df_variance == 0:
-                    # If either array is constant, correlation is undefined
-                    features["tfdf_spearman"] = 0.0
-                    features["tfdf_kendall"] = 0.0
-                else:
-                    spearman = scipy.stats.spearmanr(all_tf, all_df)[0]
-                    kendall = scipy.stats.kendalltau(all_tf, all_df)[0]
-                    features["tfdf_spearman"] = float(
-                        spearman if not np.isnan(spearman) else 0.0
-                    )
-                    features["tfdf_kendall"] = float(
-                        kendall if not np.isnan(kendall) else 0.0
-                    )
-            except:
-                features["tfdf_spearman"] = 0.0
-                features["tfdf_kendall"] = 0.0
-        else:
-            features["tfdf_spearman"] = 0.0
-            features["tfdf_kendall"] = 0.0
-    else:
-        features["tfdf_spearman"] = 0.0
-        features["tfdf_kendall"] = 0.0
-
-    # Compute TFDF and distance features
-    tfdf_values = []
-    distances = []
-    max_df = 0
-    min_df = float("inf")
-    total_log_df = 0.0
-    df_count = 0
-
-    for data in ngram_data:
-        # TFDF calculation
-        tf_array = np.array(data["tf_values"])
-        df_array = np.array(data["df_values"])
-        if len(tf_array) > 0:
-            # Normalize vectors
-            tf_norm = tf_array / data["total_tf"]
-            df_norm = df_array / total_docs
-            tfdf = np.dot(tf_norm, df_norm)
-            tfdf_values.append(tfdf)
-
-            # Distance calculation
-            distances.extend(np.abs(tf_norm - df_norm))
-
-            # Track max/min/total log DF
-            max_df = max(max_df, max(data["df_values"]))
-            min_df = min(min_df, min(x for x in data["df_values"] if x > 0))
-            total_log_df += np.sum(np.log1p(df_array))
-            df_count += len(df_array)
-
-    features["mean_log_tfdf"] = float(np.mean(tfdf_values) if tfdf_values else 0.0)
-    features["norm_log_dist"] = float(np.mean(distances) if distances else 0.0)
-    features["max_log_df"] = float(np.log1p(max_df) if max_df > 0 else 0.0)
-    features["min_log_df"] = float(np.log1p(min_df) if min_df < float("inf") else 0.0)
-    features["mean_log_df"] = float(total_log_df / df_count if df_count > 0 else 0.0)
-
-    # Entropy-based weighting features
-    if ngram_data and total_docs > 0:
-        all_ngram_counts = {}
-        for data in ngram_data:
-            for ngram, tf in zip(data["ngrams"], data["tf_values"]):
-                all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
-
-        weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
-        all_combined_weights = weights.combined_weights
-        all_global_weights = weights.global_weights
-    else:
-        all_combined_weights = []
-        all_global_weights = []
-
-    # Calculate statistics
-    if all_combined_weights:
-        features["mean_global_local_weight"] = float(np.mean(all_combined_weights))
-        features["std_global_local_weight"] = float(np.std(all_combined_weights, ddof=1) if len(all_combined_weights) > 1 else 0.0)
-    else:
-        features["mean_global_local_weight"] = 0.0
-        features["std_global_local_weight"] = 0.0
-
-    if all_global_weights:
-        features["mean_global_weight"] = float(np.mean(all_global_weights))
-        features["std_global_weight"] = float(np.std(all_global_weights, ddof=1) if len(all_global_weights) > 1 else 0.0)
-    else:
-        features["mean_global_weight"] = 0.0
-        features["std_global_weight"] = 0.0
-
-    return features
+    return _compute_corpus_feature_bundle(
+        melody, corpus_stats, phrase_gap, max_ngram_order
+    )
 
 
 def get_interval_features(melody: Melody) -> Dict:
@@ -9330,7 +9631,7 @@ def get_contour_features(melody: Melody) -> Dict:
     contour_features["interpolation_contour_class_label"] = interpolation_contour[4]
     contour_features["polynomial_contour_coefficients"] = get_polynomial_contour_features(melody)
     contour_features["huron_contour"] = get_huron_contour_features(melody)
-    contour_features["comb_contour_matrix"] = get_comb_contour_matrix(melody.pitches)
+    contour_features["comb_contour_matrix"] = comb_contour_matrix(melody.pitches)
     return contour_features
 
 
@@ -9353,34 +9654,10 @@ def get_metric_accent_features(melody: Melody) -> Dict:
         - metric_hierarchy: List of hierarchy values for each note
         - meter_accent: Phenomenal accent synchrony measure (from MIDI toolbox meteraccent.m)
     """
-    metric_features = {}
-
-    hierarchy_values = _metric_hierarchy(
-        melody.starts, melody.ends, 
-        time_signature=melody.meter, tempo=melody.tempo, pitches=melody.pitches
-    )
-    metric_features["metric_hierarchy"] = hierarchy_values
-
-    if hierarchy_values:
-        melodic_accents = melodic_accent(melody.pitches)
-        durational_accents = duration_accent(melody.starts, melody.ends)
-
-        min_length = min(len(hierarchy_values), len(melodic_accents), len(durational_accents))
-        if min_length > 0:
-            accent_products = [
-                h * m * d for h, m, d in zip(
-                    hierarchy_values[:min_length],
-                    melodic_accents[:min_length],  
-                    durational_accents[:min_length]
-                )
-            ]
-            metric_features["meter_accent"] = int(round(-1.0 * float(np.mean(accent_products))))
-        else:
-            metric_features["meter_accent"] = 0
-    else:
-        metric_features["meter_accent"] = 0
-    
-    return metric_features
+    return {
+        "metric_hierarchy": metric_hierarchy(melody),
+        "meter_accent": meter_accent(melody),
+    }
 
 
 def _is_beat_histogram_function(func) -> bool:
@@ -9416,109 +9693,69 @@ def _precompute_beat_histogram_data(melody: Melody) -> tuple:
     return normal_values, standardized_values, start_ticks, end_ticks, melody.tempo, 480
 
 
-def get_rhythm_features(melody: Melody) -> Dict:
-    """Dynamically collect all rhythm features for a melody.
-    
-    Collects features decorated with @rhythm domain and @timing or @interval type.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    Dict
-        Dictionary of rhythm feature values
-    """
-    features = {}
-    rhythm_functions = _get_features_by_domain_and_types("rhythm", ["timing", "interval"])
-    
-    # Pre-compute beat histogram data once for all beat histogram functions
-    beat_histogram_data = None
+def _collect_rhythm_domain_features(melody: Melody, allowed_types: list[str]) -> Dict:
+    """Collect @rhythm-domain features whose types intersect ``allowed_types``."""
+    features: Dict[str, Any] = {}
+    rhythm_functions = _get_features_by_domain_and_types("rhythm", allowed_types)
+
     beat_histogram_functions = []
     regular_functions = []
-    
-    # Separate beat histogram functions from regular functions
+
     for name, func in rhythm_functions.items():
         if _is_beat_histogram_function(func):
             beat_histogram_functions.append((name, func))
         else:
             regular_functions.append((name, func))
-    
-    # Process regular functions first
+
     for name, func in regular_functions:
         try:
-            # Get function signature to determine parameters
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            
-            # Call function with appropriate parameters
-            if 'melody' in params:
-                result = func(melody)
-            elif 'starts' in params and 'ends' in params and 'tempo' in params:
-                result = func(melody.starts, melody.ends, melody.tempo)
-            elif 'starts' in params and 'ends' in params and 'divisions_per_quarter' in params:
-                result = func(melody.starts, melody.ends, 4, 8)  # Default values
-            elif 'starts' in params and 'ends' in params and 'tau' in params:
-                result = func(melody.starts, melody.ends, 0.5, 2.0)  # Default values
-            elif 'starts' in params and 'ends' in params:
-                result = func(melody.starts, melody.ends)
-            elif 'starts' in params:
-                result = func(melody.starts)
-            else:
-                # Try with melody object
-                result = func(melody)
-            
-            # Handle functions that return tuples (like ioi_ratio, ioi_contour)
+            result = _invoke_feature(func, melody)
             if isinstance(result, tuple) and len(result) == 2:
                 features[f"{name}_mean"] = result[0]
                 features[f"{name}_std"] = result[1]
             else:
                 features[name] = result
-                
         except Exception as e:
             print(f"Warning: Could not compute {name}: {e}")
             features[name] = None
-    
-    # Process beat histogram functions with pre-computed data
+
     if beat_histogram_functions:
         beat_histogram_data = _precompute_beat_histogram_data(melody)
-        normal_values, standardized_values, start_ticks, end_ticks, tempo, ppqn = beat_histogram_data
-        
         for name, func in beat_histogram_functions:
             try:
-                # Get function signature to determine parameters
-                sig = inspect.signature(func)
-                params = list(sig.parameters.keys())
-                
-                # Call function with appropriate parameters
-                if 'melody' in params:
-                    result = func(melody)
-                elif 'starts' in params and 'ends' in params and 'tempo' in params:
-                    result = func(melody.starts, melody.ends, melody.tempo)
-                elif 'starts' in params and 'ends' in params:
-                    result = func(melody.starts, melody.ends)
-                elif 'starts' in params:
-                    result = func(melody.starts)
-                else:
-                    # Try with melody object
-                    result = func(melody)
-                
-                # Handle functions that return tuples (like ioi_ratio, ioi_contour)
+                result = _invoke_feature(func, melody)
                 if isinstance(result, tuple) and len(result) == 2:
                     features[f"{name}_mean"] = result[0]
                     features[f"{name}_std"] = result[1]
                 else:
                     features[name] = result
-                    
             except Exception as e:
                 print(f"Warning: Could not compute {name}: {e}")
                 features[name] = None
-    
-    # Add metric accent features
+
+    return features
+
+
+def get_timing_features(melody: Melody) -> Dict:
+    """Collect @rhythm-domain features decorated with @timing."""
+    return _collect_rhythm_domain_features(melody, ["timing"])
+
+
+def get_inter_onset_interval_features(melody: Melody) -> Dict:
+    """Collect @rhythm-domain features decorated with @interval (IOI family)."""
+    return _collect_rhythm_domain_features(melody, ["interval"])
+
+
+def get_rhythm_features(melody: Melody) -> Dict:
+    """Dynamically collect all rhythm features for a melody.
+
+    Combines timing, inter-onset interval, and metric-accent features for
+    backward-compatible ``rhythm_features`` export.
+    """
+    features: Dict[str, Any] = {}
+    features.update(get_timing_features(melody))
+    features.update(get_inter_onset_interval_features(melody))
     features.update(get_metric_accent_features(melody))
-    
     return features
 
 
@@ -9531,26 +9768,11 @@ def get_expectation_features(melody: Melody) -> Dict:
     expectation_functions = _get_features_by_type(FeatureType.EXPECTATION)
 
     for name, func in expectation_functions.items():
+        # IDyOM mean-IC features are computed in batch via get_idyom_results / _run_idyom_analysis
+        if name in _IDYOM_MEAN_INFORMATION_CONTENT_EXPORTS:
+            continue
         try:
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-
-            if 'melody' in params:
-                result = func(melody)
-            elif 'pitches' in params and 'starts' in params and 'ends' in params and 'tempo' in params:
-                result = func(melody.pitches, melody.starts, melody.ends, melody.tempo)
-            elif 'pitches' in params and 'starts' in params and 'ends' in params:
-                result = func(melody.pitches, melody.starts, melody.ends)
-            elif 'pitches' in params:
-                result = func(melody.pitches)
-            elif 'starts' in params and 'ends' in params and 'tempo' in params:
-                result = func(melody.starts, melody.ends, melody.tempo)
-            elif 'starts' in params and 'ends' in params:
-                result = func(melody.starts, melody.ends)
-            elif 'starts' in params:
-                result = func(melody.starts)
-            else:
-                result = func(melody)
+            result = _invoke_feature(func, melody)
 
             # Allow tuple returns to be expanded into mean/std when applicable
             if isinstance(result, tuple) and len(result) == 2 and all(isinstance(x, (int, float)) for x in result):
@@ -9586,23 +9808,7 @@ def get_metre_features(melody: Melody) -> Dict:
     
     for name, func in metre_functions.items():
         try:
-            # Get function signature to determine parameters
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            
-            # Call function with appropriate parameters
-            if 'melody' in params:
-                result = func(melody)
-            elif 'starts' in params and 'ends' in params and 'tempo' in params:
-                result = func(melody.starts, melody.ends, melody.tempo)
-            elif 'starts' in params and 'ends' in params:
-                result = func(melody.starts, melody.ends)
-            elif 'starts' in params:
-                result = func(melody.starts)
-            else:
-                # Try with melody object
-                result = func(melody)
-            
+            result = _invoke_feature(func, melody)
             features[name] = result
                 
         except Exception as e:
@@ -9662,7 +9868,8 @@ def proportion_of_time_in_first_meter(melody: Melody) -> float:
 @rhythm
 @metre
 def number_of_unique_time_signatures(melody: Melody) -> int:
-    """The number of unique time signatures in the melody.
+    """
+    The number of unique time signatures in the melody.
     
     Parameters
     ----------
@@ -9673,22 +9880,23 @@ def number_of_unique_time_signatures(melody: Melody) -> int:
     -------
     int
         The number of unique time signatures in the melody.
-
+    
     Note
     -----
-    This feature is named "Metrical Diversity" in jSymbolic.
+    This feature is named `Metrical Diversity` in jSymbolic.
     """
-    return len(set(melody.time_signatures))
+    return len({(numerator, denominator) for _, numerator, denominator in melody.time_signatures})
 
 @novel
 @rhythm
 @metre
 def syncopation(melody: Melody) -> float:
-    """Calculate the mean syncopation value based on the Longuet-Higgins and Lee (1984) model.
-    This syncopation model assigns metrical weights to each
+    """
+    Calculate the mean `syncopation` value based on the Longuet-Higgins and Lee (1984) model.
+    This `syncopation` model assigns metrical weights to each
     note position based on its position in the metric hierarchy. Syncopation occurs when
     a rest or tied note is preceded by a sounded note of lower metrical weight. The 
-    syncopation value is the difference between the rest weight and the preceding note weight.
+    `syncopation` value is the difference between the rest weight and the preceding note weight.
     
     Parameters
     ----------
@@ -9751,7 +9959,8 @@ def syncopation(melody: Melody) -> float:
 @rhythm
 @metre
 def syncopicity(melody: Melody) -> float:
-    """Calculates the sum syncopicity of a melody across metric levels.
+    """
+    Calculates the sum `syncopicity` of a melody across metric levels.
     Syncopicity measures the degree to which notes occur off the main metrical grid
     but are long enough to span across metric boundaries. This calculates syncopations at 
     four metric levels:
@@ -9773,7 +9982,14 @@ def syncopicity(melody: Melody) -> float:
     Returns
     -------
     float
-        The sum of syncopicity values across all metric levels
+        Sum of per-level syncopation proportions across tested levels (half-bar,
+        beat, and first subdivision). Each level contributes
+        ``syncopation_count / number_of_notes``, so this is not a raw event count.
+    
+    Note
+    ----
+    Grid durations are derived from the melody's initial meter and tempo and
+    therefore assume constant meter/tempo over the analyzed passage.
     """
     if not melody.starts or len(melody.starts) < 2:
         return 0.0
@@ -9837,7 +10053,11 @@ def syncopicity(melody: Melody) -> float:
 @idyom
 @pitch
 @tonality
-def inscale(melody: Melody) -> list[int]:
+def inscale(
+    melody: Melody,
+    key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary",
+    key_finding_algorithm: Literal["krumhansl_schmuckler"] = "krumhansl_schmuckler",
+) -> list[int]:
     """For each pitch in the melody, returns 1 if the pitch is in the estimated key's scale,
     or 0 if it deviates from the scale.
     
@@ -9851,29 +10071,42 @@ def inscale(melody: Melody) -> list[int]:
     list[int]
         List of 0/1 values indicating if each pitch is in the estimated key's scale
     """
+    """For each pitch, returns 1 if pitch class is in the resolved key scale, else 0.
+
+    Key resolution follows ``key_estimation``:
+    - ``always_read_from_file``: require key signature in MIDI metadata
+    - ``infer_if_necessary``: use MIDI key signature when present, else infer
+    - ``always_infer``: always infer from note content
+    """
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
-    correlations = compute_tonality_vector(pitch_classes)
-    
-    if correlations:
-        key_name = correlations[0][0].split()[0]
-        key_distances = _get_key_distances()
-        root = key_distances[key_name]
-        
-        # Determine scale type and pattern
-        is_major = "major" in correlations[0][0]
-        scale = [0, 2, 4, 5, 7, 9, 11] if is_major else [0, 2, 3, 5, 7, 8, 10]
-        scale = [(note + root) % 12 for note in scale]
-        
-        # For each pitch, indicate if it's in the estimated key's scale (1) or not (0)
-        return [1 if pc in scale else 0 for pc in pitch_classes]
-    else:
+    resolved_key = _resolve_key_for_melody(
+        melody,
+        key_estimation=key_estimation,
+        key_finding_algorithm=key_finding_algorithm,
+    )
+
+    if not resolved_key:
         return []
+
+    key_name, mode = resolved_key.split()
+    key_distances = _get_key_distances()
+    root = key_distances.get(key_name)
+    if root is None:
+        return []
+    is_major = mode == "major"
+    scale = [0, 2, 4, 5, 7, 9, 11] if is_major else [0, 2, 3, 5, 7, 8, 10]
+    scale = [(note + root) % 12 for note in scale]
+    return [1 if pc in scale else 0 for pc in pitch_classes]
 
 @novel
 @tonality
 @pitch
-def proportion_inscale(melody: Melody) -> float:
+def proportion_inscale(
+    melody: Melody,
+    key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary",
+    key_finding_algorithm: Literal["krumhansl_schmuckler"] = "krumhansl_schmuckler",
+) -> float:
     """The proportion of notes in the melody that are in the scale of the
     estimated key.
     
@@ -9887,7 +10120,11 @@ def proportion_inscale(melody: Melody) -> float:
     float
         Proportion of notes in the scale
     """
-    inscale_vals = inscale(melody)
+    inscale_vals = inscale(
+        melody,
+        key_estimation=key_estimation,
+        key_finding_algorithm=key_finding_algorithm,
+    )
     if not inscale_vals:
         return -1.0
     return sum(inscale_vals) / len(inscale_vals)
@@ -9895,7 +10132,11 @@ def proportion_inscale(melody: Melody) -> float:
 @novel
 @tonality
 @pitch
-def longest_monotonic_conjunct_scalar_passage(melody: Melody) -> int:
+def longest_monotonic_conjunct_scalar_passage(
+    melody: Melody,
+    key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary",
+    key_finding_algorithm: Literal["krumhansl_schmuckler"] = "krumhansl_schmuckler",
+) -> int:
     """The longest sequence of consecutive notes that fit within the estimated key's scale
     that move in the same direction. 
     
@@ -9913,12 +10154,23 @@ def longest_monotonic_conjunct_scalar_passage(melody: Melody) -> int:
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
+    resolved_key = _resolve_key_for_melody(
+        melody,
+        key_estimation=key_estimation,
+        key_finding_algorithm=key_finding_algorithm,
+    )
+    if resolved_key:
+        correlations = _tonality_correlations_for_key(correlations, resolved_key)
     return _longest_monotonic_conjunct_scalar_passage(pitches, correlations)
 
 @novel
 @tonality
 @pitch
-def longest_conjunct_scalar_passage(melody: Melody) -> int:
+def longest_conjunct_scalar_passage(
+    melody: Melody,
+    key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary",
+    key_finding_algorithm: Literal["krumhansl_schmuckler"] = "krumhansl_schmuckler",
+) -> int:
     """The longest sequence of consecutive notes that fit within the estimated key's scale.
     For example, a melody estimated to be in C major with notes C, D, E, F, G would have a 
     longest conjunct scalar passage of 5.
@@ -9937,13 +10189,24 @@ def longest_conjunct_scalar_passage(melody: Melody) -> int:
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
+    resolved_key = _resolve_key_for_melody(
+        melody,
+        key_estimation=key_estimation,
+        key_finding_algorithm=key_finding_algorithm,
+    )
+    if resolved_key:
+        correlations = _tonality_correlations_for_key(correlations, resolved_key)
     return _longest_conjunct_scalar_passage(pitches, correlations)
 
 @novel
 @tonality
 @pitch
-def proportion_conjunct_scalar(melody: Melody) -> float:
-    """The proportion of notes that form conjunct scalar sequences.
+def proportion_conjunct_scalar(
+    melody: Melody,
+    key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary",
+    key_finding_algorithm: Literal["krumhansl_schmuckler"] = "krumhansl_schmuckler",
+) -> float:
+    """Longest conjunct scalar passage length divided by total note count.
     
     Parameters
     ----------
@@ -9959,13 +10222,24 @@ def proportion_conjunct_scalar(melody: Melody) -> float:
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
+    resolved_key = _resolve_key_for_melody(
+        melody,
+        key_estimation=key_estimation,
+        key_finding_algorithm=key_finding_algorithm,
+    )
+    if resolved_key:
+        correlations = _tonality_correlations_for_key(correlations, resolved_key)
     return _proportion_conjunct_scalar(pitches, correlations)
 
 @novel
 @tonality
 @pitch
-def proportion_scalar(melody: Melody) -> float:
-    """The proportion of all notes that form scalar sequences.
+def proportion_scalar(
+    melody: Melody,
+    key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary",
+    key_finding_algorithm: Literal["krumhansl_schmuckler"] = "krumhansl_schmuckler",
+) -> float:
+    """Longest monotonic conjunct scalar passage length divided by total notes.
 
     Parameters
     ----------
@@ -9981,6 +10255,13 @@ def proportion_scalar(melody: Melody) -> float:
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
+    resolved_key = _resolve_key_for_melody(
+        melody,
+        key_estimation=key_estimation,
+        key_finding_algorithm=key_finding_algorithm,
+    )
+    if resolved_key:
+        correlations = _tonality_correlations_for_key(correlations, resolved_key)
     return _proportion_scalar(pitches, correlations)
 
 @fantastic
@@ -9988,7 +10269,7 @@ def proportion_scalar(melody: Melody) -> float:
 @pitch
 def mode(
     melody: Melody,
-    key_estimation: str = "infer_if_necessary",
+    key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary",
     key_finding_algorithm: Literal["krumhansl_schmuckler"] = "krumhansl_schmuckler"
 ) -> str:
     """Calculate the mode (major/minor) of a melody, either read from the MIDI file or
@@ -10009,33 +10290,14 @@ def mode(
     str
         The mode: "major" or "minor"
     """
-    # Infer mode using specified algorithm
-    _, inferred_mode = infer_key_from_pitches(melody.pitches, algorithm=key_finding_algorithm)
-    
-    # Determine which mode to use based on strategy
-    if key_estimation == "always_infer":
-        # Always use inferred mode
-        return inferred_mode if inferred_mode else "unknown"
-    else:
-        # Try to read from MIDI file
-        mode_from_melody = None
-        if melody.has_key_signature:
-            key_sig = melody.key_signature
-            if key_sig and len(key_sig) >= 2:
-                mode_from_melody = key_sig[1]
-        
-        if key_estimation == "always_read_from_file":
-            if mode_from_melody is None:
-                raise ValueError(f"No key signature found in MIDI file: {melody.id}")
-            return mode_from_melody
-        else:
-            # key_estimation == "infer_if_necessary"
-            if mode_from_melody is not None:
-                # Use mode from MIDI
-                return mode_from_melody
-            else:
-                # Infer if no MIDI mode available
-                return inferred_mode if inferred_mode else "unknown"
+    resolved_key = _resolve_key_for_melody(
+        melody,
+        key_estimation=key_estimation,
+        key_finding_algorithm=key_finding_algorithm,
+    )
+    if not resolved_key:
+        return "unknown"
+    return resolved_key.split()[1]
 
 def get_tonality_features(
     melody: Melody,
@@ -10063,78 +10325,32 @@ def get_tonality_features(
 
     pcs = [pitch % 12 for pitch in melody.pitches]
     correlations = compute_tonality_vector(pcs)
-    
-    # Pre-compute absolute correlation values
-    abs_correlations = [(key, abs(val)) for key, val in correlations]
-    abs_corr_values = [val for _, val in abs_correlations]
 
-    # Basic tonality features using cached correlations
-    tonality_features["tonalness"] = abs_corr_values[0]
+    # Keep batch and standalone behavior consistent.
+    tonality_features["tonalness"] = tonalness(melody.pitches)
+    tonality_features["tonal_clarity"] = tonal_clarity(melody.pitches)
+    tonality_features["tonal_spike"] = tonal_spike(melody.pitches)
+    tonality_features["tonalness_histogram"] = tonalness_histogram(melody.pitches)
 
-    if len(correlations) >= 2:
-        tonality_features["tonal_clarity"] = (
-            abs_corr_values[0] / abs_corr_values[1] if abs_corr_values[1] != 0 else 1.0
-        )
-        other_sum = sum(abs_corr_values[1:])
-        tonality_features["tonal_spike"] = (
-            abs_corr_values[0] / other_sum if other_sum != 0 else 1.0
-        )
-    else:
-        tonality_features["tonal_clarity"] = -1.0
-        tonality_features["tonal_spike"] = -1.0
-    
-    # Histogram using cached correlations
-    tonality_features["tonalness_histogram"] = histogram_bins(correlations[0][1], 24)
-
-    # Determine the key to use for key-dependent features based on strategy
-    key_for_features = None
-    
-    if key_estimation == "always_infer":
-        # Use the inferred key using specified algorithm
-        key_name, mode = infer_key_from_pitches(melody.pitches, algorithm=key_finding_algorithm)
-        if key_name and mode:
-            key_for_features = f"{key_name} {mode}"
-    else:
-        # Try to read from MIDI file using the already-extracted key signature info
-        key_from_melody = None
-        if melody.has_key_signature:
-            key_sig = melody.key_signature
-            if key_sig:
-                key_from_melody = f"{key_sig[0]} {key_sig[1]}"
-        
-        if key_estimation == "always_read_from_file":
-            if key_from_melody is None:
-                raise ValueError(f"No key signature found in MIDI file: {melody.id}")
-            key_for_features = key_from_melody
-        else:
-            # key_estimation == "infer_if_necessary"
-            if key_from_melody is not None:
-                # Use key from MIDI
-                key_for_features = key_from_melody
-            else:
-                # Infer using specified algorithm
-                key_name, mode = infer_key_from_pitches(melody.pitches, algorithm=key_finding_algorithm)
-                if key_name and mode:
-                    key_for_features = f"{key_name} {mode}"
+    key_for_features = _resolve_key_for_melody(
+        melody,
+        key_estimation=key_estimation,
+        key_finding_algorithm=key_finding_algorithm,
+    )
 
     if key_for_features:
-        key_name = key_for_features.split()[0]
-        # Remove trailing 'm' if present (e.g., "G#m" -> "G#")
-        if key_name.endswith('m'):
-            key_name = key_name[:-1]
-        key_distances = _get_key_distances()
-        root = key_distances[key_name]
-        tonality_features["referent"] = root
-
-        # Determine scale type and pattern
-        is_major = "major" in key_for_features
-        scale = [0, 2, 4, 5, 7, 9, 11] if is_major else [0, 2, 3, 5, 7, 8, 10]
-        scale = [(note + root) % 12 for note in scale]
-
-        # For each pitch, indicate if it's in the estimated key's scale (1) or not (0)
-        tonality_features["inscale"] = [1 if pc in scale else 0 for pc in pcs]
+        tonality_features["referent"] = referent(
+            melody,
+            key_estimation=key_estimation,
+            key_finding_algorithm=key_finding_algorithm,
+        )
+        tonality_features["inscale"] = inscale(
+            melody,
+            key_estimation=key_estimation,
+            key_finding_algorithm=key_finding_algorithm,
+        )
         tonality_features["key"] = key_for_features
-        tonality_features["mode"] = "major" if is_major else "minor"
+        tonality_features["mode"] = key_for_features.split()[1]
     else:
         tonality_features["referent"] = -1
         tonality_features["inscale"] = []
@@ -10145,19 +10361,27 @@ def get_tonality_features(
     # Scalar passage features
     from .algorithms import longest_monotonic_conjunct_scalar_passage as _longest_monotonic_conjunct_scalar_passage
     from .algorithms import longest_conjunct_scalar_passage as _longest_conjunct_scalar_passage
+    scalar_correlations = correlations
+    if key_for_features:
+        scalar_correlations = _tonality_correlations_for_key(correlations, key_for_features)
+
     tonality_features["longest_monotonic_conjunct_scalar_passage"] = (
-        _longest_monotonic_conjunct_scalar_passage(melody.pitches, correlations)
+        _longest_monotonic_conjunct_scalar_passage(melody.pitches, scalar_correlations)
     )
     tonality_features["longest_conjunct_scalar_passage"] = (
-        _longest_conjunct_scalar_passage(melody.pitches, correlations)
+        _longest_conjunct_scalar_passage(melody.pitches, scalar_correlations)
     )
     from .algorithms import proportion_conjunct_scalar as _proportion_conjunct_scalar
     from .algorithms import proportion_scalar as _proportion_scalar
     tonality_features["proportion_conjunct_scalar"] = _proportion_conjunct_scalar(
-        melody.pitches, correlations
+        melody.pitches, scalar_correlations
     )
-    tonality_features["proportion_scalar"] = _proportion_scalar(melody.pitches, correlations)
-    tonality_features["proportion_inscale"] = proportion_inscale(melody)
+    tonality_features["proportion_scalar"] = _proportion_scalar(melody.pitches, scalar_correlations)
+    tonality_features["proportion_inscale"] = proportion_inscale(
+        melody,
+        key_estimation=key_estimation,
+        key_finding_algorithm=key_finding_algorithm,
+    )
     
     tension_dict = estimate_tonaltension(
         melody,
@@ -10196,6 +10420,29 @@ def get_tonality_features(
     return tonality_features
 
 
+# Per-melody timing keys aligned with FeatureType taxonomy (see feature_decorators.py).
+TIMING_STAT_CATEGORIES = (
+    "absolute_pitch",
+    "pitch_class",
+    "pitch_interval",
+    "contour",
+    "timing",
+    "inter_onset_interval",
+    "tonality",
+    "metre",
+    "expectation",
+    "complexity",
+    "lexical_diversity",
+    "corpus",
+    "total",
+)
+
+
+def _init_timing_stats() -> Dict[str, List[float]]:
+    """Return an empty timing accumulator for all taxonomy categories."""
+    return {category: [] for category in TIMING_STAT_CATEGORIES}
+
+
 def process_melody(args):
     """Process a single melody and return its features.
 
@@ -10225,12 +10472,12 @@ def process_melody(args):
     melody_data, corpus_stats, idyom_results_dict, phrase_gap, max_ngram_order, key_estimation = args
     mel = Melody(melody_data)
 
-    # Time each feature category
-    timings = {}
+    # Time each taxonomy category separately for logging
+    timings: Dict[str, float] = {category: 0.0 for category in TIMING_STAT_CATEGORIES}
 
     start = time.time()
     pitch_features = get_pitch_features(mel)
-    timings["pitch"] = time.time() - start
+    timings["absolute_pitch"] = time.time() - start
 
     start = time.time()
     pitch_class_features = get_pitch_class_features(mel)
@@ -10238,15 +10485,25 @@ def process_melody(args):
 
     start = time.time()
     interval_features = get_interval_features(mel)
-    timings["interval"] = time.time() - start
+    timings["pitch_interval"] = time.time() - start
 
     start = time.time()
     contour_features = get_contour_features(mel)
     timings["contour"] = time.time() - start
 
     start = time.time()
-    rhythm_features = get_rhythm_features(mel)
-    timings["rhythm"] = time.time() - start
+    timing_features = get_timing_features(mel)
+    timings["timing"] = time.time() - start
+
+    start = time.time()
+    ioi_features = get_inter_onset_interval_features(mel)
+    timings["inter_onset_interval"] = time.time() - start
+
+    rhythm_features = {
+        **timing_features,
+        **ioi_features,
+        **get_metric_accent_features(mel),
+    }
 
     start = time.time()
     tonality_features = get_tonality_features(mel, key_estimation=key_estimation)
@@ -10261,8 +10518,16 @@ def process_melody(args):
     timings["expectation"] = time.time() - start
 
     start = time.time()
-    complexity_features = get_complexity_features(mel, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order)
+    complexity_features = get_complexity_features(
+        mel, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
+    )
     timings["complexity"] = time.time() - start
+
+    start = time.time()
+    lexical_diversity_features = get_lexical_diversity_features(
+        mel, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
+    )
+    timings["lexical_diversity"] = time.time() - start
 
     melody_features = {
         "pitch_features": pitch_features,
@@ -10273,7 +10538,7 @@ def process_melody(args):
         "tonality_features": tonality_features,
         "metre_features": metre_features,
         "expectation_features": expectation_features,
-        "complexity_features": complexity_features,
+        "complexity_features": {**complexity_features, **lexical_diversity_features},
     }
 
     # Add corpus features only if corpus stats are available
@@ -10648,7 +10913,7 @@ def _setup_default_config(config: Optional[Config]) -> Config:
     """
     if config is None:
         config = Config(
-            corpus=resources.files("melody_features") / "corpora/pearce_default_idyom",
+            corpus=_DEFAULT_CORPUS,
             idyom={
                 "pitch_stm": IDyOMConfig(
                     target_viewpoints=["cpitch"],
@@ -10662,7 +10927,7 @@ def _setup_default_config(config: Optional[Config]) -> Config:
                     source_viewpoints=[("cpitch", "cpint", "cpintfref")],
                     ppm_order=None,
                     models=":ltm",
-                    corpus=None,
+                    corpus=_DEFAULT_CORPUS,
                 ),
                 "rhythm_stm": IDyOMConfig(
                     target_viewpoints=["onset"],
@@ -10676,10 +10941,14 @@ def _setup_default_config(config: Optional[Config]) -> Config:
                     source_viewpoints=["ioi", "ioi-ratio"],
                     ppm_order=None,
                     models=":ltm",
-                    corpus=None,
+                    corpus=_DEFAULT_CORPUS,
                 ),
             },
-            fantastic=FantasticConfig(max_ngram_order=6, phrase_gap=1.5, corpus=None),
+            fantastic=FantasticConfig(
+                max_ngram_order=DEFAULT_MAX_NGRAM_ORDER,
+                phrase_gap=1.5,
+                corpus=None,
+            ),
             key_estimation="infer_if_necessary",
         )
     return config
@@ -10747,9 +11016,14 @@ def _setup_corpus_statistics(config: Config, output_file: str) -> Optional[dict]
 
     logger.info(f"Generating corpus statistics from: {fantastic_corpus}")
 
-    # Define a persistent path for the corpus stats file.
+    # Include tokenizer-sensitive settings in cache key to avoid stale stats reuse.
     corpus_name = Path(fantastic_corpus).name
-    corpus_stats_path = Path(output_file).parent / f"{corpus_name}_corpus_stats.json"
+    phrase_gap_slug = str(config.fantastic.phrase_gap).replace(".", "p")
+    max_order = config.fantastic.max_ngram_order
+    corpus_stats_path = (
+        Path(output_file).parent
+        / f"{corpus_name}_corpus_stats_pg{phrase_gap_slug}_n{max_order}.json"
+    )
     logger.info(f"Corpus statistics file will be at: {corpus_stats_path}")
 
     # Ensure the directory exists
@@ -10758,7 +11032,13 @@ def _setup_corpus_statistics(config: Config, output_file: str) -> Optional[dict]
     # Generate and load corpus stats.
     if not corpus_stats_path.exists():
         logger.info("Corpus statistics file not found. Generating a new one...")
-        make_corpus_stats(fantastic_corpus, str(corpus_stats_path))
+        n_range = (1, config.fantastic.max_ngram_order)
+        make_corpus_stats(
+            fantastic_corpus,
+            str(corpus_stats_path),
+            n_range=n_range,
+            phrase_gap=config.fantastic.phrase_gap,
+        )
         logger.info("Corpus statistics generated.")
     else:
         logger.info("Existing corpus statistics file found.")
@@ -10936,11 +11216,7 @@ def _run_idyom_analysis(
         return {}
     
     for idyom_name, idyom_config in config.idyom.items():
-        idyom_corpus = (
-            idyom_config.corpus if idyom_config.corpus is not None else config.corpus
-        )
-        if idyom_config.models == ":stm" and idyom_config.corpus is None:
-            idyom_corpus = None
+        idyom_corpus = _resolve_idyom_corpus(idyom_config, config_corpus=config.corpus)
         logger.info(
             f"Running IDyOM analysis for '{idyom_name}' with corpus: {idyom_corpus}"
         )
@@ -11019,7 +11295,7 @@ def _setup_parallel_processing(
         "tonality_features": get_tonality_features(mel, key_estimation=config.key_estimation),
         "metre_features": get_metre_features(mel),
         "expectation_features": get_expectation_features(mel),
-        "complexity_features": get_complexity_features(
+        "complexity_features": get_complexity_feature_bundle(
             mel,
             phrase_gap=config.fantastic.phrase_gap,
             max_ngram_order=config.fantastic.max_ngram_order,
@@ -11072,20 +11348,7 @@ def _setup_parallel_processing(
         for melody_data in melody_data_list
     ]
 
-    # Track timing statistics
-    timing_stats = {
-        "pitch": [],
-        "pitch_class": [],
-        "interval": [],
-        "contour": [],
-        "rhythm": [],
-        "tonality": [],
-        "metre": [],
-        "expectation": [],
-        "complexity": [],
-        "corpus": [],
-        "total": [],
-    }
+    timing_stats = _init_timing_stats()
 
     return headers, melody_args, timing_stats
 
@@ -11305,7 +11568,7 @@ def get_fantastic_features(
     melody: Melody, 
     corpus_stats: Optional[dict] = None,
     phrase_gap: float = 1.5,
-    max_ngram_order: int = 6
+    max_ngram_order: int = DEFAULT_MAX_NGRAM_ORDER,
 ) -> Dict:
     """Get all FANTASTIC features for a melody.
     
@@ -11318,7 +11581,7 @@ def get_fantastic_features(
     phrase_gap : float, optional
         Gap threshold for phrase segmentation (default: 1.5)
     max_ngram_order : int, optional
-        Maximum n-gram order (default: 6)
+        Maximum inclusive n-gram length (default: 5)
         
     Returns
     -------
@@ -11419,7 +11682,7 @@ def _compute_features_by_source(
     source: str, 
     corpus_stats: Optional[dict] = None,
     phrase_gap: float = 1.5,
-    max_ngram_order: int = 6
+    max_ngram_order: int = DEFAULT_MAX_NGRAM_ORDER,
 ) -> Dict:
     """Compute all features for a melody that are decorated with a specific source.
     
@@ -11448,42 +11711,19 @@ def _compute_features_by_source(
     
     for name, func in source_features.items():
         try:
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
+            result = _invoke_feature(
+                func,
+                melody,
+                corpus_stats=corpus_stats,
+                phrase_gap=phrase_gap,
+                max_ngram_order=max_ngram_order,
+            )
 
-            args = []
-            for param in params:
-                if param == "melody":
-                    args.append(melody)
-                elif param == "pitches":
-                    args.append(melody.pitches)
-                elif param == "starts":
-                    args.append(melody.starts)
-                elif param == "ends":
-                    args.append(melody.ends)
-                elif param == "tempo":
-                    args.append(melody.tempo)
-                elif param == "ppqn":
-                    args.append(480)
-                elif param == "corpus_stats":
-                    args.append(corpus_stats)
-                elif param == "phrase_gap":
-                    args.append(phrase_gap)
-                elif param == "max_ngram_order":
-                    args.append(max_ngram_order)
-                else:
-                    if param in sig.parameters and sig.parameters[param].default != inspect.Parameter.empty:
-                        args.append(sig.parameters[param].default)
-                    else:
-                        raise ValueError(f"Unknown parameter: {param}")
-            
-            result = func(*args)
-            
             if hasattr(result, '__dict__') and not isinstance(result, (str, int, float, list, dict)):
                 computed_features.update(result.__dict__)
             else:
                 computed_features[name] = result
-                
+
         except Exception as e:
             logger = logging.getLogger("melody_features")
             logger.warning(f"Could not compute {name}: {e}")
@@ -11527,17 +11767,22 @@ def _get_category_display_name(category: str, feature_name: str = None) -> str:
         "corpus_features": "Corpus",
     }
     
-    # mapping for timing_stats keys (without "_features" suffix)
+    # mapping for timing_stats keys (aligned with FeatureType taxonomy)
     timing_mapping = {
-        "pitch": "Absolute Pitch",
+        "absolute_pitch": "Absolute Pitch",
+        "pitch": "Absolute Pitch",  # legacy
         "pitch_class": "Pitch Class",
-        "interval": "Pitch Interval",
+        "pitch_interval": "Pitch Interval",
+        "interval": "Pitch Interval",  # legacy
         "contour": "Contour",
-        "rhythm": "Timing", # ioi features are included here
+        "timing": "Timing",
+        "rhythm": "Timing",  # legacy
+        "inter_onset_interval": "Inter-Onset Interval",
         "tonality": "Tonality",
         "metre": "Metre",
         "expectation": "Expectation",
-        "complexity": "Complexity", # lexical diversity features are included here
+        "complexity": "Complexity",
+        "lexical_diversity": "Lexical Diversity",
         "corpus": "Corpus",
         "total": "Total",
     }
@@ -11743,10 +11988,12 @@ def get_all_features(
     end_time = time.time()
     logger.info(f"Total processing time: {end_time - start_time:.2f} seconds")
     logger.info("Timing Statistics (average milliseconds per melody):")
-    for category, times in timing_stats.items():
-        if times:  # Only print if we have timing data
+    for category in TIMING_STAT_CATEGORIES:
+        times = timing_stats.get(category, [])
+        if times:
             avg_time = sum(times) / len(times) * 1000  # Convert to milliseconds
-            logger.info(f"{category:15s}: {avg_time:8.2f}ms")
+            display_name = _get_category_display_name(category)
+            logger.info(f"{display_name:22s}: {avg_time:8.2f}ms")
     
     logger.info(f"Successfully extracted features for {len(df)} melodies")
     

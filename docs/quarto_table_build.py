@@ -35,13 +35,11 @@ src_dir = script_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 from melody_features import features as features_module
-from melody_features import idyom_interface
 from melody_features.step_contour import StepContour
 from melody_features.interpolation_contour import InterpolationContour
 from melody_features.polynomial_contour import PolynomialContour
 from melody_features.huron_contour import HuronContour
 from melody_features.ngram_counter import NGramCounter
-from melody_features.feature_decorators import lexical_diversity, idyom, expectation, metre, pitch, rhythm, both, complexity, midi_toolbox, contour
 
 
 @dataclass
@@ -58,6 +56,171 @@ class FeatureRow:
 
 
 SECTION_RE = re.compile(r"^([A-Za-z ]+)\n[-]+$", re.MULTILINE)
+
+FEATURE_ALIAS_EXPORTS: dict[str, tuple[str, str]] = {
+    "ambitus": ("pitch_range", "MIDI Toolbox"),
+    "average_time_between_attacks": ("ioi_mean", "jSymbolic"),
+    "duration_in_seconds": ("global_duration", "jSymbolic"),
+    "mean_melodic_interval": ("mean_absolute_interval", "jSymbolic"),
+    "most_common_interval": ("modal_interval", "jSymbolic"),
+    "number_of_common_pitches_classes": ("number_of_common_pitch_classes", "local legacy export"),
+    "pitch_variability": ("pitch_standard_deviation", "jSymbolic"),
+    "variability_of_time_between_attacks": ("ioi_standard_deviation", "jSymbolic"),
+    "total_number_of_notes": ("length", "jSymbolic"),
+}
+
+FEATURE_DISPLAY_NAME_OVERRIDES: dict[str, str] = {
+    "compltrans": "Melodic Originality (Compltrans)",
+    "complebm_pitch": "Expectancy Complexity Pitch (Complebm)",
+    "complebm_rhythm": "Expectancy Complexity Rhythm (Complebm)",
+    "complebm_optimal": "Expectancy Complexity Optimal (Complebm)",
+}
+
+_CANONICAL_ALIAS_NOTES: dict[str, list[tuple[str, str]]] = {}
+for _alias, (_canonical, _source) in FEATURE_ALIAS_EXPORTS.items():
+    _CANONICAL_ALIAS_NOTES.setdefault(_canonical, []).append((_alias, _source))
+
+
+def _alias_display_name(python_name: str) -> str:
+    return fix_possessive_feature_names(normalize_feature_text(snake_to_title(python_name)))
+
+
+def _alias_note(alternate_python_name: str, source: str) -> str:
+    return (
+        f'This feature is named `{alternate_python_name}` '
+        f"({_alias_display_name(alternate_python_name)}) in {source}."
+    )
+
+
+_IMPL_BADGE_CLASSES: dict[str, str] = {
+    "FANTASTIC": "impl-fantastic",
+    "jSymbolic": "impl-jsymbolic",
+    "IDyOM": "impl-idyom",
+    "MIDI Toolbox": "impl-midi-toolbox",
+    "SIMILE": "impl-simile",
+    "Melsim": "impl-melsim",
+    "Novel": "impl-novel",
+    "Partitura": "impl-partitura",
+}
+
+
+def format_implementations_html(implementations: str) -> str:
+    """Render implementation sources as compact badges."""
+    if not implementations:
+        return ""
+    tokens = [t.strip() for t in implementations.split(",") if t.strip()]
+    badges = []
+    for token in tokens:
+        css_class = _IMPL_BADGE_CLASSES.get(token, "impl-default")
+        badges.append(f'<span class="impl-badge {css_class}">{token}</span>')
+    return '<span class="impl-badges">' + " ".join(badges) + "</span>"
+
+
+def format_type_badge_html(type_label: str) -> str:
+    """Render Descriptor / Sequence as a colored pill."""
+    if not type_label:
+        return ""
+    css_class = "type-descriptor" if type_label == "Descriptor" else "type-sequence"
+    return f'<span class="type-badge {css_class}">{type_label}</span>'
+
+
+def format_references_html(references: str) -> str:
+    """Render citation strings as inline text or a compact list."""
+    if not references:
+        return ""
+    parts = [p.strip() for p in references.split(" | ") if p.strip()]
+    if len(parts) == 1:
+        return f'<span class="citation-inline">{parts[0]}</span>'
+    items = "".join(f"<li>{part}</li>" for part in parts)
+    return f'<ul class="citation-list">{items}</ul>'
+
+
+def format_notes_html(notes: str) -> str:
+    """Improve readability of notes: code tokens, implementation names, emphasis."""
+    if not notes:
+        return ""
+
+    text = notes
+
+    def _code_token(match: re.Match[str]) -> str:
+        return f"<code>{match.group(1)}</code>"
+
+    # Docstring / alias patterns
+    text = re.sub(
+        r'\bThis is called\s+([a-z][a-z0-9_]*)\s+in\s+([^.;]+)',
+        r'This is called <code>\1</code> in <span class="impl-ref">\2</span>',
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r'\bThis feature is named\s+"([^"]+)"\s+in\s+([^.;]+)',
+        r'This feature is named <strong>\1</strong> in <span class="impl-ref">\2</span>',
+        text,
+    )
+    text = re.sub(
+        r'\bnamed\s+"([^"]+)"\s+in\s+([^.;]+)',
+        r'named <strong>\1</strong> in <span class="impl-ref">\2</span>',
+        text,
+    )
+
+    # Backtick-style identifiers already in docstrings
+    text = re.sub(r"`([^`]+)`", _code_token, text)
+
+    # Bare snake_case identifiers (e.g. variability_of_time_between_attacks)
+    text = re.sub(
+        r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b",
+        _code_token,
+        text,
+    )
+
+    return f'<span class="feature-notes">{text}</span>'
+
+
+def format_description_html(description: str) -> str:
+    """Wrap description text for consistent table typography."""
+    if not description:
+        return ""
+    return f'<span class="feature-description">{description}</span>'
+
+
+def format_table_display_html(df: pd.DataFrame) -> pd.DataFrame:
+    """Apply HTML formatting to columns shown in the Quarto feature table."""
+    display = df.copy()
+    if "Pre-existing Implementations" in display.columns:
+        display["Pre-existing Implementations"] = display["Pre-existing Implementations"].map(
+            lambda v: format_implementations_html(v if isinstance(v, str) else "")
+        )
+    if "Type" in display.columns:
+        display["Type"] = display["Type"].map(
+            lambda v: format_type_badge_html(v if isinstance(v, str) else "")
+        )
+    if "Notes" in display.columns:
+        display["Notes"] = display["Notes"].map(
+            lambda v: format_notes_html(v if isinstance(v, str) else "")
+        )
+    if "Further References" in display.columns:
+        display["Further References"] = display["Further References"].map(
+            lambda v: format_references_html(v if isinstance(v, str) else "")
+        )
+    if "Description" in display.columns:
+        display["Description"] = display["Description"].map(
+            lambda v: format_description_html(v if isinstance(v, str) else "")
+        )
+    return display
+
+
+def _notes_for_feature(python_name: str, docstring_notes: str) -> str:
+    parts: list[str] = []
+    if docstring_notes:
+        parts.append(docstring_notes)
+    doc_lower = docstring_notes.lower()
+    for alternate_name, source in _CANONICAL_ALIAS_NOTES.get(python_name, []):
+        if alternate_name.lower() in doc_lower:
+            continue
+        note = _alias_note(alternate_name, source)
+        if note not in parts and all(note not in p for p in parts):
+            parts.append(note)
+    return " ".join(parts)
 
 
 def snake_to_title(name: str) -> str:
@@ -164,6 +327,7 @@ def determine_type_from_return_annotation(obj) -> str:
 
 def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]:
     rows: list[FeatureRow] = []
+    seen_function_ids: set[int] = set()
     repo_root = script_dir.parent
 
     def detect_repo_info() -> tuple[str, str]:
@@ -200,54 +364,6 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
 
     def build_source_url(obj: object) -> str:
         target = obj.fget if isinstance(obj, property) else obj
-
-        # Special handling for IDyOM placeholder functions - link to idyom_interface.py
-        idyom_placeholder_functions = {
-            "pitch_stm_mean_information_content",
-            "pitch_ltm_mean_information_content",
-            "rhythm_stm_mean_information_content",
-            "rhythm_ltm_mean_information_content",
-        }
-        
-        # special handling for complebm: link to complebm function in features.py
-        complebm_functions = {
-            "complebm_pitch",
-            "complebm_rhythm",
-            "complebm_optimal",
-        }
-        
-        func_name = getattr(target, "__name__", None)
-        if func_name in idyom_placeholder_functions:
-            # dynamically find run_idyom line number
-            try:
-                run_idyom_func = getattr(idyom_interface, "run_idyom", None)
-                if run_idyom_func:
-                    _, start_line = inspect.getsourcelines(run_idyom_func)
-                    rel_path = Path("src/melody_features/idyom_interface.py")
-                    quoted_path = quote(rel_path.as_posix())
-                    return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}#L{start_line}"
-            except (OSError, TypeError):
-                pass
-            # Fallback to hardcoded path if dynamic lookup fails
-            rel_path = Path("src/melody_features/idyom_interface.py")
-            quoted_path = quote(rel_path.as_posix())
-            return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}"
-        
-        if func_name in complebm_functions:
-            # dynamically find complebm line number
-            try:
-                complebm_func = getattr(features_module, "complebm", None)
-                if complebm_func:
-                    _, start_line = inspect.getsourcelines(complebm_func)
-                    rel_path = Path("src/melody_features/features.py")
-                    quoted_path = quote(rel_path.as_posix())
-                    return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}#L{start_line}"
-            except (OSError, TypeError):
-                pass
-            # fallback to hardcoded path if dynamic lookup fails
-            rel_path = Path("src/melody_features/features.py")
-            quoted_path = quote(rel_path.as_posix())
-            return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}"
 
         try:
             target_unwrapped = inspect.unwrap(target)
@@ -296,17 +412,15 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         }
         return mapping.get(normalized, raw_name.replace("_", " ").strip().title())
     for name, obj in objs:
-        if name.startswith("get_"):
+        if name.startswith("get_") or name.startswith("_"):
             continue
-        
+        if name in FEATURE_ALIAS_EXPORTS:
+            continue
+
         # Skip InverseEntropyWeighting class
         if name == "InverseEntropyWeighting":
             continue
-        
-        # Skip complebm - we'll add the three variants separately
-        if name == "complebm":
-            continue
-            
+
         is_property = isinstance(obj, property)
         
         if is_property and hasattr(obj, 'fget') and obj.fget is not None:
@@ -315,6 +429,15 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
             feature_types = getattr(obj, "_feature_types", None)
         if not feature_types and not is_property:
             continue
+
+        if not is_property:
+            try:
+                function_id = id(inspect.unwrap(obj))
+            except (AttributeError, ValueError):
+                function_id = id(obj)
+            if function_id in seen_function_ids:
+                continue
+            seen_function_ids.add(function_id)
 
         if "." in name:
             class_name, prop_name = name.split(".", 1)
@@ -334,14 +457,17 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         else:
             pretty_name = snake_to_title(name)
 
+        pretty_name = FEATURE_DISPLAY_NAME_OVERRIDES.get(name, pretty_name)
+
         # Apply possessive fixes and acronym normalization to the display name
         pretty_name = fix_possessive_feature_names(normalize_feature_text(pretty_name))
 
         source_url = build_source_url(obj)
         display_name = (
-            f'<a href="{source_url}" target="_blank" rel="noopener noreferrer">{pretty_name}</a>'
+            f'<a class="feature-name-link" href="{source_url}" target="_blank" '
+            f'rel="noopener noreferrer">{pretty_name}</a>'
             if source_url
-            else pretty_name
+            else f'<span class="feature-name-text">{pretty_name}</span>'
         )
 
         feature_sources = getattr(obj, "_feature_sources", [])
@@ -365,7 +491,9 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
         doc_string = inspect.getdoc(obj.fget) if is_property else inspect.getdoc(obj)
         sections = extract_sections_from_docstring(doc_string or "")
         description = normalize_feature_text(" ".join(sections.get("Preamble", "").split()))
-        notes = normalize_feature_text(" ".join(sections.get("Note", "").split()))
+        doc_notes = normalize_feature_text(" ".join(sections.get("Note", "").split()))
+        feature_python_name = name.split(".", 1)[-1] if "." in name else name
+        notes = _notes_for_feature(feature_python_name, doc_notes)
 
         citation_section = sections.get("Citation", "").strip()
         if citation_section:
@@ -429,6 +557,9 @@ def to_dataframe(rows: list[FeatureRow]) -> pd.DataFrame:
     return df
 
 def _get_feature_category(obj, domain: str = None, feature_name: str = None) -> str:
+    if feature_name in {"mean_melodic_accent", "melodic_accent_std"}:
+        return "Complexity"
+
     """Determine the feature category based on the actual feature type decorator.
     Returns a comma-separated string of categories for features that belong to multiple categories.
     
@@ -543,6 +674,11 @@ def _get_feature_category(obj, domain: str = None, feature_name: str = None) -> 
 
 
 def build_table() -> pd.DataFrame:
+    """Build the exported feature table from atomic feature callables only.
+
+    Convention: helper/aggregator wrappers (for example `get_*`) are intentionally
+    excluded so the table contains only user-facing scalar/sequence feature atoms.
+    """
     members = inspect.getmembers(features_module)
     
     all_features = []
@@ -559,164 +695,13 @@ def build_table() -> pd.DataFrame:
             if isinstance(prop_obj, property) and prop_name not in excluded_properties:
                 all_features.append((f"{class_name}.{prop_name}", prop_obj))
     
-    # Add placeholder functions for IDyOM features that are dynamically generated
-    @idyom
-    @expectation
-    @pitch
-    def pitch_stm_mean_information_content(_melody):
-        """The average information content across all notes in a melody,
-        calculated using IDyOM's prediction-by-partial-matching (PPM) algorithm. 
-        Information content is perceptually related to surprise, and can be calculated
-        for pitches or rhythms.
-        
-        Citation
-        --------
-        Pearce, M. (2005)
-        """
-        # Placeholder function for table generation
-
-    @idyom
-    @expectation
-    @pitch
-    def pitch_ltm_mean_information_content(_melody):
-        """The average information content across all notes in a melody,
-        calculated using IDyOM's long-term model (LTM). Information content is
-        perceptually related to surprise, and can be calculated for pitches or rhythms.
-        
-        Citation
-        --------
-        Pearce, M. (2005)
-        """
-        # Placeholder function for table generation
-
-    @idyom
-    @expectation
-    @rhythm
-    def rhythm_stm_mean_information_content(_melody):
-        """The average rhythmic information content across all notes in a melody,
-        calculated using IDyOM's short-term model (STM). Information content is
-        perceptually related to surprise, and can be calculated for pitches or rhythms.
-        
-        Citation
-        --------
-        Pearce, M. (2005)
-        """
-        # Placeholder function for table generation
-
-    @idyom
-    @expectation
-    @rhythm
-    def rhythm_ltm_mean_information_content(_melody):
-        """The average rhythmic information content across all notes in a melody,
-        calculated using IDyOM's long-term model (LTM). Information content is
-        perceptually related to surprise, and can be calculated for pitches or rhythms.
-        
-        Citation
-        --------
-        Pearce, M. (2005)
-        """
-        # Placeholder function for table generation
-    
-    # Add placeholder functions for complebm variants
-    @midi_toolbox
-    @pitch
-    @complexity
-    def complebm_pitch(_melody):
-        """Expectancy-based melodic complexity calculated using pitch patterns only,
-        according to Eerola & North (2000). The complexity score is normalized against
-        the Essen folksong collection, where a score of 5 represents average complexity.
-        
-        Citation
-        --------
-        Eerola & North (2000)
-        """
-        # Placeholder function for table generation
-    
-    @midi_toolbox
-    @rhythm
-    @complexity
-    def complebm_rhythm(_melody):
-        """Expectancy-based melodic complexity calculated using rhythmic features only,
-        according to Eerola & North (2000). The complexity score is normalized against
-        the Essen folksong collection, where a score of 5 represents average complexity.
-        
-        Citation
-        --------
-        Eerola & North (2000)
-        """
-    
-    @midi_toolbox
-    @both
-    @complexity
-    def complebm_optimal(_melody):
-        """Expectancy-based melodic complexity calculated using an optimal combination
-        of pitch patterns and rhythmic features, according to Eerola & North (2000).
-        The complexity score is normalized against the Essen folksong collection,
-        where a score of 5 represents average complexity.
-        
-        Citation
-        --------
-        Eerola & North (2000)
-        """
-
-    
-    # Add placeholder functions for features computed by helper functions
-    # or classes, copied from features.py
-    @midi_toolbox
-    @contour
-    @pitch
-    def comb_contour_matrix(_melody):
-        """The Marvin & Laprade (1987) comb contour matrix.
-        For a melody with n notes, returns an n x n binary matrix where
-        C[i][j] = 1 if pitch of note j is higher than pitch of note i (p[j] > p[i])
-        for i >= j (lower triangle including diagonal), and 0 otherwise.
-        
-        Citation
-        --------
-        Marvin & Laprade (1987)
-        """
- 
-    
-    @rhythm
-    @metre
-    @midi_toolbox
-    def metric_hierarchy(_melody):
-        """Metric hierarchy values for each note, indicating the strength of each note
-        position within the known or estimated meter. Higher values indicate stronger
-        metric positions (e.g., downbeat = 5, beat = 4, half-beat = 3, etc.).
-        
-        Implementation based on MIDI toolbox metrichierarchy.m.
-        """
-    
-    @rhythm
-    @metre
-    @midi_toolbox
-    def meter_accent(_melody):
-        """Phenomenal accent synchrony measure, calculated as the negative mean of
-        the product of metric hierarchy, melodic accent, and durational accent
-        for each note. Higher values indicate stronger accent synchrony.
-        
-        Implementation based on MIDI toolbox meteraccent.m.
-        """
-        # Placeholder function for table generation
-    
-    all_features.extend(
-        [
-            ("pitch_stm_mean_information_content", pitch_stm_mean_information_content),
-            ("pitch_ltm_mean_information_content", pitch_ltm_mean_information_content),
-            ("rhythm_stm_mean_information_content", rhythm_stm_mean_information_content),
-            ("rhythm_ltm_mean_information_content", rhythm_ltm_mean_information_content),
-            ("complebm_pitch", complebm_pitch),
-            ("complebm_rhythm", complebm_rhythm),
-            ("complebm_optimal", complebm_optimal),
-            ("comb_contour_matrix", comb_contour_matrix),
-            ("metric_hierarchy", metric_hierarchy),
-            ("meter_accent", meter_accent),
-        ]
-    )
-    
     rows = collect_feature_rows(all_features)
     return to_dataframe(rows)
+
+
+def count_features() -> int:
+    """Return the number of features included in the summary table."""
+    return len(build_table())
 
 
 def main():
@@ -726,6 +711,7 @@ def main():
     args = parser.parse_args()
 
     df = build_table()
+    feature_count = len(df)
 
     if args.format == "csv":
         df.rename(
@@ -759,7 +745,10 @@ def main():
             f.write("    theme: cosmo\n")
             f.write("    toc: false\n")
             f.write("---\n\n")
-            f.write("This table provides a comprehensive overview of all melody features available in this package.\n\n")
+            f.write(
+                f"This table provides a comprehensive overview of all **{feature_count}** melody features "
+                "available in this package.\n\n"
+            )
             f.write("```{python}\n")
             f.write("#| echo: false\n")
             f.write("import pandas as pd\n")
@@ -770,7 +759,7 @@ def main():
             f.write("docs_dir = script_dir / \"docs\"\n")
             f.write("sys.path.insert(0, str(src_dir))\n")
             f.write("sys.path.insert(0, str(docs_dir))\n")
-            f.write("from quarto_table_build import build_table\n\n")
+            f.write("from quarto_table_build import build_table, format_table_display_html\n\n")
             f.write("df = build_table()\n")
             f.write("df_renamed = df.rename(columns={\n")
             f.write("    'name': 'Name',\n")
@@ -793,6 +782,7 @@ def main():
             f.write("\n")
             f.write("# Create a single table with category data for filtering (exclude category columns from display)\n")
             f.write("df_display = df_renamed.drop(columns=['category', 'domain', 'data-category', 'data-domain', 'sort_name'], errors='ignore')\n")
+            f.write("df_display = format_table_display_html(df_display)\n")
             f.write("table_html = df_display.to_html(classes='table table-striped table-hover', table_id='features-table', escape=False, index=False)\n")
             f.write("\n")
             f.write("# Add data-category attributes to table rows using a more robust approach\n")
@@ -942,14 +932,90 @@ def main():
             f.write("/* Feature name column sizing and wrapping */\n")
             f.write("#features-table td:first-child {\n")
             f.write("    min-width: 220px;\n")
-            f.write("    width: 26%;\n")
+            f.write("    width: 22%;\n")
             f.write("}\n")
-            f.write("#features-table td:first-child a {\n")
+            f.write("#features-table td:first-child a.feature-name-link {\n")
+            f.write("    color: #0d6efd;\n")
+            f.write("    font-weight: 600;\n")
+            f.write("    text-decoration: none;\n")
             f.write("    white-space: normal;\n")
             f.write("    word-break: keep-all;\n")
             f.write("    hyphens: auto;\n")
             f.write("}\n")
-            f.write("/* Dynamic column sizing - let content determine width */\n")
+            f.write("#features-table td:first-child a.feature-name-link:hover {\n")
+            f.write("    text-decoration: underline;\n")
+            f.write("}\n")
+            f.write("#features-table td:first-child .feature-name-text {\n")
+            f.write("    font-weight: 600;\n")
+            f.write("}\n")
+            f.write("/* Implementation badges */\n")
+            f.write(".impl-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; }\n")
+            f.write(".impl-badge {\n")
+            f.write("    display: inline-block;\n")
+            f.write("    padding: 0.15rem 0.5rem;\n")
+            f.write("    border-radius: 999px;\n")
+            f.write("    font-size: 0.78rem;\n")
+            f.write("    font-weight: 600;\n")
+            f.write("    line-height: 1.3;\n")
+            f.write("    white-space: nowrap;\n")
+            f.write("    border: 1px solid transparent;\n")
+            f.write("}\n")
+            f.write(".impl-fantastic { background: #e8f4ea; color: #1b5e20; border-color: #c8e6c9; }\n")
+            f.write(".impl-jsymbolic { background: #e3f2fd; color: #0d47a1; border-color: #bbdefb; }\n")
+            f.write(".impl-idyom { background: #f3e5f5; color: #4a148c; border-color: #e1bee7; }\n")
+            f.write(".impl-midi-toolbox { background: #fff3e0; color: #e65100; border-color: #ffe0b2; }\n")
+            f.write(".impl-simile { background: #fce4ec; color: #880e4f; border-color: #f8bbd0; }\n")
+            f.write(".impl-default { background: #f1f3f5; color: #495057; border-color: #dee2e6; }\n")
+            f.write("/* Type pills */\n")
+            f.write(".type-badge {\n")
+            f.write("    display: inline-block;\n")
+            f.write("    padding: 0.2rem 0.55rem;\n")
+            f.write("    border-radius: 0.35rem;\n")
+            f.write("    font-size: 0.8rem;\n")
+            f.write("    font-weight: 600;\n")
+            f.write("    letter-spacing: 0.02em;\n")
+            f.write("}\n")
+            f.write(".type-descriptor { background: #eef2ff; color: #3730a3; }\n")
+            f.write(".type-sequence { background: #ecfdf5; color: #065f46; }\n")
+            f.write("/* Notes, description, references */\n")
+            f.write(".feature-description { color: #212529; line-height: 1.45; }\n")
+            f.write(".feature-notes {\n")
+            f.write("    display: block;\n")
+            f.write("    color: #495057;\n")
+            f.write("    font-size: 0.92rem;\n")
+            f.write("    line-height: 1.45;\n")
+            f.write("}\n")
+            f.write(".feature-notes code {\n")
+            f.write("    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;\n")
+            f.write("    font-size: 0.85em;\n")
+            f.write("    padding: 0.1rem 0.35rem;\n")
+            f.write("    border-radius: 0.25rem;\n")
+            f.write("    background: #f8f9fa;\n")
+            f.write("    border: 1px solid #e9ecef;\n")
+            f.write("    color: #c7254e;\n")
+            f.write("    word-break: break-word;\n")
+            f.write("}\n")
+            f.write(".feature-notes .impl-ref { font-weight: 600; color: #343a40; }\n")
+            f.write(".citation-inline {\n")
+            f.write("    display: inline;\n")
+            f.write("    font-size: 0.9rem;\n")
+            f.write("    color: #495057;\n")
+            f.write("    line-height: 1.35;\n")
+            f.write("    white-space: normal;\n")
+            f.write("}\n")
+            f.write(".citation-list {\n")
+            f.write("    margin: 0;\n")
+            f.write("    padding-left: 1.1rem;\n")
+            f.write("    font-size: 0.88rem;\n")
+            f.write("    color: #6c757d;\n")
+            f.write("    line-height: 1.4;\n")
+            f.write("}\n")
+            f.write(".citation-list li { margin-bottom: 0.2rem; }\n")
+            f.write("/* Column widths */\n")
+            f.write("#features-table th:nth-child(2), #features-table td:nth-child(2) { min-width: 11rem; }\n")
+            f.write("#features-table th:nth-child(3), #features-table td:nth-child(3) { min-width: 9.5rem; }\n")
+            f.write("#features-table th:nth-child(4), #features-table td:nth-child(4) { min-width: 16rem; }\n")
+            f.write("#features-table th:nth-child(6), #features-table td:nth-child(6) { min-width: 18rem; }\n")
             f.write("</style>\n")
             f.write("<div class='filter-container'>\n")
             f.write("    <input type='text' class='search-input' id='searchInput' placeholder='Search features...'>\n")
@@ -1112,6 +1178,8 @@ def main():
             f.write("## Feature Types\n\n")
             f.write("- **Descriptor**: Returns a single scalar value (int, float, bool)\n")
             f.write("- **Sequence**: Returns a collection (list, tuple, dict, etc.)\n")
+
+    print(f"Built table with {feature_count} features -> {args.out}", file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -178,7 +178,66 @@ def circle_of_fifths(pitches: list[float], counts: list[float]) -> dict[int, flo
     return result
 
 
+_KEY_ROOT_TO_PC = {
+    "C": 0,
+    "C#": 1,
+    "Db": 1,
+    "D": 2,
+    "D#": 3,
+    "Eb": 3,
+    "E": 4,
+    "Fb": 4,
+    "F": 5,
+    "E#": 5,
+    "F#": 6,
+    "Gb": 6,
+    "G": 7,
+    "G#": 8,
+    "Ab": 8,
+    "A": 9,
+    "A#": 10,
+    "Bb": 10,
+    "B": 11,
+    "Cb": 11,
+    "c": 0,
+    "c#": 1,
+    "db": 1,
+    "d": 2,
+    "d#": 3,
+    "eb": 3,
+    "e": 4,
+    "fb": 4,
+    "f": 5,
+    "e#": 5,
+    "f#": 6,
+    "gb": 6,
+    "g": 7,
+    "g#": 8,
+    "ab": 8,
+    "a": 9,
+    "a#": 10,
+    "bb": 10,
+    "b": 11,
+    "cb": 11,
+}
 
+
+def _key_root_to_pitch_class(key_root: str) -> int:
+    """Map a key root name (e.g. 'Bb', 'F#', 'c') to pitch class 0-11."""
+    if key_root in _KEY_ROOT_TO_PC:
+        return _KEY_ROOT_TO_PC[key_root]
+    lowered = key_root.lower()
+    if lowered in _KEY_ROOT_TO_PC:
+        return _KEY_ROOT_TO_PC[lowered]
+    raise KeyError(key_root)
+
+
+def _scale_pitch_classes_from_key_string(key_string: str) -> list[int]:
+    """Return diatonic pitch classes for a key string like 'Bb major' or 'c minor'."""
+    root = _key_root_to_pitch_class(key_string.split()[0])
+    if "minor" in key_string.lower():
+        return [(root + i) % 12 for i in (0, 2, 3, 5, 7, 8, 10)]
+    return [(root + i) % 12 for i in (0, 2, 4, 5, 7, 9, 11)]
 
 
 def compute_tonality_vector(pitch_classes) -> list[tuple[str, float]]:
@@ -324,7 +383,7 @@ def arpeggiation_proportion(pitch_values: list[float]) -> float:
 
 
 def chromatic_motion_proportion(pitch_values: list[float]) -> float:
-    """Calculate the proportion of notes in the melody that move by chromatic intervals.
+    """Calculate the proportion of melodic intervals that are chromatic.
 
     Parameters
     ----------
@@ -334,7 +393,7 @@ def chromatic_motion_proportion(pitch_values: list[float]) -> float:
     Returns
     -------
     float
-        Proportion of notes that move by chromatic intervals (0.0-1.0).
+        Proportion of adjacent-note intervals that are chromatic (0.0-1.0).
         Returns -1.0 if input is None, 0.0 if input is empty or has only one value.
 
     Examples
@@ -368,7 +427,7 @@ def chromatic_motion_proportion(pitch_values: list[float]) -> float:
 
 
 def stepwise_motion_proportion(pitch_values: list[float]) -> float:
-    """Calculate the proportion of notes in the melody that move by stepwise intervals.
+    """Calculate the proportion of melodic intervals that are stepwise.
 
     Parameters
     ----------
@@ -378,7 +437,7 @@ def stepwise_motion_proportion(pitch_values: list[float]) -> float:
     Returns
     -------
     float
-        Proportion of notes that move by stepwise intervals (0.0-1.0).
+        Proportion of adjacent-note intervals that are stepwise (0.0-1.0).
         Returns -1.0 if input is None, 0.0 if input is empty or has only one value.
 
     Examples
@@ -412,7 +471,7 @@ def stepwise_motion_proportion(pitch_values: list[float]) -> float:
 
 
 def repeated_notes_proportion(pitch_values: list[float]) -> float:
-    """Calculate the proportion of notes in the melody that are repeated.
+    """Calculate the proportion of melodic intervals that are repeated notes.
 
     Parameters
     ----------
@@ -422,7 +481,7 @@ def repeated_notes_proportion(pitch_values: list[float]) -> float:
     Returns
     -------
     float
-        Proportion of notes that are repeated (0.0-1.0).
+        Proportion of adjacent-note intervals equal to unison (0.0-1.0).
         Returns -1.0 if input is None, 0.0 if input is empty or has only one value.
 
     Examples
@@ -616,38 +675,7 @@ def longest_monotonic_conjunct_scalar_passage(
         pitch_classes = [p % 12 for p in deduped]
         key_correlations = compute_tonality_vector(pitch_classes)
 
-    key = key_correlations[0][0].split()[0]
-
-    root = {
-        "C": 0,
-        "C#": 1,
-        "D": 2,
-        "D#": 3,
-        "E": 4,
-        "F": 5,
-        "F#": 6,
-        "G": 7,
-        "G#": 8,
-        "A": 9,
-        "A#": 10,
-        "B": 11,
-        "c": 0,
-        "c#": 1,
-        "d": 2,
-        "d#": 3,
-        "e": 4,
-        "f": 5,
-        "f#": 6,
-        "g": 7,
-        "g#": 8,
-        "a": 9,
-        "a#": 10,
-        "b": 11,
-    }[key]
-    if "minor" in key.lower():
-        scale = [(root + i) % 12 for i in [0, 2, 3, 5, 7, 8, 10]]
-    else:
-        scale = [(root + i) % 12 for i in [0, 2, 4, 5, 7, 9, 11]]
+    scale = _scale_pitch_classes_from_key_string(key_correlations[0][0])
 
     if len(pitches) < 3:
         return 0
@@ -738,41 +766,10 @@ def longest_conjunct_scalar_passage(
     if len(deduped) < 3:
         return 0
 
-    # Get key using KS algorithm
-    pitch_classes = [p % 12 for p in deduped]
     if key_correlations is None:
+        pitch_classes = [p % 12 for p in deduped]
         key_correlations = compute_tonality_vector(pitch_classes)
-    key = key_correlations[0][0]
-    root = {
-        "C": 0,
-        "C#": 1,
-        "D": 2,
-        "D#": 3,
-        "E": 4,
-        "F": 5,
-        "F#": 6,
-        "G": 7,
-        "G#": 8,
-        "A": 9,
-        "A#": 10,
-        "B": 11,
-        "c": 0,
-        "c#": 1,
-        "d": 2,
-        "d#": 3,
-        "e": 4,
-        "f": 5,
-        "f#": 6,
-        "g": 7,
-        "g#": 8,
-        "a": 9,
-        "a#": 10,
-        "b": 11,
-    }[key.split()[0]]
-    if "minor" in key.lower():
-        scale = [(root + i) % 12 for i in [0, 2, 3, 5, 7, 8, 10]]
-    else:
-        scale = [(root + i) % 12 for i in [0, 2, 4, 5, 7, 9, 11]]
+    scale = _scale_pitch_classes_from_key_string(key_correlations[0][0])
 
     # Find longest scalar sequence
     longest_sequence = 0

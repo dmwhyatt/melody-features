@@ -1,8 +1,8 @@
 """Calculates the Interpolation Contour of a melody, along with related features, as
 implemented in the FANTASTIC toolbox of Müllensiefen (2009) [1].
 Includes a modified version of the FANTASTIC method that is better suited to short melodies
-than the original implementation. This 'AMADS' method defines turning points using reversals,
-and is the default method. All features are returned for either method.
+than the original implementation. This 'AMADS' method defines turning points using reversals.
+All features are returned for either method.
 """
 
 __author__ = "David Whyatt"
@@ -31,10 +31,10 @@ class InterpolationContour:
             Array of onset times in seconds
         method : str, optional
             Method to use for contour calculation, either "fantastic" or "amads".
-            Defaults to "amads".
+            Defaults to "amads" because this improves robustness for short melodies.
             The FANTASTIC method is the original implementation, and identifies turning points
             using contour extrema via a series of rules. The AMADS method instead identifies
-            reversals for all melody lengths, and is the default method.
+            reversals for all melody lengths.
 
         Raises
         ------
@@ -252,12 +252,18 @@ class InterpolationContour:
 
     @property
     def global_direction(self) -> int:
-        """The sign of the sum of all contour values.
+        """The net signed direction of contour gradients.
 
         Returns
         -------
         int
-            1 if sum is positive, 0 if sum is zero, -1 if sum is negative
+            1 if the summed gradients are positive, 0 if they cancel to zero,
+            -1 if they are negative.
+
+        Notes
+        -----
+        This is a net direction metric. Opposing upward and downward sections can cancel,
+        resulting in 0 even when the contour is not flat.
 
         Examples
         --------
@@ -280,12 +286,12 @@ class InterpolationContour:
 
     @property
     def mean_gradient(self) -> float:
-        """The absolute mean gradient of the interpolation contour.
+        """The mean absolute gradient of the interpolation contour.
 
         Returns
         -------
         float
-            Mean of the absolute gradient values
+            Mean of `abs(gradient)` values.
 
         Examples
         --------
@@ -334,15 +340,19 @@ class InterpolationContour:
 
     @property
     def direction_changes(self) -> float:
-        """The proportion of interpolated gradient values that consistute
-        a change in direction. For instance, a gradient value of
-        -0.5 to 0.25 is a change in direction.
+        """The proportion of directional sign changes in adjacent gradients.
 
         Returns
         -------
         float
-            Ratio of the number of changes in contour direction relative to the number
-            of different interpolated gradient values
+            Ratio of:
+            - numerator: sign-flip transitions between adjacent gradient samples
+            - denominator: adjacent transitions where gradient values are distinct
+
+        Notes
+        -----
+        The denominator counts transitions between distinct consecutive interpolated
+        gradient values, matching the FANTASTIC convention.
 
         Examples
         --------
@@ -392,6 +402,11 @@ class InterpolationContour:
         str
             String of length 4 containing letters a-e representing the gradient
             categories at 4 equally spaced points in the contour
+
+        Notes
+        -----
+        Returned labels are letters (`a`-`e`). Numeric codes (`-2` to `2`) are
+        threshold descriptions only and are not returned by this property.
 
         Examples
         --------

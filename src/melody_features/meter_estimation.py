@@ -5,6 +5,8 @@ This module provides autocorrelation-based meter estimation functions that can b
 used as fallbacks when MIDI files don't contain explicit time signature information.
 """
 
+from typing import Optional
+
 import numpy as np
 from scipy.signal import correlate
 
@@ -136,80 +138,78 @@ def melodic_accent(pitches: list[int]) -> list[float]:
     return accent_values.tolist()
 
 
-def onset_autocorrelation_with_accents(starts: list[float], ends: list[float], pitches: list[int], 
-                                     accent_type: str = 'duration', divisions_per_quarter: int = 4, 
-                                     max_lag_quarters: int = 4) -> list[float]:
-    """Calculate autocorrelation function of onset times weighted by accents.
-    
-    This function calculates the autocorrelation of onset times weighted by either
-    duration accents or melodic accents, useful for meter estimation.
-    
-    Parameters
-    ----------
-    starts : list[float]
-        List of note start times in seconds
-    ends : list[float]
-        List of note end times in seconds
-    pitches : list[int]
-        List of MIDI pitch values (needed for melodic accents)
-    accent_type : str, optional
-        Type of accent to use: 'duration' or 'melodic', by default 'duration'
-    divisions_per_quarter : int, optional
-        Divisions per quarter note, by default 4
-    max_lag_quarters : int, optional
-        Maximum lag in quarter notes, by default 4
-        
-    Returns
-    -------
-    list[float]
-        Autocorrelation values from lag 0 to max_lag_quarters quarter notes
+def compute_onset_autocorrelation(
+    starts: list[float],
+    ends: list[float],
+    pitches: Optional[list[int]] = None,
+    accent_type: str = "duration",
+    divisions_per_quarter: int = 4,
+    max_lag_quarters: int = 8,
+    tempo: float = 120.0,
+) -> list[float]:
+    """Autocorrelation of onset times weighted by accents (MIDI Toolbox ``onsetacorr.m``).
+
+    Onsets are converted from seconds to quarter-note beats via ``tempo`` before
+    quantization; weights use Parncutt duration accent on note lengths in seconds.
     """
     expected_length = max_lag_quarters * divisions_per_quarter + 1
-    
+
     if not starts or not ends or len(starts) != len(ends):
         return [0.0] * expected_length
-    
-    if len(starts) == 0:
-        return [0.0] * expected_length
-    
-    # Get appropriate accent values
-    if accent_type == 'melodic' and pitches and len(pitches) == len(starts):
+
+    if accent_type == "melodic" and pitches and len(pitches) == len(starts):
         accent_values = melodic_accent(pitches)
     else:
         accent_values = duration_accent(starts, ends)
-    
+
     if not accent_values:
         return [0.0] * expected_length
-    
-    # Create onset time grid
-    max_onset_time = max(starts) if starts else 0
-    grid_length = divisions_per_quarter * max(2 * max_lag_quarters, int(np.ceil(max_onset_time)) + 1)
+
+    onsets_beats = [float(s) * (tempo / 60.0) for s in starts]
+    max_beat = max(onsets_beats) if onsets_beats else 0.0
+    grid_length = divisions_per_quarter * max(
+        2 * max_lag_quarters, int(np.ceil(max_beat)) + 1
+    )
     onset_grid = np.zeros(grid_length)
-    
-    # Place accents at quantized onset positions
-    for note_idx, onset_time in enumerate(starts):
-        if note_idx < len(accent_values):
-            # Quantize onset time to grid divisions
-            grid_index = int(np.round(onset_time * divisions_per_quarter)) % len(onset_grid)
-            onset_grid[grid_index] += accent_values[note_idx]
-    
-    # Calculate autocorrelation using scipy's cross-correlation function
-    full_autocorr = correlate(onset_grid, onset_grid, mode='full')
-    
-    # Extract the positive lags up to max_lag_quarters
+
+    for onset_beat, weight in zip(onsets_beats, accent_values):
+        grid_index = int(np.round(onset_beat * divisions_per_quarter)) % len(onset_grid)
+        onset_grid[grid_index] += weight
+
+    full_autocorr = correlate(onset_grid, onset_grid, mode="full")
     center_index = len(full_autocorr) // 2
-    autocorr_result = full_autocorr[center_index:center_index + expected_length]
-    
-    # Normalize by the zero-lag value
+    autocorr_result = full_autocorr[center_index : center_index + expected_length]
+
     if autocorr_result[0] != 0:
         autocorr_result = autocorr_result / autocorr_result[0]
     else:
         autocorr_result = np.zeros_like(autocorr_result)
-    
+
     return autocorr_result.tolist()
 
 
-def estimate_meter_simple(starts: list[float], ends: list[float]) -> int:
+def onset_autocorrelation_with_accents(
+    starts: list[float],
+    ends: list[float],
+    pitches: list[int],
+    accent_type: str = "duration",
+    divisions_per_quarter: int = 4,
+    max_lag_quarters: int = 4,
+    tempo: float = 120.0,
+) -> list[float]:
+    """Autocorrelation of onsets weighted by duration or melodic accents (meter estimation)."""
+    return compute_onset_autocorrelation(
+        starts,
+        ends,
+        pitches=pitches,
+        accent_type=accent_type,
+        divisions_per_quarter=divisions_per_quarter,
+        max_lag_quarters=max_lag_quarters,
+        tempo=tempo,
+    )
+
+
+def estimate_meter_simple(starts: list[float], ends: list[float], tempo: float = 120.0) -> int:
     """Simple meter estimation using duration accents only.
     
     Parameters
@@ -227,8 +227,13 @@ def estimate_meter_simple(starts: list[float], ends: list[float]) -> int:
     # Get autocorrelation of onset function weighted by duration accents
     # Using max_lag_quarters=4 to get up to 16 divisions (4 quarter notes)
     autocorr_values = onset_autocorrelation_with_accents(
-        starts, ends, [], accent_type='duration', 
-        divisions_per_quarter=4, max_lag_quarters=4
+        starts,
+        ends,
+        [],
+        accent_type="duration",
+        divisions_per_quarter=4,
+        max_lag_quarters=4,
+        tempo=tempo,
     )
     
     if len(autocorr_values) < 7:  # Need at least indices 0-6
@@ -246,7 +251,9 @@ def estimate_meter_simple(starts: list[float], ends: list[float]) -> int:
         return 3  # Simple triple or compound meter
 
 
-def estimate_meter_optimal(starts: list[float], ends: list[float], pitches: list[int]) -> int:
+def estimate_meter_optimal(
+    starts: list[float], ends: list[float], pitches: list[int], tempo: float = 120.0
+) -> int:
     """Optimal meter estimation using weighted duration and melodic accents.
     
     Uses discriminant function trained on 12,000 folk melodies from the MIDI toolbox.
@@ -268,24 +275,32 @@ def estimate_meter_optimal(starts: list[float], ends: list[float], pitches: list
     """
     if not pitches or len(pitches) != len(starts):
         # Fall back to simple method if no pitch data
-        return estimate_meter_simple(starts, ends)
-    
-    # Get autocorrelation with duration accents
+        return estimate_meter_simple(starts, ends, tempo=tempo)
+
     duration_autocorr = onset_autocorrelation_with_accents(
-        starts, ends, pitches, accent_type='duration', 
-        divisions_per_quarter=4, max_lag_quarters=4
+        starts,
+        ends,
+        pitches,
+        accent_type="duration",
+        divisions_per_quarter=4,
+        max_lag_quarters=4,
+        tempo=tempo,
     )
-    
-    # Get autocorrelation with melodic accents
+
     melodic_autocorr = onset_autocorrelation_with_accents(
-        starts, ends, pitches, accent_type='melodic', 
-        divisions_per_quarter=4, max_lag_quarters=4
+        starts,
+        ends,
+        pitches,
+        accent_type="melodic",
+        divisions_per_quarter=4,
+        max_lag_quarters=4,
+        tempo=tempo,
     )
     
     # Ensure we have enough values for the discriminant function
     if len(duration_autocorr) < 17 or len(melodic_autocorr) < 17:
-        return estimate_meter_simple(starts, ends)
-    
+        return estimate_meter_simple(starts, ends, tempo=tempo)
+
     # Extract specific autocorrelation values (converting from MATLAB 1-based to Python 0-based)
     # MATLAB indices: ac1(3), ac1(4), ac1(6), ac1(8), ac1(12), ac1(16)
     # Python indices: ac1[2], ac1[3], ac1[5], ac1[7], ac1[11], ac1[15]
@@ -320,8 +335,13 @@ def estimate_meter_optimal(starts: list[float], ends: list[float], pitches: list
         return 3  # Simple triple or compound meter
 
 
-def estimate_meter(starts: list[float], ends: list[float], pitches: list[int] = None, 
-                  use_optimal: bool = False) -> int:
+def estimate_meter(
+    starts: list[float],
+    ends: list[float],
+    pitches: list[int] = None,
+    use_optimal: bool = False,
+    tempo: float = 120.0,
+) -> int:
     """Estimate meter using autocorrelation-based method from MIDI toolbox.
     Implementation based on MIDI toolbox "meter.m"
     
@@ -357,12 +377,11 @@ def estimate_meter(starts: list[float], ends: list[float], pitches: list[int] = 
     
     if use_optimal and pitches and len(pitches) == len(starts):
         try:
-            return estimate_meter_optimal(starts, ends, pitches)
+            return estimate_meter_optimal(starts, ends, pitches, tempo=tempo)
         except Exception:
-            # Fall back to simple method if optimal fails
-            return estimate_meter_simple(starts, ends)
+            return estimate_meter_simple(starts, ends, tempo=tempo)
     else:
-        return estimate_meter_simple(starts, ends)
+        return estimate_meter_simple(starts, ends, tempo=tempo)
 
 
 def _onset_mod_meter(starts: list[float], ends: list[float], 

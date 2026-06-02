@@ -43,7 +43,9 @@ def process_melody_ngrams(args) -> set:
     Parameters
     ----------
     args : tuple
-        Tuple containing (melody, n_range)
+        Tuple containing either:
+        - (melody, n_range, phrase_gap)
+        - (melody, n_range), in which case phrase_gap defaults to 1.5
 
     Returns
     -------
@@ -61,11 +63,19 @@ def process_melody_ngrams(args) -> set:
         "ignore", category=UserWarning, message=".*pkg_resources is deprecated.*"
     )
 
-    melody, n_range = args
+    if len(args) == 3:
+        melody, n_range, phrase_gap = args
+    elif len(args) == 2:
+        melody, n_range = args
+        phrase_gap = 1.5
+    else:
+        raise ValueError(
+            "process_melody_ngrams expects (melody, n_range, phrase_gap) or (melody, n_range)"
+        )
     tokenizer = FantasticTokenizer()
 
     # Segment the melody first
-    segments = tokenizer.segment_melody(melody, phrase_gap=1.5, units="quarters")
+    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
 
     # Get tokens for each segment
     all_tokens = []
@@ -86,7 +96,10 @@ def process_melody_ngrams(args) -> set:
 
 
 def compute_corpus_ngrams(
-    melodies: List[Melody], n_range: Tuple[int, int] = (1, 6), njobs: Optional[int] = -1
+    melodies: List[Melody],
+    n_range: Tuple[int, int] = (1, 5),
+    phrase_gap: float = 1.5,
+    njobs: Optional[int] = -1,
 ) -> Dict:
     """Compute n-gram frequencies across the entire corpus using multiprocessing.
 
@@ -95,7 +108,9 @@ def compute_corpus_ngrams(
     melodies : List[Melody]
         List of Melody objects to analyze
     n_range : Tuple[int, int]
-        Range of n-gram lengths to consider (min, max)
+        Inclusive range of n-gram lengths to consider (min, max)
+    phrase_gap : float
+        Phrase-gap threshold in quarter-note units used by tokenization.
 
     Returns
     -------
@@ -120,7 +135,7 @@ def compute_corpus_ngrams(
         processes = max(1, int(njobs))
 
     # Prepare arguments for worker function
-    args = [(melody, n_range) for melody in melodies]
+    args = [(melody, n_range, phrase_gap) for melody in melodies]
 
     results: List[Set] = []
     try:
@@ -363,7 +378,12 @@ def load_melodies_from_directory(
     return melodies
 
 
-def make_corpus_stats(midi_dir: str, output_file: str) -> None:
+def make_corpus_stats(
+    midi_dir: str,
+    output_file: str,
+    n_range: Tuple[int, int] = (1, 5),
+    phrase_gap: float = 1.5,
+) -> None:
     """Process a directory of MIDI files and save corpus statistics.
 
     Parameters
@@ -372,6 +392,10 @@ def make_corpus_stats(midi_dir: str, output_file: str) -> None:
         Path to directory containing MIDI files
     output_file : str
         Path where to save the corpus statistics JSON file
+    n_range : Tuple[int, int], optional
+        Inclusive range of n-gram lengths (min, max), by default (1, 5)
+    phrase_gap : float, optional
+        Phrase-gap threshold in quarter-note units used by tokenization.
     """
     logger = logging.getLogger("melody_features")
     # Load melodies from MIDI files
@@ -385,7 +409,9 @@ def make_corpus_stats(midi_dir: str, output_file: str) -> None:
     logger.info(f"Processing {len(melodies)} valid melodies")
 
     # Compute corpus statistics
-    corpus_stats = compute_corpus_ngrams(melodies, njobs=-1)
+    corpus_stats = compute_corpus_ngrams(
+        melodies, n_range=n_range, phrase_gap=phrase_gap, njobs=-1
+    )
 
     # Save to JSON
     save_corpus_stats(corpus_stats, output_file)
@@ -398,7 +424,10 @@ def make_corpus_stats(midi_dir: str, output_file: str) -> None:
 
 
 def make_corpus_stats_from_json(
-    json_file: str, output_file: str, n_range: Tuple[int, int] = (1, 6)
+    json_file: str,
+    output_file: str,
+    n_range: Tuple[int, int] = (1, 5),
+    phrase_gap: float = 1.5,
 ) -> None:
     """Process a JSON file containing melody data and save corpus statistics.
 
@@ -409,7 +438,9 @@ def make_corpus_stats_from_json(
     output_file : str
         Path where to save the corpus statistics JSON file
     n_range : Tuple[int, int], optional
-        Range of n-gram lengths to consider (min, max), by default (1, 6)
+        Inclusive range of n-gram lengths (min, max), by default (1, 5)
+    phrase_gap : float, optional
+        Phrase-gap threshold in quarter-note units used by tokenization.
     """
     logger = logging.getLogger("melody_features")
     # Load melody data from JSON
@@ -439,7 +470,7 @@ def make_corpus_stats_from_json(
     logger.info(f"Processing {len(melodies)} valid melodies")
 
     # Compute corpus statistics
-    corpus_stats = compute_corpus_ngrams(melodies, n_range)
+    corpus_stats = compute_corpus_ngrams(melodies, n_range, phrase_gap=phrase_gap)
 
     # Save to JSON
     save_corpus_stats(corpus_stats, output_file)
