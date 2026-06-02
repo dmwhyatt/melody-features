@@ -324,7 +324,7 @@ def arpeggiation_proportion(pitch_values: list[float]) -> float:
 
 
 def chromatic_motion_proportion(pitch_values: list[float]) -> float:
-    """Calculate the proportion of notes in the melody that move by chromatic intervals.
+    """Calculate the proportion of melodic intervals that are chromatic.
 
     Parameters
     ----------
@@ -334,7 +334,7 @@ def chromatic_motion_proportion(pitch_values: list[float]) -> float:
     Returns
     -------
     float
-        Proportion of notes that move by chromatic intervals (0.0-1.0).
+        Proportion of adjacent-note intervals that are chromatic (0.0-1.0).
         Returns -1.0 if input is None, 0.0 if input is empty or has only one value.
 
     Examples
@@ -368,7 +368,7 @@ def chromatic_motion_proportion(pitch_values: list[float]) -> float:
 
 
 def stepwise_motion_proportion(pitch_values: list[float]) -> float:
-    """Calculate the proportion of notes in the melody that move by stepwise intervals.
+    """Calculate the proportion of melodic intervals that are stepwise.
 
     Parameters
     ----------
@@ -378,7 +378,7 @@ def stepwise_motion_proportion(pitch_values: list[float]) -> float:
     Returns
     -------
     float
-        Proportion of notes that move by stepwise intervals (0.0-1.0).
+        Proportion of adjacent-note intervals that are stepwise (0.0-1.0).
         Returns -1.0 if input is None, 0.0 if input is empty or has only one value.
 
     Examples
@@ -412,7 +412,7 @@ def stepwise_motion_proportion(pitch_values: list[float]) -> float:
 
 
 def repeated_notes_proportion(pitch_values: list[float]) -> float:
-    """Calculate the proportion of notes in the melody that are repeated.
+    """Calculate the proportion of melodic intervals that are repeated notes.
 
     Parameters
     ----------
@@ -422,7 +422,7 @@ def repeated_notes_proportion(pitch_values: list[float]) -> float:
     Returns
     -------
     float
-        Proportion of notes that are repeated (0.0-1.0).
+        Proportion of adjacent-note intervals equal to unison (0.0-1.0).
         Returns -1.0 if input is None, 0.0 if input is empty or has only one value.
 
     Examples
