@@ -17,12 +17,19 @@ import numpy as np
 from melody_features.features import (
     DEFAULT_MAX_NGRAM_ORDER,
     _fantastic_log_normalized_tf_df,
+    _fantastic_min_tie_ranks,
     _fantastic_melody_ngram_counts,
     _fantastic_melody_tf_df,
     get_all_features,
     get_corpus_features,
     mean_log_tfdf,
     norm_log_dist,
+    tfdf_kendall,
+    tfdf_spearman,
+    mean_global_local_weight,
+    std_global_local_weight,
+    mean_global_weight,
+    std_global_weight,
     _setup_corpus_statistics,
     _load_melody_data,
     Config,
@@ -166,6 +173,61 @@ class TestFantasticCorpusFeatures:
             melody, corpus_stats, phrase_gap, max_order
         )
         assert batch["norm_log_dist"] == norm_log_dist(
+            melody, corpus_stats, phrase_gap, max_order
+        )
+
+    def test_all_runtime_corpus_weights_match_batch_output(self):
+        melody = Melody(
+            import_midi("src/melody_features/corpora/essen_folksong_collection/appenzel.mid")
+        )
+        corpus_stats = {
+            "document_frequencies": {
+                str(("a",)): {"count": 3},
+                str(("b",)): {"count": 2},
+                str(("a", "b")): {"count": 2},
+                str(("b", "a")): {"count": 1},
+            },
+            "corpus_size": 10,
+        }
+        phrase_gap = 1.5
+        max_order = 2
+        batch = get_corpus_features(melody, corpus_stats, phrase_gap, max_order)
+        assert batch["mean_global_local_weight"] == mean_global_local_weight(
+            melody, corpus_stats, phrase_gap, max_order
+        )
+        assert batch["std_global_local_weight"] == std_global_local_weight(
+            melody, corpus_stats, phrase_gap, max_order
+        )
+        assert batch["mean_global_weight"] == mean_global_weight(
+            melody, corpus_stats, phrase_gap, max_order
+        )
+        assert batch["std_global_weight"] == std_global_weight(
+            melody, corpus_stats, phrase_gap, max_order
+        )
+
+    def test_tfdf_rank_correlations_use_min_tie_policy(self):
+        ranks = _fantastic_min_tie_ranks(np.array([10.0, 10.0, 20.0, 30.0]))
+        assert np.array_equal(ranks, np.array([1.0, 1.0, 3.0, 4.0]))
+
+    def test_tfdf_correlations_match_batch_output(self):
+        melody = Melody(
+            import_midi("src/melody_features/corpora/essen_folksong_collection/appenzel.mid")
+        )
+        corpus_stats = {
+            "document_frequencies": {
+                str(("x",)): {"count": 4},
+                str(("y",)): {"count": 4},
+                str(("z",)): {"count": 2},
+            },
+            "corpus_size": 10,
+        }
+        phrase_gap = 1.5
+        max_order = 2
+        batch = get_corpus_features(melody, corpus_stats, phrase_gap, max_order)
+        assert batch["tfdf_spearman"] == tfdf_spearman(
+            melody, corpus_stats, phrase_gap, max_order
+        )
+        assert batch["tfdf_kendall"] == tfdf_kendall(
             melody, corpus_stats, phrase_gap, max_order
         )
 
@@ -320,11 +382,11 @@ class TestFeaturesWithCorpus:
             assert len(corpus_feature_cols) > 0, "Should have corpus features"
             
             # Check some corpus features exist and have valid types
-            if 'corpus.mean_document_frequency' in row.index:
-                assert isinstance(row['corpus.mean_document_frequency'], (int, float)), "Should be numeric"
+            if 'corpus.mean_log_df' in row.index:
+                assert isinstance(row['corpus.mean_log_df'], (int, float)), "Should be numeric"
             
-            if 'corpus.std_document_frequency' in row.index:
-                assert isinstance(row['corpus.std_document_frequency'], (int, float)), "Should be numeric"
+            if 'corpus.mean_global_weight' in row.index:
+                assert isinstance(row['corpus.mean_global_weight'], (int, float)), "Should be numeric"
     
     def test_get_all_features_corpus_precedence(self):
         """Test that fantastic.corpus takes precedence over config.corpus."""
@@ -470,13 +532,38 @@ class TestCorpusStatisticsIntegration:
             # checking whether we correctly check for corpus stats and generate
             # only if not found
             corpus_name = Path(corpus_dir).name
-            expected_stats_file = Path(output_file1).parent / f"{corpus_name}_corpus_stats.json"
+            expected_stats_file = Path(output_file1).parent / f"{corpus_name}_corpus_stats_pg1p5_n5.json"
             assert expected_stats_file.exists(), "Corpus stats file should be created"
 
             output_file2 = os.path.join(temp_dir, "output2.csv")
             stats2 = _setup_corpus_statistics(config, output_file2)
 
             assert stats1 == stats2, "Should reuse cached corpus statistics"
+
+    def test_corpus_statistics_cache_key_includes_phrase_gap_and_max_order(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            corpus_dir, _ = create_test_corpus(temp_dir)
+            output_file = os.path.join(temp_dir, "output.csv")
+
+            config_a = Config(
+                idyom={"test": IDyOMConfig(target_viewpoints=["cpitch"], source_viewpoints=["cpint"], ppm_order=1, models=":both")},
+                fantastic=FantasticConfig(max_ngram_order=5, phrase_gap=1.5, corpus=corpus_dir),
+                corpus=corpus_dir,
+            )
+            config_b = Config(
+                idyom={"test": IDyOMConfig(target_viewpoints=["cpitch"], source_viewpoints=["cpint"], ppm_order=1, models=":both")},
+                fantastic=FantasticConfig(max_ngram_order=4, phrase_gap=2.0, corpus=corpus_dir),
+                corpus=corpus_dir,
+            )
+
+            _setup_corpus_statistics(config_a, output_file)
+            _setup_corpus_statistics(config_b, output_file)
+
+            corpus_name = Path(corpus_dir).name
+            expected_a = Path(output_file).parent / f"{corpus_name}_corpus_stats_pg1p5_n5.json"
+            expected_b = Path(output_file).parent / f"{corpus_name}_corpus_stats_pg2p0_n4.json"
+            assert expected_a.exists()
+            assert expected_b.exists()
 
     def test_features_with_empty_corpus_stats(self):
         """Test feature extraction when corpus has no valid melodies."""
