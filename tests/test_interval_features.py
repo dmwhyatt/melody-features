@@ -12,6 +12,10 @@ from melody_features.features import (
     minor_major_third_ratio,
     modal_interval,
     most_common_interval,
+    number_of_common_pitch_classes,
+    number_of_common_pitches_classes,
+    pitch_standard_deviation,
+    pitch_variability,
 )
 
 
@@ -41,6 +45,8 @@ def test_interval_entropy_uses_signed_intervals():
 def test_interval_aliases_share_implementation():
     assert mean_melodic_interval is mean_absolute_interval
     assert most_common_interval is modal_interval
+    assert pitch_variability is pitch_standard_deviation
+    assert number_of_common_pitches_classes is number_of_common_pitch_classes
 
 
 def test_minor_major_third_ratio_uses_jsymbolic_zero_sentinel():

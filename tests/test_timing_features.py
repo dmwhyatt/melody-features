@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from melody_features.features import (
+    amount_of_staccato,
     average_time_between_attacks,
     complete_rests_fraction,
     dotted_duration_transitions,
@@ -16,6 +17,7 @@ from melody_features.features import (
     prevalence_of_long_rhythmic_values,
     prevalence_of_medium_rhythmic_values,
     prevalence_of_short_rhythmic_values,
+    short_note_fraction,
     total_number_of_notes,
     variability_of_time_between_attacks,
 )
@@ -31,6 +33,7 @@ def test_aliases_point_to_same_implementations():
     assert global_duration is duration_in_seconds
     assert ioi_mean is average_time_between_attacks
     assert ioi_standard_deviation is variability_of_time_between_attacks
+    assert amount_of_staccato is short_note_fraction
 
 
 def test_ioi_contour_requires_three_onsets():

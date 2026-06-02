@@ -1181,6 +1181,10 @@ def number_of_common_pitch_classes(pitches: list[int]) -> int:
     significant_pcs = n_percent_significant_values(pcs, threshold=0.2)
     return int(len(significant_pcs))
 
+
+# backwards-compatible alias (typo preserved for semantic versioning).
+number_of_common_pitches_classes = number_of_common_pitch_classes
+
 @jsymbolic
 @absolute
 @pitch
@@ -6465,6 +6469,10 @@ def amount_of_staccato(starts: list[float], ends: list[float]) -> float:
         return 0.0
     short_count = sum(1 for d in durations_seconds if d < 0.1)
     return float(short_count / len(durations_seconds))
+
+
+# readable alias
+short_note_fraction = amount_of_staccato
 
 @midi_toolbox
 @rhythm
