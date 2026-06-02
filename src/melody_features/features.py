@@ -9010,10 +9010,38 @@ def get_complexity_features(
             print(f"Warning: Could not compute {name}: {e}")
             features[name] = None
 
-    mtype_features = get_mtype_features(melody, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order)
-    features.update(mtype_features)
-    
     return features
+
+
+def get_lexical_diversity_features(
+    melody: Melody,
+    phrase_gap: float = 1.5,
+    max_ngram_order: int = DEFAULT_MAX_NGRAM_ORDER,
+) -> Dict:
+    """Collect lexical-diversity (m-type) features for a melody.
+
+    Corpus-dependent lexical-diversity features (e.g. TF/DF correlations) are
+    computed in :func:`get_corpus_features` instead.
+    """
+    return get_mtype_features(
+        melody, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
+    )
+
+
+def get_complexity_feature_bundle(
+    melody: Melody,
+    phrase_gap: float = 1.5,
+    max_ngram_order: int = DEFAULT_MAX_NGRAM_ORDER,
+) -> Dict:
+    """Return complexity and lexical-diversity features for export."""
+    return {
+        **get_complexity_features(
+            melody, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
+        ),
+        **get_lexical_diversity_features(
+            melody, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
+        ),
+    }
 
 
 def _fantastic_melody_tokens(melody: Melody, phrase_gap: float) -> list:
@@ -9668,74 +9696,69 @@ def _precompute_beat_histogram_data(melody: Melody) -> tuple:
     return normal_values, standardized_values, start_ticks, end_ticks, melody.tempo, 480
 
 
-def get_rhythm_features(melody: Melody) -> Dict:
-    """Dynamically collect all rhythm features for a melody.
-    
-    Collects features decorated with @rhythm domain and @timing or @interval type.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    Dict
-        Dictionary of rhythm feature values
-    """
-    features = {}
-    rhythm_functions = _get_features_by_domain_and_types("rhythm", ["timing", "interval"])
-    
-    # Pre-compute beat histogram data once for all beat histogram functions
-    beat_histogram_data = None
+def _collect_rhythm_domain_features(melody: Melody, allowed_types: list[str]) -> Dict:
+    """Collect @rhythm-domain features whose types intersect ``allowed_types``."""
+    features: Dict[str, Any] = {}
+    rhythm_functions = _get_features_by_domain_and_types("rhythm", allowed_types)
+
     beat_histogram_functions = []
     regular_functions = []
-    
-    # Separate beat histogram functions from regular functions
+
     for name, func in rhythm_functions.items():
         if _is_beat_histogram_function(func):
             beat_histogram_functions.append((name, func))
         else:
             regular_functions.append((name, func))
-    
-    # Process regular functions first
+
     for name, func in regular_functions:
         try:
             result = _invoke_feature(func, melody)
-
-            # Handle functions that return tuples (like ioi_ratio, ioi_contour)
             if isinstance(result, tuple) and len(result) == 2:
                 features[f"{name}_mean"] = result[0]
                 features[f"{name}_std"] = result[1]
             else:
                 features[name] = result
-                
         except Exception as e:
             print(f"Warning: Could not compute {name}: {e}")
             features[name] = None
-    
-    # Process beat histogram functions with pre-computed data
+
     if beat_histogram_functions:
         beat_histogram_data = _precompute_beat_histogram_data(melody)
-        normal_values, standardized_values, start_ticks, end_ticks, tempo, ppqn = beat_histogram_data
-        
         for name, func in beat_histogram_functions:
             try:
                 result = _invoke_feature(func, melody)
-
                 if isinstance(result, tuple) and len(result) == 2:
                     features[f"{name}_mean"] = result[0]
                     features[f"{name}_std"] = result[1]
                 else:
                     features[name] = result
-                    
             except Exception as e:
                 print(f"Warning: Could not compute {name}: {e}")
                 features[name] = None
-    
-    # Add metric accent features
+
+    return features
+
+
+def get_timing_features(melody: Melody) -> Dict:
+    """Collect @rhythm-domain features decorated with @timing."""
+    return _collect_rhythm_domain_features(melody, ["timing"])
+
+
+def get_inter_onset_interval_features(melody: Melody) -> Dict:
+    """Collect @rhythm-domain features decorated with @interval (IOI family)."""
+    return _collect_rhythm_domain_features(melody, ["interval"])
+
+
+def get_rhythm_features(melody: Melody) -> Dict:
+    """Dynamically collect all rhythm features for a melody.
+
+    Combines timing, inter-onset interval, and metric-accent features for
+    backward-compatible ``rhythm_features`` export.
+    """
+    features: Dict[str, Any] = {}
+    features.update(get_timing_features(melody))
+    features.update(get_inter_onset_interval_features(melody))
     features.update(get_metric_accent_features(melody))
-    
     return features
 
 
@@ -10397,6 +10420,29 @@ def get_tonality_features(
     return tonality_features
 
 
+# Per-melody timing keys aligned with FeatureType taxonomy (see feature_decorators.py).
+TIMING_STAT_CATEGORIES = (
+    "absolute_pitch",
+    "pitch_class",
+    "pitch_interval",
+    "contour",
+    "timing",
+    "inter_onset_interval",
+    "tonality",
+    "metre",
+    "expectation",
+    "complexity",
+    "lexical_diversity",
+    "corpus",
+    "total",
+)
+
+
+def _init_timing_stats() -> Dict[str, List[float]]:
+    """Return an empty timing accumulator for all taxonomy categories."""
+    return {category: [] for category in TIMING_STAT_CATEGORIES}
+
+
 def process_melody(args):
     """Process a single melody and return its features.
 
@@ -10426,12 +10472,12 @@ def process_melody(args):
     melody_data, corpus_stats, idyom_results_dict, phrase_gap, max_ngram_order, key_estimation = args
     mel = Melody(melody_data)
 
-    # Time each feature category
-    timings = {}
+    # Time each taxonomy category separately for logging
+    timings: Dict[str, float] = {category: 0.0 for category in TIMING_STAT_CATEGORIES}
 
     start = time.time()
     pitch_features = get_pitch_features(mel)
-    timings["pitch"] = time.time() - start
+    timings["absolute_pitch"] = time.time() - start
 
     start = time.time()
     pitch_class_features = get_pitch_class_features(mel)
@@ -10439,15 +10485,25 @@ def process_melody(args):
 
     start = time.time()
     interval_features = get_interval_features(mel)
-    timings["interval"] = time.time() - start
+    timings["pitch_interval"] = time.time() - start
 
     start = time.time()
     contour_features = get_contour_features(mel)
     timings["contour"] = time.time() - start
 
     start = time.time()
-    rhythm_features = get_rhythm_features(mel)
-    timings["rhythm"] = time.time() - start
+    timing_features = get_timing_features(mel)
+    timings["timing"] = time.time() - start
+
+    start = time.time()
+    ioi_features = get_inter_onset_interval_features(mel)
+    timings["inter_onset_interval"] = time.time() - start
+
+    rhythm_features = {
+        **timing_features,
+        **ioi_features,
+        **get_metric_accent_features(mel),
+    }
 
     start = time.time()
     tonality_features = get_tonality_features(mel, key_estimation=key_estimation)
@@ -10462,8 +10518,16 @@ def process_melody(args):
     timings["expectation"] = time.time() - start
 
     start = time.time()
-    complexity_features = get_complexity_features(mel, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order)
+    complexity_features = get_complexity_features(
+        mel, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
+    )
     timings["complexity"] = time.time() - start
+
+    start = time.time()
+    lexical_diversity_features = get_lexical_diversity_features(
+        mel, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
+    )
+    timings["lexical_diversity"] = time.time() - start
 
     melody_features = {
         "pitch_features": pitch_features,
@@ -10474,7 +10538,7 @@ def process_melody(args):
         "tonality_features": tonality_features,
         "metre_features": metre_features,
         "expectation_features": expectation_features,
-        "complexity_features": complexity_features,
+        "complexity_features": {**complexity_features, **lexical_diversity_features},
     }
 
     # Add corpus features only if corpus stats are available
@@ -11231,7 +11295,7 @@ def _setup_parallel_processing(
         "tonality_features": get_tonality_features(mel, key_estimation=config.key_estimation),
         "metre_features": get_metre_features(mel),
         "expectation_features": get_expectation_features(mel),
-        "complexity_features": get_complexity_features(
+        "complexity_features": get_complexity_feature_bundle(
             mel,
             phrase_gap=config.fantastic.phrase_gap,
             max_ngram_order=config.fantastic.max_ngram_order,
@@ -11284,20 +11348,7 @@ def _setup_parallel_processing(
         for melody_data in melody_data_list
     ]
 
-    # Track timing statistics
-    timing_stats = {
-        "pitch": [],
-        "pitch_class": [],
-        "interval": [],
-        "contour": [],
-        "rhythm": [],
-        "tonality": [],
-        "metre": [],
-        "expectation": [],
-        "complexity": [],
-        "corpus": [],
-        "total": [],
-    }
+    timing_stats = _init_timing_stats()
 
     return headers, melody_args, timing_stats
 
@@ -11716,17 +11767,22 @@ def _get_category_display_name(category: str, feature_name: str = None) -> str:
         "corpus_features": "Corpus",
     }
     
-    # mapping for timing_stats keys (without "_features" suffix)
+    # mapping for timing_stats keys (aligned with FeatureType taxonomy)
     timing_mapping = {
-        "pitch": "Absolute Pitch",
+        "absolute_pitch": "Absolute Pitch",
+        "pitch": "Absolute Pitch",  # legacy
         "pitch_class": "Pitch Class",
-        "interval": "Pitch Interval",
+        "pitch_interval": "Pitch Interval",
+        "interval": "Pitch Interval",  # legacy
         "contour": "Contour",
-        "rhythm": "Timing", # ioi features are included here
+        "timing": "Timing",
+        "rhythm": "Timing",  # legacy
+        "inter_onset_interval": "Inter-Onset Interval",
         "tonality": "Tonality",
         "metre": "Metre",
         "expectation": "Expectation",
-        "complexity": "Complexity", # lexical diversity features are included here
+        "complexity": "Complexity",
+        "lexical_diversity": "Lexical Diversity",
         "corpus": "Corpus",
         "total": "Total",
     }
@@ -11932,10 +11988,12 @@ def get_all_features(
     end_time = time.time()
     logger.info(f"Total processing time: {end_time - start_time:.2f} seconds")
     logger.info("Timing Statistics (average milliseconds per melody):")
-    for category, times in timing_stats.items():
-        if times:  # Only print if we have timing data
+    for category in TIMING_STAT_CATEGORIES:
+        times = timing_stats.get(category, [])
+        if times:
             avg_time = sum(times) / len(times) * 1000  # Convert to milliseconds
-            logger.info(f"{category:15s}: {avg_time:8.2f}ms")
+            display_name = _get_category_display_name(category)
+            logger.info(f"{display_name:22s}: {avg_time:8.2f}ms")
     
     logger.info(f"Successfully extracted features for {len(df)} melodies")
     
