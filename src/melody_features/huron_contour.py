@@ -132,6 +132,12 @@ class HuronContour:
             One of: 'ascending', 'descending', 'convex', 'concave', 'horizontal',
             'ascending-horizontal', 'horizontal-ascending', 'descending-horizontal',
             'horizontal-descending', or 'unclassified'.
+
+        Notes
+        -----
+        The midpoint pitch used for classification is rounded to the nearest MIDI pitch
+        before class assignment. This implementation uses a duration-weighted mean pitch
+        before rounding.
         """
         return self._huron_contour
 
