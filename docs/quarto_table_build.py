@@ -86,7 +86,127 @@ def _alias_display_name(python_name: str) -> str:
 
 
 def _alias_note(alternate_python_name: str, source: str) -> str:
-    return f'This feature is named "{_alias_display_name(alternate_python_name)}" in {source}.'
+    return (
+        f'This feature is named `{alternate_python_name}` '
+        f"({_alias_display_name(alternate_python_name)}) in {source}."
+    )
+
+
+_IMPL_BADGE_CLASSES: dict[str, str] = {
+    "FANTASTIC": "impl-fantastic",
+    "jSymbolic": "impl-jsymbolic",
+    "IDyOM": "impl-idyom",
+    "MIDI Toolbox": "impl-midi-toolbox",
+    "SIMILE": "impl-simile",
+    "Melsim": "impl-melsim",
+    "Novel": "impl-novel",
+    "Partitura": "impl-partitura",
+}
+
+
+def format_implementations_html(implementations: str) -> str:
+    """Render implementation sources as compact badges."""
+    if not implementations:
+        return ""
+    tokens = [t.strip() for t in implementations.split(",") if t.strip()]
+    badges = []
+    for token in tokens:
+        css_class = _IMPL_BADGE_CLASSES.get(token, "impl-default")
+        badges.append(f'<span class="impl-badge {css_class}">{token}</span>')
+    return '<span class="impl-badges">' + " ".join(badges) + "</span>"
+
+
+def format_type_badge_html(type_label: str) -> str:
+    """Render Descriptor / Sequence as a colored pill."""
+    if not type_label:
+        return ""
+    css_class = "type-descriptor" if type_label == "Descriptor" else "type-sequence"
+    return f'<span class="type-badge {css_class}">{type_label}</span>'
+
+
+def format_references_html(references: str) -> str:
+    """Render citation strings as inline text or a compact list."""
+    if not references:
+        return ""
+    parts = [p.strip() for p in references.split(" | ") if p.strip()]
+    if len(parts) == 1:
+        return f'<span class="citation-inline">{parts[0]}</span>'
+    items = "".join(f"<li>{part}</li>" for part in parts)
+    return f'<ul class="citation-list">{items}</ul>'
+
+
+def format_notes_html(notes: str) -> str:
+    """Improve readability of notes: code tokens, implementation names, emphasis."""
+    if not notes:
+        return ""
+
+    text = notes
+
+    def _code_token(match: re.Match[str]) -> str:
+        return f"<code>{match.group(1)}</code>"
+
+    # Docstring / alias patterns
+    text = re.sub(
+        r'\bThis is called\s+([a-z][a-z0-9_]*)\s+in\s+([^.;]+)',
+        r'This is called <code>\1</code> in <span class="impl-ref">\2</span>',
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r'\bThis feature is named\s+"([^"]+)"\s+in\s+([^.;]+)',
+        r'This feature is named <strong>\1</strong> in <span class="impl-ref">\2</span>',
+        text,
+    )
+    text = re.sub(
+        r'\bnamed\s+"([^"]+)"\s+in\s+([^.;]+)',
+        r'named <strong>\1</strong> in <span class="impl-ref">\2</span>',
+        text,
+    )
+
+    # Backtick-style identifiers already in docstrings
+    text = re.sub(r"`([^`]+)`", _code_token, text)
+
+    # Bare snake_case identifiers (e.g. variability_of_time_between_attacks)
+    text = re.sub(
+        r"\b([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b",
+        _code_token,
+        text,
+    )
+
+    return f'<span class="feature-notes">{text}</span>'
+
+
+def format_description_html(description: str) -> str:
+    """Wrap description text for consistent table typography."""
+    if not description:
+        return ""
+    return f'<span class="feature-description">{description}</span>'
+
+
+def format_table_display_html(df: pd.DataFrame) -> pd.DataFrame:
+    """Apply HTML formatting to columns shown in the Quarto feature table."""
+    display = df.copy()
+    if "Pre-existing Implementations" in display.columns:
+        display["Pre-existing Implementations"] = display["Pre-existing Implementations"].map(
+            lambda v: format_implementations_html(v if isinstance(v, str) else "")
+        )
+    if "Type" in display.columns:
+        display["Type"] = display["Type"].map(
+            lambda v: format_type_badge_html(v if isinstance(v, str) else "")
+        )
+    if "Notes" in display.columns:
+        display["Notes"] = display["Notes"].map(
+            lambda v: format_notes_html(v if isinstance(v, str) else "")
+        )
+    if "Further References" in display.columns:
+        display["Further References"] = display["Further References"].map(
+            lambda v: format_references_html(v if isinstance(v, str) else "")
+        )
+    if "Description" in display.columns:
+        display["Description"] = display["Description"].map(
+            lambda v: format_description_html(v if isinstance(v, str) else "")
+        )
+    return display
 
 
 def _notes_for_feature(python_name: str, docstring_notes: str) -> str:
@@ -344,9 +464,10 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
 
         source_url = build_source_url(obj)
         display_name = (
-            f'<a href="{source_url}" target="_blank" rel="noopener noreferrer">{pretty_name}</a>'
+            f'<a class="feature-name-link" href="{source_url}" target="_blank" '
+            f'rel="noopener noreferrer">{pretty_name}</a>'
             if source_url
-            else pretty_name
+            else f'<span class="feature-name-text">{pretty_name}</span>'
         )
 
         feature_sources = getattr(obj, "_feature_sources", [])
@@ -638,7 +759,7 @@ def main():
             f.write("docs_dir = script_dir / \"docs\"\n")
             f.write("sys.path.insert(0, str(src_dir))\n")
             f.write("sys.path.insert(0, str(docs_dir))\n")
-            f.write("from quarto_table_build import build_table\n\n")
+            f.write("from quarto_table_build import build_table, format_table_display_html\n\n")
             f.write("df = build_table()\n")
             f.write("df_renamed = df.rename(columns={\n")
             f.write("    'name': 'Name',\n")
@@ -661,6 +782,7 @@ def main():
             f.write("\n")
             f.write("# Create a single table with category data for filtering (exclude category columns from display)\n")
             f.write("df_display = df_renamed.drop(columns=['category', 'domain', 'data-category', 'data-domain', 'sort_name'], errors='ignore')\n")
+            f.write("df_display = format_table_display_html(df_display)\n")
             f.write("table_html = df_display.to_html(classes='table table-striped table-hover', table_id='features-table', escape=False, index=False)\n")
             f.write("\n")
             f.write("# Add data-category attributes to table rows using a more robust approach\n")
@@ -810,14 +932,90 @@ def main():
             f.write("/* Feature name column sizing and wrapping */\n")
             f.write("#features-table td:first-child {\n")
             f.write("    min-width: 220px;\n")
-            f.write("    width: 26%;\n")
+            f.write("    width: 22%;\n")
             f.write("}\n")
-            f.write("#features-table td:first-child a {\n")
+            f.write("#features-table td:first-child a.feature-name-link {\n")
+            f.write("    color: #0d6efd;\n")
+            f.write("    font-weight: 600;\n")
+            f.write("    text-decoration: none;\n")
             f.write("    white-space: normal;\n")
             f.write("    word-break: keep-all;\n")
             f.write("    hyphens: auto;\n")
             f.write("}\n")
-            f.write("/* Dynamic column sizing - let content determine width */\n")
+            f.write("#features-table td:first-child a.feature-name-link:hover {\n")
+            f.write("    text-decoration: underline;\n")
+            f.write("}\n")
+            f.write("#features-table td:first-child .feature-name-text {\n")
+            f.write("    font-weight: 600;\n")
+            f.write("}\n")
+            f.write("/* Implementation badges */\n")
+            f.write(".impl-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; }\n")
+            f.write(".impl-badge {\n")
+            f.write("    display: inline-block;\n")
+            f.write("    padding: 0.15rem 0.5rem;\n")
+            f.write("    border-radius: 999px;\n")
+            f.write("    font-size: 0.78rem;\n")
+            f.write("    font-weight: 600;\n")
+            f.write("    line-height: 1.3;\n")
+            f.write("    white-space: nowrap;\n")
+            f.write("    border: 1px solid transparent;\n")
+            f.write("}\n")
+            f.write(".impl-fantastic { background: #e8f4ea; color: #1b5e20; border-color: #c8e6c9; }\n")
+            f.write(".impl-jsymbolic { background: #e3f2fd; color: #0d47a1; border-color: #bbdefb; }\n")
+            f.write(".impl-idyom { background: #f3e5f5; color: #4a148c; border-color: #e1bee7; }\n")
+            f.write(".impl-midi-toolbox { background: #fff3e0; color: #e65100; border-color: #ffe0b2; }\n")
+            f.write(".impl-simile { background: #fce4ec; color: #880e4f; border-color: #f8bbd0; }\n")
+            f.write(".impl-default { background: #f1f3f5; color: #495057; border-color: #dee2e6; }\n")
+            f.write("/* Type pills */\n")
+            f.write(".type-badge {\n")
+            f.write("    display: inline-block;\n")
+            f.write("    padding: 0.2rem 0.55rem;\n")
+            f.write("    border-radius: 0.35rem;\n")
+            f.write("    font-size: 0.8rem;\n")
+            f.write("    font-weight: 600;\n")
+            f.write("    letter-spacing: 0.02em;\n")
+            f.write("}\n")
+            f.write(".type-descriptor { background: #eef2ff; color: #3730a3; }\n")
+            f.write(".type-sequence { background: #ecfdf5; color: #065f46; }\n")
+            f.write("/* Notes, description, references */\n")
+            f.write(".feature-description { color: #212529; line-height: 1.45; }\n")
+            f.write(".feature-notes {\n")
+            f.write("    display: block;\n")
+            f.write("    color: #495057;\n")
+            f.write("    font-size: 0.92rem;\n")
+            f.write("    line-height: 1.45;\n")
+            f.write("}\n")
+            f.write(".feature-notes code {\n")
+            f.write("    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;\n")
+            f.write("    font-size: 0.85em;\n")
+            f.write("    padding: 0.1rem 0.35rem;\n")
+            f.write("    border-radius: 0.25rem;\n")
+            f.write("    background: #f8f9fa;\n")
+            f.write("    border: 1px solid #e9ecef;\n")
+            f.write("    color: #c7254e;\n")
+            f.write("    word-break: break-word;\n")
+            f.write("}\n")
+            f.write(".feature-notes .impl-ref { font-weight: 600; color: #343a40; }\n")
+            f.write(".citation-inline {\n")
+            f.write("    display: inline;\n")
+            f.write("    font-size: 0.9rem;\n")
+            f.write("    color: #495057;\n")
+            f.write("    line-height: 1.35;\n")
+            f.write("    white-space: normal;\n")
+            f.write("}\n")
+            f.write(".citation-list {\n")
+            f.write("    margin: 0;\n")
+            f.write("    padding-left: 1.1rem;\n")
+            f.write("    font-size: 0.88rem;\n")
+            f.write("    color: #6c757d;\n")
+            f.write("    line-height: 1.4;\n")
+            f.write("}\n")
+            f.write(".citation-list li { margin-bottom: 0.2rem; }\n")
+            f.write("/* Column widths */\n")
+            f.write("#features-table th:nth-child(2), #features-table td:nth-child(2) { min-width: 11rem; }\n")
+            f.write("#features-table th:nth-child(3), #features-table td:nth-child(3) { min-width: 9.5rem; }\n")
+            f.write("#features-table th:nth-child(4), #features-table td:nth-child(4) { min-width: 16rem; }\n")
+            f.write("#features-table th:nth-child(6), #features-table td:nth-child(6) { min-width: 18rem; }\n")
             f.write("</style>\n")
             f.write("<div class='filter-container'>\n")
             f.write("    <input type='text' class='search-input' id='searchInput' placeholder='Search features...'>\n")

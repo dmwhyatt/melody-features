@@ -552,22 +552,23 @@ class Config:
 @absolute
 @pitch
 def pitch_range(pitches: list[int]) -> int:
-    """Subtract the lowest pitch number in the melody from the highest.
-
+    """
+    Subtract the lowest pitch number in the melody from the highest.
+    
     Parameters
     ----------
     pitches : list[int]
         List of MIDI pitch values
-
+    
     Returns
     -------
     int
         Range between highest and lowest pitch in semitones
-
+    
     
     Note
     -----
-    This feature is named 'ambitus' in MIDI Toolbox.
+    This feature is named `ambitus` in MIDI Toolbox.
     """
     return int(range_func(pitches))
 
@@ -590,10 +591,6 @@ def pitch_standard_deviation(pitches: list[int]) -> float:
     -------
     float
         Standard deviation of pitches
-
-    Note
-    -----
-    This feature is named 'Pitch Variability' in JSymbolic.
     """
     if not pitches or len(pitches) < 2:
         return 0.0
@@ -770,7 +767,7 @@ def _notedensity_seconds(starts: list[float]) -> float:
 @pitch_class
 @pitch
 def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
-    """Pitch-class distribution weighted by Parncutt duration accent (``pcdist1.m``).
+    """Pitch-class distribution weighted by Parncutt duration accent.
 
     Parameters
     ----------
@@ -1227,9 +1224,10 @@ def number_of_common_pitches(pitches: list[int]) -> int:
 @absolute
 @pitch
 def tessitura(pitches: list[int]) -> list[float]:
-    """Tessitura is based on standard deviation from median pitch height. The median range 
+    """
+    Tessitura is based on standard deviation from median pitch height. The median range 
     of the melody tends to be favoured and thus more expected. Tessitura predicts 
-    whether listeners expect tones close to median pitch height. Higher tessitura values
+    whether listeners expect tones close to median pitch height. Higher `tessitura` values
     correspond to melodies that have a wider range of pitches.
     
     Parameters
@@ -1241,11 +1239,10 @@ def tessitura(pitches: list[int]) -> list[float]:
     -------
     list[float]
         Absolute local tessitura value for each note in sequence
-
+    
     Citation
     ---------
     von Hippel (2000).
-    
     """
     if len(pitches) < 2:
         return [0.0] if len(pitches) == 1 else []
@@ -1275,7 +1272,8 @@ def tessitura(pitches: list[int]) -> list[float]:
 @absolute
 @pitch
 def mean_tessitura(pitches: list[int]) -> float:
-    """The arithmetic mean of local tessitura values.
+    """
+    The arithmetic mean of local `tessitura` values.
     
     Parameters
     ----------
@@ -1296,7 +1294,8 @@ def mean_tessitura(pitches: list[int]) -> float:
 @absolute
 @pitch
 def tessitura_std(pitches: list[int]) -> float:
-    """The standard deviation of the sequence of tessitura values.
+    """
+    The standard deviation of the sequence of `tessitura` values.
     
     Parameters
     ----------
@@ -1829,9 +1828,6 @@ def mean_absolute_interval(pitches: list[int]) -> float:
     float
         Mean absolute interval size in semitones
 
-    Note
-    -----
-    This feature is named 'Mean Melodic Interval' in JSymbolic.
     """
     return float(np.mean([abs(x) for x in pitch_interval(pitches)]))
 
@@ -1872,9 +1868,6 @@ def modal_interval(pitches: list[int]) -> int:
     int
         Most frequent interval size in semitones
 
-    Note
-    -----
-    This feature is named 'Most Common Interval' in jSymbolic.
     """
 
     intervals_abs = [abs(x) for x in pitch_interval(pitches)]
@@ -1939,7 +1932,7 @@ def _get_durations(starts: list[float], ends: list[float], tempo: float = 120.0)
 @interval
 @pitch
 def ivdist1(pitches: list[int], starts: list[float], ends: list[float], tempo: float = 120.0) -> dict:
-    """Interval distribution weighted by duration accent (``ivdist1.m``).
+    """Interval distribution weighted by duration accent.
 
     Parameters
     ----------
@@ -1970,7 +1963,7 @@ def ivdist1(pitches: list[int], starts: list[float], ends: list[float], tempo: f
 def durdist1(
     starts: list[float], ends: list[float], tempo: float = 120.0
 ) -> dict[int, float]:
-    """Note duration distribution in nine log-spaced beat bins (``durdist1.m``).
+    """Note duration distribution in nine log-spaced beat bins.
 
     Bin centers (in beats): 1/4, √2/4, 1/2, √2/2, 1, √2, 2, 2√2, 4.
 
@@ -2128,7 +2121,7 @@ def interval_direction_mean(pitches: list[int]) -> float:
     Note
     ----
     Unisons contribute 0 to both numerator and denominator because the mean is
-    taken over the full direction sequence ``{-1, 0, 1}``.
+    taken over the full direction sequence {-1, 0, 1}.
     """
     directions = interval_direction(pitches)
     
@@ -2553,7 +2546,7 @@ def minor_major_third_ratio(pitches: list[int]) -> float:
 
     Note
     ----
-    To match jSymbolic behavior, this returns ``0.0`` when there are no major
+    To match jSymbolic behavior, this returns 0.0 when there are no major
     thirds (including cases where minor thirds are present).
     """
     minor_thirds = variable_melodic_intervals(pitches, 3)
@@ -3266,20 +3259,21 @@ def mean_duration(starts: list[float], ends: list[float], tempo: float = 120.0) 
 @rhythm
 @timing
 def average_note_duration(starts: list[float], ends: list[float]) -> float:
-    """The average note duration in seconds.
-
+    """
+    The average note duration in seconds.
+    
     Parameters
     ----------
     starts : list[float]
         List of note start times
     ends : list[float]
         List of note end times
-
+    
     Returns
     -------
     float
         Average note duration in seconds
-
+    
     Note
     ----
     This feature reports duration in seconds, unlike quarter-note duration means
@@ -3341,8 +3335,9 @@ def variability_of_note_durations(starts: list[float], ends: list[float]) -> flo
 @rhythm
 @timing
 def modal_duration(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """The modal raw note duration in quarter notes.
-
+    """
+    The modal raw note duration in quarter notes.
+    
     Parameters
     ----------
     starts : list[float]
@@ -3351,12 +3346,12 @@ def modal_duration(starts: list[float], ends: list[float], tempo: float = 120.0)
         List of note end times (in seconds)
     tempo : float
         Tempo in BPM (beats per minute), default 120.0
-
+    
     Returns
     -------
     float
         Most frequent raw note duration in quarter notes
-
+    
     Note
     ----
     This computes the mode of raw quarter-note durations, so differs
@@ -3409,9 +3404,6 @@ def length(starts: list[float]) -> int:
     int
         Total number of notes
 
-    Note
-    -----
-    This feature is named "Total Number Of Notes" in jSymbolic.
     """
     return len(starts)
 
@@ -3457,9 +3449,6 @@ def global_duration(melody: Melody) -> float:
     float
         Total duration of the MIDI sequence in seconds
 
-    Note
-    -----
-    This feature is named 'Duration in Seconds' in JSymbolic.
     """
     return melody.total_duration
 
@@ -3661,21 +3650,22 @@ def ioi(starts: list[float]) -> list[float]:
 @rhythm
 @interval
 def ioi_mean(starts: list[float]) -> float:
-    """The arithmetic mean of inter-onset intervals.
-
+    """
+    The arithmetic mean of inter-onset intervals.
+    
     Parameters
     ----------
     starts : list[float]
         List of note start times
-
+    
     Returns
     -------
     float
         Mean of inter-onset intervals
-
+    
     Note
     ----
-    This is called average_time_between_attacks in jSymbolic.
+    This is called `average_time_between_attacks` in jSymbolic.
     """
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
     if not intervals:
@@ -3689,21 +3679,22 @@ average_time_between_attacks = ioi_mean
 @rhythm
 @interval
 def ioi_standard_deviation(starts: list[float]) -> float:
-    """The standard deviation of inter-onset intervals.
-
+    """
+    The standard deviation of inter-onset intervals.
+    
     Parameters
     ----------
     starts : list[float]
         List of note start times
-
+    
     Returns
     -------
     float
         Standard deviation of inter-onset intervals
-
+    
     Note
     ----
-    This is called variability_of_time_between_attacks in jSymbolic.
+    This is called `variability_of_time_between_attacks` in jSymbolic.
     """
     intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
     if not intervals:
@@ -4357,7 +4348,8 @@ def mean_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 1
 @rhythm
 @timing
 def most_common_rhythmic_value(starts: list[float], ends: list[float], tempo: float = 120.0) -> float:
-    """The modal quantized rhythmic value (in quarter notes).
+    """
+    The modal quantized rhythmic value (in quarter notes).
     
     Parameters
     ----------
@@ -4367,16 +4359,15 @@ def most_common_rhythmic_value(starts: list[float], ends: list[float], tempo: fl
         Note end times (seconds)
     tempo : float, optional
         Tempo in BPM (only used to convert seconds to quarter notes)
-
+    
     Returns
     -------
     float
         Modal rhythmic-bin ideal value in quarter notes (0.0 if empty or all-zero)
-
+    
     Note
     ----
-    Uses rhythmic-value mode from a 12-bin histogram. Differs from
-    `modal_duration`, which computes a raw-duration mode in quarter-note units.
+    Uses rhythmic-value mode from a 12-bin histogram. Differs from `modal_duration`, which computes a raw-duration mode in quarter-note units.
     """
     durations_qn = _get_durations(starts, ends, tempo)
     if not durations_qn:
@@ -6459,7 +6450,7 @@ def amount_of_staccato(starts: list[float], ends: list[float]) -> float:
 
     Note
     ----
-    Though this feature is named "Amount Of Staccato", it is a
+    Though this feature is named `Amount Of Staccato`, it is a
     fixed-duration cutoff statistic rather than symbolic articulation parsing.
     """
     if not starts or not ends or len(starts) != len(ends):
@@ -6636,8 +6627,8 @@ def onset_autocorrelation(
     This is calculated by weighting the onset times by the duration accents,
     as defined by Parncutt (1994).
 
-    Onsets in ``starts`` are in seconds and converted to quarter-note beats using
-    ``tempo`` before grid quantization.
+    Onsets are converted to quarter-note beats using
+    tempo before grid quantization.
 
     Parameters
     ----------
@@ -6811,7 +6802,8 @@ def key(
     key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary",
     key_finding_algorithm: Literal["krumhansl_schmuckler"] = "krumhansl_schmuckler"
 ) -> str:
-    """The key of the melody, either read from the MIDI file or estimated using
+    """
+    The key of the melody, either read from the MIDI file or estimated using
     the specified key finding algorithm, depending on the key estimation strategy.
     
     Parameters
@@ -6832,10 +6824,10 @@ def key(
     Citation
     ----------
     Krumhansl (1990)
-
-    Notes
+    
+    Note
     -----
-    This feature is named 'keyname' in MIDI Toolbox.
+    This feature is named `keyname` in MIDI Toolbox.
     """
     resolved_key = _resolve_key_for_melody(
         melody,
@@ -7014,7 +7006,8 @@ def referent(
     key_estimation: Literal["always_read_from_file", "infer_if_necessary", "always_infer"] = "infer_if_necessary",
     key_finding_algorithm: Literal["krumhansl_schmuckler"] = "krumhansl_schmuckler",
 ) -> int:
-    """Calculate the referent (pitch-class root) of a melody.
+    """
+    Calculate the `referent` (pitch-class root) of a melody.
     
     Parameters
     ----------
@@ -7876,7 +7869,8 @@ def stepwise_motion(pitches: list[int]) -> float:
 @pitch
 @complexity
 def gradus(pitches: list[int]) -> float:
-    """The degree of melodiousness based on Euler's gradus suavitatis.
+    """
+    The degree of melodiousness based on Euler's `gradus` suavitatis.
     
     Parameters
     ----------
@@ -7886,7 +7880,7 @@ def gradus(pitches: list[int]) -> float:
     Citation
     --------
     Euler (1739)
-
+    
     Returns
     -------
     float
@@ -7944,7 +7938,8 @@ def gradus(pitches: list[int]) -> float:
 @pitch
 @expectation
 def mobility(pitches: list[int]) -> list[float]:
-    """The melodic mobility for each note based on von Hippel (2000).
+    """
+    The melodic `mobility` for each note based on von Hippel (2000).
     Mobility describes why melodies change direction after large skips by 
     observing that they would otherwise run out of the comfortable melodic range.
     It uses lag-one autocorrelation between successive pitch heights.
@@ -7953,12 +7948,12 @@ def mobility(pitches: list[int]) -> list[float]:
     ----------
     pitches : list[int]
         List of MIDI pitch values
-
+    
     Returns
     -------
     list[float]
         One mobility value per input pitch (length matches ``pitches``).
-
+    
     Citation
     --------
     von Hippel (2000)
@@ -8009,7 +8004,8 @@ def mobility(pitches: list[int]) -> list[float]:
 @pitch
 @expectation
 def mean_mobility(pitches: list[int]) -> float:
-    """The arithmetic mean of the mobility values across all notes.
+    """
+    The arithmetic mean of the `mobility` values across all notes.
     
     Parameters
     ----------
@@ -8031,7 +8027,8 @@ def mean_mobility(pitches: list[int]) -> float:
 @pitch
 @expectation
 def mobility_std(pitches: list[int]) -> float:
-    """The standard deviation of the mobility values across all notes.
+    """
+    The standard deviation of the `mobility` values across all notes.
     
     Parameters
     ----------
@@ -9295,7 +9292,7 @@ def mean_log_tfdf(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
 @lexical_diversity
 @both
 def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """Mean absolute difference between log2-normalized TF and DF (FANTASTIC ``norm.log.dist``).
+    """Mean absolute difference between log2-normalized TF and DF.
 
     Larger values mean the melody emphasizes different m-types than corpus prevalence;
     smaller values mean closer distributional match.
@@ -9871,7 +9868,8 @@ def proportion_of_time_in_first_meter(melody: Melody) -> float:
 @rhythm
 @metre
 def number_of_unique_time_signatures(melody: Melody) -> int:
-    """The number of unique time signatures in the melody.
+    """
+    The number of unique time signatures in the melody.
     
     Parameters
     ----------
@@ -9882,10 +9880,10 @@ def number_of_unique_time_signatures(melody: Melody) -> int:
     -------
     int
         The number of unique time signatures in the melody.
-
+    
     Note
     -----
-    This feature is named "Metrical Diversity" in jSymbolic.
+    This feature is named `Metrical Diversity` in jSymbolic.
     """
     return len({(numerator, denominator) for _, numerator, denominator in melody.time_signatures})
 
@@ -9893,11 +9891,12 @@ def number_of_unique_time_signatures(melody: Melody) -> int:
 @rhythm
 @metre
 def syncopation(melody: Melody) -> float:
-    """Calculate the mean syncopation value based on the Longuet-Higgins and Lee (1984) model.
-    This syncopation model assigns metrical weights to each
+    """
+    Calculate the mean `syncopation` value based on the Longuet-Higgins and Lee (1984) model.
+    This `syncopation` model assigns metrical weights to each
     note position based on its position in the metric hierarchy. Syncopation occurs when
     a rest or tied note is preceded by a sounded note of lower metrical weight. The 
-    syncopation value is the difference between the rest weight and the preceding note weight.
+    `syncopation` value is the difference between the rest weight and the preceding note weight.
     
     Parameters
     ----------
@@ -9960,7 +9959,8 @@ def syncopation(melody: Melody) -> float:
 @rhythm
 @metre
 def syncopicity(melody: Melody) -> float:
-    """Calculates the sum syncopicity of a melody across metric levels.
+    """
+    Calculates the sum `syncopicity` of a melody across metric levels.
     Syncopicity measures the degree to which notes occur off the main metrical grid
     but are long enough to span across metric boundaries. This calculates syncopations at 
     four metric levels:
@@ -9985,10 +9985,10 @@ def syncopicity(melody: Melody) -> float:
         Sum of per-level syncopation proportions across tested levels (half-bar,
         beat, and first subdivision). Each level contributes
         ``syncopation_count / number_of_notes``, so this is not a raw event count.
-
+    
     Note
     ----
-    Grid durations are derived from the melody's initial ``meter`` and ``tempo`` and
+    Grid durations are derived from the melody's initial meter and tempo and
     therefore assume constant meter/tempo over the analyzed passage.
     """
     if not melody.starts or len(melody.starts) < 2:
