@@ -3,6 +3,7 @@ import tempfile
 
 import mido
 
+from melody_features.algorithms import longest_monotonic_conjunct_scalar_passage
 from melody_features.features import (
     get_tonality_features,
     inscale,
@@ -77,3 +78,14 @@ def test_batch_and_standalone_tonalness_match():
     standalone = tonalness(melody.pitches)
     batched = get_tonality_features(melody)["tonalness"]
     assert standalone == batched
+
+
+def test_scalar_passage_with_flat_key_signature():
+    """Scalar helpers must accept flat key roots from MIDI key signatures (e.g. Bb)."""
+    melody = _build_test_melody([70, 72, 74, 75, 77], key_signature="Bb")
+    features = get_tonality_features(melody)
+    assert features["key"] == "Bb major"
+    assert features["longest_monotonic_conjunct_scalar_passage"] >= 1
+    assert longest_monotonic_conjunct_scalar_passage(
+        melody.pitches, [("Bb major", 1.0)]
+    ) >= 1
