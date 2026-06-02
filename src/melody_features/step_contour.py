@@ -1,5 +1,6 @@
-"""Calculates the Step Contour of a melody, along with related features, as implemented
-in the FANTASTIC toolbox of Müllensiefen (2009) [1].
+"""Calculates the Step Contour of a melody, along with related features.
+
+Supports both the original FANTASTIC behaviour and an AMADS default variant.
 Exemplified in Steinbeck (1982) [2], Juhász (2000) [3], Eerola and Toiviainen (2004) [4].
 """
 
@@ -42,6 +43,7 @@ class StepContour:
         pitches: list[int],
         durations: list[float],
         step_contour_length: int = _step_contour_length,
+        method: str = "amads",
     ):
         """Initialize StepContour with melody data.
 
@@ -53,6 +55,10 @@ class StepContour:
             List of note durations measured in tatums
         step_contour_length : int, optional
             Length of the output step contour vector (default is 64)
+        method : str, optional
+            Method for contour statistics, either "amads" or "fantastic".
+            Defaults to "amads". "fantastic" keeps parity with the original
+            FANTASTIC implementation where applicable.
 
         References
         ----------
@@ -76,8 +82,13 @@ class StepContour:
                 f"The length of pitches (currently {len(pitches)}) must be equal to "
                 f"the length of durations (currently {len(durations)})"
             )
+        if method not in ("amads", "fantastic"):
+            raise ValueError(
+                f"Method must be either 'amads' or 'fantastic', got {method}"
+            )
 
         self._step_contour_length = step_contour_length
+        self.method = method
         self.contour = self._calculate_contour(pitches, durations)
 
     def _normalize_durations(self, durations: list[float]) -> list[float]:
@@ -195,7 +206,9 @@ class StepContour:
         Returns
         -------
         float
-            Float value representing the global variation of the step contour
+            Float value representing the global variation of the step contour.
+            Uses population standard deviation (`ddof=0`) in "amads" mode and
+            sample standard deviation (`ddof=1`) in "fantastic" mode.
 
         Examples
         --------
@@ -203,7 +216,10 @@ class StepContour:
         >>> sc.global_variation  # doctest: +ELLIPSIS
         1.639...
         """
-        return float(np.std(self.contour))
+        if len(self.contour) < 2:
+            return 0.0
+        ddof = 1 if self.method == "fantastic" else 0
+        return float(np.std(self.contour, ddof=ddof))
 
     @property
     def global_direction(self) -> float:
