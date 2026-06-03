@@ -1,6 +1,7 @@
 """Melody-only lexical diversity feature definitions."""
 
 import warnings
+from typing import Dict
 
 from .feature_decorators import both, fantastic, lexical_diversity
 from .melody_tokenizer import FantasticTokenizer
