@@ -14,6 +14,14 @@ from .feature_decorators import (
     lexical_diversity, expectation, complexity,
     pitch, rhythm, both
 )
+from .feature_dispatch import collect_feature_values as _dispatch_collect_feature_values
+from .feature_dispatch import invoke_feature as _dispatch_invoke_feature
+from .feature_registry import get_features_by_domain as _registry_get_features_by_domain
+from .feature_registry import (
+    get_features_by_domain_and_types as _registry_get_features_by_domain_and_types,
+)
+from .feature_registry import get_features_by_source as _registry_get_features_by_source
+from .feature_registry import get_features_by_type as _registry_get_features_by_type
 
 warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pretty_midi")
@@ -2696,30 +2704,8 @@ def _get_features_by_type(feature_type: str) -> dict:
     dict
         Dictionary mapping feature names to functions
     """
-    import inspect
-    import sys
-
     current_module = sys.modules[__name__]
-    
-    features = {}
-    seen_function_ids = set()
-    for name, obj in inspect.getmembers(current_module):
-        if name.startswith("_"):
-            continue
-        if (inspect.isfunction(obj) and
-            hasattr(obj, '_feature_types') and
-            feature_type in obj._feature_types):
-            # skip aliased functions to avoid repetition
-            if obj.__name__ != name:
-                continue
-            # safeguard using function id
-            func_id = id(obj)
-            if func_id in seen_function_ids:
-                continue
-            seen_function_ids.add(func_id)
-            features[name] = obj
-    
-    return features
+    return _registry_get_features_by_type(current_module, feature_type)
 
 
 def _get_features_by_domain(domain: str) -> dict:
@@ -2735,30 +2721,8 @@ def _get_features_by_domain(domain: str) -> dict:
     dict
         Dictionary mapping feature names to functions
     """
-    import inspect
-    import sys
-
     current_module = sys.modules[__name__]
-    
-    features = {}
-    seen_function_ids = set()
-    for name, obj in inspect.getmembers(current_module):
-        if name.startswith("_"):
-            continue
-        if (inspect.isfunction(obj) and 
-            hasattr(obj, '_feature_domain') and 
-            obj._feature_domain == domain):
-            # skip aliased functions to avoid repetition
-            if obj.__name__ != name:
-                continue
-            # safeguard using function id
-            func_id = id(obj)
-            if func_id in seen_function_ids:
-                continue
-            seen_function_ids.add(func_id)
-            features[name] = obj
-    
-    return features
+    return _registry_get_features_by_domain(current_module, domain)
 
 
 def _get_features_by_domain_and_types(domain: str, allowed_types: list[str]) -> dict:
@@ -2776,59 +2740,22 @@ def _get_features_by_domain_and_types(domain: str, allowed_types: list[str]) -> 
     dict
         Dictionary mapping feature names to functions
     """
-    import inspect
-    import sys
-
     current_module = sys.modules[__name__]
-    
-    features = {}
-    seen_function_ids = set()
-    for name, obj in inspect.getmembers(current_module):
-        if name.startswith("_"):
-            continue
-        if (inspect.isfunction(obj) and 
-            hasattr(obj, '_feature_domain') and 
-            obj._feature_domain == domain and
-            hasattr(obj, '_feature_types')):
-            # skip aliased functions to avoid repetition
-            if obj.__name__ != name:
-                continue
-            # safeguard using function id
-            func_id = id(obj)
-            if func_id in seen_function_ids:
-                continue
-            seen_function_ids.add(func_id)
-            # Check if any of the function's types are in allowed_types
-            if any(ftype in allowed_types for ftype in obj._feature_types):
-                features[name] = obj
-    
-    return features
+    return _registry_get_features_by_domain_and_types(
+        current_module,
+        domain,
+        allowed_types,
+    )
 
 
 def _invoke_feature(func, melody: Melody, **extra):
     """Call a feature function, binding ``melody`` fields and extras by parameter name."""
-    sig = inspect.signature(func)
-    if "melody" in sig.parameters:
-        return func(melody)
-
-    kwargs = {}
-    if "pitches" in sig.parameters:
-        kwargs["pitches"] = melody.pitches
-    if "starts" in sig.parameters:
-        kwargs["starts"] = melody.starts
-    if "ends" in sig.parameters:
-        kwargs["ends"] = melody.ends
-    if "tempo" in sig.parameters:
-        kwargs["tempo"] = melody.tempo
-    if "ppqn" in sig.parameters:
-        kwargs["ppqn"] = extra.get("ppqn", 480)
-    if "corpus_stats" in sig.parameters:
-        kwargs["corpus_stats"] = extra.get("corpus_stats")
-    if "phrase_gap" in sig.parameters:
-        kwargs["phrase_gap"] = extra.get("phrase_gap", 1.5)
-    if "max_ngram_order" in sig.parameters:
-        kwargs["max_ngram_order"] = extra.get("max_ngram_order", DEFAULT_MAX_NGRAM_ORDER)
-    return func(**kwargs)
+    return _dispatch_invoke_feature(
+        func,
+        melody,
+        default_max_ngram_order=DEFAULT_MAX_NGRAM_ORDER,
+        **extra,
+    )
 
 
 def _collect_feature_values(
@@ -2839,21 +2766,13 @@ def _collect_feature_values(
     **extra,
 ) -> Dict[str, Any]:
     """Compute feature functions with shared melody argument dispatch."""
-    features: Dict[str, Any] = {}
-
-    for name, func in feature_functions.items():
-        try:
-            result = _invoke_feature(func, melody, **extra)
-            if tuple_suffix and isinstance(result, tuple) and len(result) == 2:
-                features[f"{name}_mean"] = result[0]
-                features[f"{name}_{tuple_suffix}"] = result[1]
-            else:
-                features[name] = result
-        except Exception as e:
-            print(f"Warning: Could not compute {name}: {e}")
-            features[name] = None
-
-    return features
+    return _dispatch_collect_feature_values(
+        feature_functions,
+        melody,
+        default_max_ngram_order=DEFAULT_MAX_NGRAM_ORDER,
+        tuple_suffix=tuple_suffix,
+        **extra,
+    )
 
 
 def get_pitch_features(melody: Melody) -> Dict:
