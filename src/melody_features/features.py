@@ -3036,20 +3036,22 @@ def get_interpolation_contour_features(
 @contour
 @pitch
 def comb_contour_matrix(pitches: list[int]) -> list[list[int]]:
-    """The Marvin & Laprade (1987) comb contour matrix.
-    For a melody with n notes, returns an n x n binary matrix C where
-    C[i][j] = 1 if pitch of note j is higher than pitch of note i (p[j] > p[i])
-    for i >= j (lower triangle including diagonal), and 0 otherwise.
+    """The Marvin and Laprade comb contour matrix.
+
+    For a melody with ``n`` notes, this feature returns an ``n x n`` lower-triangular
+    binary matrix. Entry ``C[i][j]`` is ``1`` when note ``j`` is higher than note
+    ``i`` and ``i >= j``; otherwise it is ``0``. The matrix encodes pairwise
+    pitch-height relations in the melodic contour.
 
     Parameters
     ----------
-    pitches : List[int]
-        Sequence of MIDI pitches
+    pitches : list[int]
+        Sequence of MIDI pitches.
 
     Returns
     -------
-    List[List[int]]
-        n x n binary matrix (as a list of lists)
+    list[list[int]]
+        Lower-triangular binary contour matrix.
     """
     num_notes = len(pitches)
     if num_notes == 0:
@@ -3654,7 +3656,11 @@ def note_density_per_quarter_note_variability(melody: Melody) -> float:
 @rhythm
 @interval
 def ioi(starts: list[float]) -> list[float]:
-    """The time between consecutive onsets (inter-onset interval).
+    """The sequence of inter-onset intervals.
+
+    An inter-onset interval (IOI) is the elapsed time from one note onset to the
+    next note onset. Unlike note duration, it includes any overlap or silence
+    between consecutive notes because it depends only on onset times.
     
     Parameters
     ----------
@@ -3733,7 +3739,12 @@ variability_of_time_between_attacks = ioi_standard_deviation
 @rhythm
 @interval
 def ioi_ratio(starts: list[float]) -> list[float]:
-    """The sequence of inter-onset interval ratios.
+    """The sequence of ratios between successive inter-onset intervals.
+
+    First, consecutive onset times are converted to inter-onset intervals (IOIs).
+    Each output value is then ``IOI[i] / IOI[i - 1]``. Values greater than ``1``
+    indicate that the current onset gap is longer than the previous one, values
+    less than ``1`` indicate a shorter gap, and ``1`` indicates no change.
 
     Parameters
     ----------
@@ -3759,7 +3770,12 @@ def ioi_ratio(starts: list[float]) -> list[float]:
 @rhythm
 @interval
 def ioi_ratio_mean(starts: list[float]) -> float:
-    """The arithmetic mean of inter-onset interval ratios.
+    """The arithmetic mean of successive inter-onset interval ratios.
+
+    The ratio sequence is computed as ``IOI[i] / IOI[i - 1]`` for each pair of
+    adjacent inter-onset intervals. This summary is above ``1`` when IOIs tend to
+    lengthen, below ``1`` when they tend to shorten, and close to ``1`` when
+    adjacent IOIs tend to have similar lengths.
 
     Parameters
     ----------
@@ -3780,7 +3796,11 @@ def ioi_ratio_mean(starts: list[float]) -> float:
 @rhythm
 @interval
 def ioi_ratio_standard_deviation(starts: list[float]) -> float:
-    """The standard deviation of inter-onset interval ratios.
+    """The sample standard deviation of successive inter-onset interval ratios.
+
+    This feature measures the variability of ``IOI[i] / IOI[i - 1]`` across the
+    melody. Larger values indicate less regular proportional change between
+    neighboring onset gaps.
 
     Parameters
     ----------
@@ -3854,7 +3874,11 @@ def ioi_contour(starts: list[float]) -> list[int]:
 @rhythm
 @interval
 def ioi_contour_mean(starts: list[float]) -> float:
-    """The arithmetic mean of IOI contour values.
+    """The arithmetic mean of ordinal IOI contour values.
+
+    IOI contour values are ``-1`` for shorter, ``0`` for unchanged, and ``1`` for
+    longer successive inter-onset intervals. The mean summarizes the balance of
+    lengthening versus shortening onset gaps.
 
     Parameters
     ----------
@@ -3875,7 +3899,11 @@ def ioi_contour_mean(starts: list[float]) -> float:
 @rhythm
 @interval
 def ioi_contour_standard_deviation(starts: list[float]) -> float:
-    """The standard deviation of IOI contour values.
+    """The sample standard deviation of ordinal IOI contour values.
+
+    IOI contour values encode whether successive inter-onset intervals shorten,
+    stay the same, or lengthen. This feature measures how variable those ordinal
+    changes are across the melody.
 
     Parameters
     ----------
@@ -7612,9 +7640,13 @@ def tonalness_histogram(pitches: list[int]) -> dict:
 @pitch
 @expectation
 def narmour_registral_direction(pitches: list[int]) -> int:
-    """The score is set to zero. If an interval greater than a perfect fifth is followed by a direction change, a score
-    of 1 is given. If an interval smaller than a perfect fourth continues in the same direction, 
-    a score of 1 is given. This feature returns either 0 or 1 accordingly.
+    """Narmour registral-direction score for the final three notes.
+
+    The last three pitches define an implicative interval followed by a realized
+    interval. This feature returns ``1`` when a large implicative interval (greater
+    than a tritone) is followed by a change of direction, or when a small
+    implicative interval (smaller than a tritone) continues in the same direction.
+    It returns ``0`` otherwise.
 
     Parameters
     ----------
@@ -7637,7 +7669,13 @@ def narmour_registral_direction(pitches: list[int]) -> int:
 @pitch
 @expectation
 def narmour_proximity(pitches: list[int]) -> int:
-    """Proximity is defined as 6 minus the absolute interval between the last two notes.
+    """Narmour proximity score for the final melodic interval.
+
+    Proximity rewards small realized intervals. It is calculated as ``6 - d``,
+    where ``d`` is the absolute semitone distance between the final two notes, and
+    is clipped at ``0`` for intervals of a tritone or larger. Unisons therefore
+    receive ``6``, whole tones receive ``4``, perfect fourths receive ``1``, and
+    perfect fifths receive ``0``.
 
     Parameters
     ----------
@@ -7660,9 +7698,12 @@ def narmour_proximity(pitches: list[int]) -> int:
 @pitch
 @expectation
 def narmour_closure(pitches: list[int]) -> int:
-    """A score of 1 is given if the last three notes in a melody constitute a change in
-    direction. Another score of 1 is given if the final interval is more than one tone
-    smaller than the penultimate. As such, this returns integer values between 0 and 2.
+    """Narmour closure score for the final three-note pattern.
+
+    The last three pitches define two successive intervals. One point is awarded
+    when the second interval changes direction relative to the first. A second
+    point is awarded when the second interval is at least two semitones smaller
+    than the first in absolute size. The resulting score ranges from ``0`` to ``2``.
 
     Parameters
     ----------
@@ -7685,10 +7726,13 @@ def narmour_closure(pitches: list[int]) -> int:
 @pitch
 @expectation
 def narmour_registral_return(pitches: list[int]) -> int:
-    """If the last three notes move away from and then back to the same pitch, a score
-    of 3 is returned. If the pitch returned to is 1 semitone away from the initial,
-    returns 2. If the pitch returned to is 2 semitones away from the initial, returns 1. 
-    Otherwise, a score of 0 is returned.
+    """Narmour registral-return score for the final three-note pattern.
+
+    Registral return measures whether the last three notes move away from a pitch
+    and then return toward it. The contour must change direction and neither
+    interval may be a repeated note. An exact return to the first pitch scores
+    ``3``; returning within one semitone scores ``2``; returning within two
+    semitones scores ``1``; all other patterns score ``0``.
 
     Parameters
     ----------
@@ -7711,11 +7755,15 @@ def narmour_registral_return(pitches: list[int]) -> int:
 @pitch
 @expectation
 def narmour_intervallic_difference(pitches: list[int]) -> int:
-    """If a large interval is followed by a smaller interval, returns 1 if either:
-    - The smaller interval continues in the same direction and is at least 3 semitones smaller
-    - The smaller interval changes direction and is at least 2 semitones smaller
-    Additionally, returns 1 if a small interval is followed by another interval of the same size.
-    Otherwise returns 0.
+    """Narmour intervallic-difference score for the final three notes.
+
+    The last three pitches define an implicative interval followed by a realized
+    interval. If the implicative interval is large (greater than a tritone), this
+    feature returns ``1`` when the realized interval is sufficiently smaller: at
+    least three semitones smaller in the same direction, or at least two semitones
+    smaller after a direction change. If the implicative interval is small (smaller
+    than a tritone), it returns ``1`` when the realized interval is similar in size,
+    within the same margins. Otherwise it returns ``0``.
 
     Parameters
     ----------
@@ -8100,10 +8148,13 @@ def _stability_distance(weight1: float, weight2: float, proximity: float) -> flo
 @pitch
 @expectation
 def melodic_attraction(pitches: list[int]) -> list[float]:
-    """The melodic attraction according to Lerdahl (1996).
-    Each tone in a key has certain anchoring strength ("weight") in tonal pitch space.
-    Melodic attraction strength is affected by the distance between tones and 
-    directed motion patterns.
+    """Melodic attraction values following Lerdahl's tonal-attraction model.
+
+    The melody's key is estimated from its pitch-class content, then each pitch
+    class is assigned a tonal anchoring weight in that key. For each adjacent
+    pitch pair, attraction depends on tonal stability, pitch proximity, and whether
+    the melodic motion continues or changes direction. Values are scaled to the
+    interval ``[0, 1]``.
     
     Parameters
     ----------
@@ -8223,7 +8274,11 @@ def melodic_attraction(pitches: list[int]) -> list[float]:
 @pitch
 @expectation
 def mean_melodic_attraction(pitches: list[int]) -> float:
-    """The arithmetic mean of the melodic attraction values across all notes.
+    """The arithmetic mean of Lerdahl melodic-attraction values.
+
+    Melodic attraction estimates how strongly each note is drawn toward the next
+    note, based on tonal anchoring weights, pitch proximity, and directed motion.
+    This feature averages those per-note attraction values across the melody.
     
     Parameters
     ----------
@@ -8248,7 +8303,11 @@ def mean_melodic_attraction(pitches: list[int]) -> float:
 @pitch
 @expectation
 def melodic_attraction_std(pitches: list[int]) -> float:
-    """The standard deviation of the melodic attraction values across all notes.
+    """The sample standard deviation of Lerdahl melodic-attraction values.
+
+    Melodic attraction estimates note-to-note tonal pull from anchoring weights,
+    pitch proximity, and directed motion. This feature summarizes how much those
+    attraction values vary across the melody.
     
     Parameters
     ----------
@@ -8273,11 +8332,13 @@ def melodic_attraction_std(pitches: list[int]) -> float:
 @pitch
 @expectation
 def melodic_accent(pitches: list[int]) -> list[float]:
-    """Calculate melodic accent salience according to Thomassen's model.
-    Implementation based on MIDI toolbox "melaccent.m"
-    In Thomassen's approach, melodic accents are determined based on 
-    the melodic contour formed by each group of three consecutive pitches. 
-    The accent strength ranges from 0 (no salience) to 1 (maximum salience).
+    """Melodic accent salience for each note using Thomassen's contour model.
+
+    Thomassen's model assigns accent strength from the melodic contour formed by
+    three-note pitch windows. Notes at locally salient contour positions receive
+    higher values. The implementation follows the MIDI Toolbox ``melaccent.m``
+    convention and returns values from ``0`` (no salience) to ``1`` (maximum
+    salience).
     
     Parameters
     ----------
@@ -8299,9 +8360,11 @@ def melodic_accent(pitches: list[int]) -> list[float]:
 @pitch
 @expectation
 def mean_melodic_accent(pitches: list[int]) -> float:
-    """The arithmetic mean of the melodic accent values across all notes.
-    Melodic accent is defined by Thomassen's model (1982) according to the 
-    possible melodic contours arising in 3-pitch windows.
+    """The arithmetic mean of Thomassen melodic-accent values.
+
+    Melodic accent values estimate local contour salience from three-note pitch
+    windows. This feature averages those note-level salience values across the
+    melody.
     
     Parameters
     ----------
@@ -8326,7 +8389,11 @@ def mean_melodic_accent(pitches: list[int]) -> float:
 @pitch
 @expectation
 def melodic_accent_std(pitches: list[int]) -> float:
-    """The standard deviation of the melodic accent values across all notes.
+    """The sample standard deviation of Thomassen melodic-accent values.
+
+    Melodic accent values estimate local contour salience from three-note pitch
+    windows. This feature summarizes how unevenly that salience is distributed
+    across the melody.
     
     Parameters
     ----------
@@ -9848,7 +9915,11 @@ def get_metre_features(melody: Melody) -> Dict:
 @rhythm
 @metre
 def meter_numerator(melody: Melody) -> int:
-    """Time signature numerator for the melody.
+    """The numerator of the melody's active time signature.
+
+    For a time signature written as ``numerator/denominator``, the numerator is
+    the number of beats in each notated bar. If a melody contains meter changes,
+    this returns the meter stored on the melody object as its primary meter.
 
     Returns
     -------
@@ -9862,7 +9933,11 @@ def meter_numerator(melody: Melody) -> int:
 @rhythm
 @metre
 def meter_denominator(melody: Melody) -> int:
-    """Time signature denominator for the melody.
+    """The denominator of the melody's active time signature.
+
+    For a time signature written as ``numerator/denominator``, the denominator
+    gives the note value that represents one beat: for example, ``4`` means a
+    quarter-note beat and ``8`` means an eighth-note beat.
 
     Returns
     -------
@@ -9876,7 +9951,12 @@ def meter_denominator(melody: Melody) -> int:
 @rhythm
 @metre
 def proportion_of_time_in_first_meter(melody: Melody) -> float:
-    """The proportion of time spent in the first time signature.
+    """The proportion of the melody's duration spent in its first time signature.
+
+    The numerator and denominator of the first encountered time signature define
+    the initial meter. This feature reports the fraction of total melody duration
+    before any subsequent meter change. Melodies with no meter change therefore
+    return ``1.0``.
 
     Parameters
     ----------

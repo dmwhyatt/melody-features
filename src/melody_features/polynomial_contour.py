@@ -74,13 +74,20 @@ class PolynomialContour:
 
     @property
     def coefficients(self) -> list[float]:
-        """The first 3 non-constant coefficients of the polynomial contour.
+        """The first three non-constant polynomial-contour coefficients.
+
+        Polynomial contour fits pitch as a polynomial function of centered onset
+        time, then selects a model by Bayesian information criterion. This feature
+        returns the linear, quadratic, and cubic terms ``[c1, c2, c3]`` from
+        ``p = c0 + c1*t + c2*t**2 + c3*t**3``. The intercept ``c0`` is omitted
+        because it represents absolute pitch height rather than contour shape.
 
         Returns
         -------
         list[float]
-            First 3 coefficients [c1, c2, c3] of the polynomial contour, with zeros
-            padded if needed. For melodies with fewer than 2 notes, returns [0.0, 0.0, 0.0].
+            First three non-constant coefficients ``[c1, c2, c3]`` of the selected
+            polynomial model, padded with zeros if needed. Melodies with fewer than
+            two notes return ``[0.0, 0.0, 0.0]``.
         """
         return self._coefficients
 

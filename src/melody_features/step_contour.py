@@ -201,14 +201,20 @@ class StepContour:
 
     @property
     def global_variation(self) -> float:
-        """The standard deviation of the step contour vector.
+        """The overall pitch variability of the step contour.
+
+        The step contour is a fixed-length pitch vector in which each note's MIDI
+        pitch is repeated in proportion to its duration. This feature is the
+        standard deviation of that vector, so long notes influence the result more
+        than short notes. Larger values indicate a wider duration-weighted pitch
+        spread. The ``"amads"`` method uses population standard deviation
+        (``ddof=0``), while ``"fantastic"`` uses sample standard deviation
+        (``ddof=1``) for compatibility with the original FANTASTIC convention.
 
         Returns
         -------
         float
-            Float value representing the global variation of the step contour.
-            Uses population standard deviation (`ddof=0`) in "amads" mode and
-            sample standard deviation (`ddof=1`) in "fantastic" mode.
+            Standard deviation of the duration-weighted step-contour pitch vector.
 
         Examples
         --------
@@ -223,13 +229,18 @@ class StepContour:
 
     @property
     def global_direction(self) -> float:
-        """The correlation between the step contour vector and an ascending linear function y = x.
+        """The overall ascending or descending tendency of the step contour.
+
+        This is the Pearson correlation between the fixed-length step-contour
+        pitch vector and an ascending linear ramp. Positive values indicate an
+        overall upward trajectory, negative values indicate an overall downward
+        trajectory, and values near zero indicate little linear pitch direction.
+        A flat contour returns ``0.0``.
 
         Returns
         -------
         float
-            Float value representing the global direction of the step contour
-            Returns 0.0 if the contour is flat
+            Correlation with an ascending linear ramp.
 
         Examples
         --------
@@ -250,12 +261,18 @@ class StepContour:
 
     @property
     def local_variation(self) -> float:
-        """The mean absolute difference between adjacent values of the step contour vector.
+        """The average adjacent-sample change in the step contour.
+
+        This feature compares each neighboring pair of samples in the fixed-length
+        step-contour pitch vector and averages the absolute pitch differences.
+        Because adjacent samples inside the same sustained note have difference
+        zero, the measure emphasizes local pitch changes after duration-weighted
+        resampling rather than the raw sequence of note-to-note intervals.
 
         Returns
         -------
         float
-            Float value representing the local variation of the step contour
+            Mean absolute difference between adjacent step-contour samples.
 
         Examples
         --------
