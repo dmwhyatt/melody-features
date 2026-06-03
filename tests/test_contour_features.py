@@ -5,9 +5,8 @@ from melody_features.features import (
     get_polynomial_contour_features,
     get_step_contour_features,
 )
-from melody_features.interpolation_contour import InterpolationContour
+from melody_features.contour import InterpolationContour, StepContour
 from melody_features.core.representations import Melody
-from melody_features.step_contour import StepContour
 
 
 def test_interpolation_contour_defaults_to_amads_method():

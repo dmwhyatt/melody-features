@@ -387,7 +387,6 @@ from .pipeline.timing import TIMING_STAT_CATEGORIES, _init_timing_stats
 from .utils.logging import _setup_logger
 from .utils.validation import _check_is_monophonic
 
-
 warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pretty_midi")
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
@@ -439,9 +438,7 @@ from melody_features.utils.distributional import (
     kurtosis,
     skew,
 )
-from melody_features.huron_contour import HuronContour
 from melody_features.io.midi import import_midi
-from melody_features.interpolation_contour import InterpolationContour
 from melody_features.melody_tokenizer import FantasticTokenizer
 from melody_features.algorithms.narmour import (
     closure,
@@ -451,7 +448,6 @@ from melody_features.algorithms.narmour import (
     registral_return,
 )
 from melody_features.ngram_counter import NGramCounter
-from melody_features.polynomial_contour import PolynomialContour
 from melody_features.core.representations import Melody
 from melody_features.feature_histogram import (
     PitchHistogram,
@@ -470,7 +466,6 @@ from melody_features.utils.stats import (
     shannon_entropy,
     standard_deviation,
 )
-from melody_features.step_contour import StepContour
 from melody_features.algorithms.meter_estimation import (
     compute_onset_autocorrelation,
     duration_accent as _duration_accent,
@@ -488,142 +483,6 @@ from melody_features.algorithms.tonal_tension import (
     BETA
 )
 
-
-
-
-
-
-
-
-
-# Setup config classes for the different feature sets
-
-
-
-
-
-
-
-
-
-
-# Inclusive maximum m-type length (FANTASTIC n.limits default: 1–5).
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# refstat('kkmaj') / refstat('kkmin') — used by tonality.m / keymode.m
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# backwards-compatible alias (typo preserved for semantic versioning).
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _get_features_by_type(feature_type: str) -> dict:
     """Get all features of a specific type.
 
@@ -640,7 +499,6 @@ def _get_features_by_type(feature_type: str) -> dict:
     current_module = sys.modules[__name__]
     return _registry_get_features_by_type(current_module, feature_type)
 
-
 def _get_features_by_domain(domain: str) -> dict:
     """Get all features of a specific domain.
 
@@ -656,7 +514,6 @@ def _get_features_by_domain(domain: str) -> dict:
     """
     current_module = sys.modules[__name__]
     return _registry_get_features_by_domain(current_module, domain)
-
 
 def _get_features_by_domain_and_types(domain: str, allowed_types: list[str]) -> dict:
     """Get all features of a specific domain that match any of the allowed types.
@@ -680,7 +537,6 @@ def _get_features_by_domain_and_types(domain: str, allowed_types: list[str]) -> 
         allowed_types,
     )
 
-
 def _invoke_feature(func, melody: Melody, **extra):
     """Call a feature function, binding ``melody`` fields and extras by parameter name."""
     return _dispatch_invoke_feature(
@@ -689,7 +545,6 @@ def _invoke_feature(func, melody: Melody, **extra):
         default_max_ngram_order=DEFAULT_MAX_NGRAM_ORDER,
         **extra,
     )
-
 
 def _collect_feature_values(
     feature_functions: Dict[str, callable],
@@ -706,7 +561,6 @@ def _collect_feature_values(
         tuple_suffix=tuple_suffix,
         **extra,
     )
-
 
 def get_pitch_features(melody: Melody) -> Dict:
     """Dynamically collect all pitch features for a melody.
@@ -726,7 +580,6 @@ def get_pitch_features(melody: Melody) -> Dict:
     pitch_functions = _get_features_by_domain_and_types("pitch", ["absolute"])
     return _collect_feature_values(pitch_functions, melody)
 
-
 def get_pitch_class_features(melody: Melody) -> Dict:
     """Dynamically collect all pitch class features for a melody.
 
@@ -744,176 +597,6 @@ def get_pitch_class_features(melody: Melody) -> Dict:
     """
     pitch_class_functions = _get_features_by_domain_and_types("pitch", ["pitch_class"])
     return _collect_feature_values(pitch_class_functions, melody)
-
-
-
-
-
-
-
-
-
-# Undecorated helper for internal use only
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# readable alias
-
-
-
-
-
-
-
-
-# Tonality Features
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 # I still think this is cool and I like it a lot, but it's not included in any of the software
 # since this feature set is the result of a systematic review of toolboxes, we can't return it right now
@@ -999,65 +682,6 @@ def temperley_likelihood(pitches: list[int]) -> float:
 
     return total_prob
 
-
-
-
-
-
-
-
-
-# Melodic Movement Features
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def get_complexity_features(
     melody: Melody, phrase_gap: float = 1.5, max_ngram_order: int = DEFAULT_MAX_NGRAM_ORDER
 ) -> Dict:
@@ -1099,9 +723,6 @@ def get_complexity_features(
 
     return features
 
-
-
-
 def get_complexity_feature_bundle(
     melody: Melody,
     phrase_gap: float = 1.5,
@@ -1116,32 +737,6 @@ def get_complexity_feature_bundle(
             melody, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
         ),
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 def get_interval_features(melody: Melody) -> Dict:
     """Dynamically collect all interval features for a melody.
@@ -1159,9 +754,6 @@ def get_interval_features(melody: Melody) -> Dict:
     """
     interval_functions = _get_features_by_domain_and_types("pitch", ["interval"])
     return _collect_feature_values(interval_functions, melody, tuple_suffix="sd")
-
-
-
 
 def get_metric_accent_features(melody: Melody) -> Dict:
     """Compute metric hierarchy and meter accent features for a melody.
@@ -1186,11 +778,6 @@ def get_metric_accent_features(melody: Melody) -> Dict:
         "metric_hierarchy": metric_hierarchy(melody),
         "meter_accent": meter_accent(melody),
     }
-
-
-
-
-
 
 def _collect_rhythm_domain_features(melody: Melody, allowed_types: list[str]) -> Dict:
     """Collect @rhythm-domain features whose types intersect ``allowed_types``."""
@@ -1234,16 +821,13 @@ def _collect_rhythm_domain_features(melody: Melody, allowed_types: list[str]) ->
 
     return features
 
-
 def get_timing_features(melody: Melody) -> Dict:
     """Collect @rhythm-domain features decorated with @timing."""
     return _collect_rhythm_domain_features(melody, ["timing"])
 
-
 def get_inter_onset_interval_features(melody: Melody) -> Dict:
     """Collect @rhythm-domain features decorated with @interval (IOI family)."""
     return _collect_rhythm_domain_features(melody, ["interval"])
-
 
 def get_rhythm_features(melody: Melody) -> Dict:
     """Dynamically collect all rhythm features for a melody.
@@ -1256,7 +840,6 @@ def get_rhythm_features(melody: Melody) -> Dict:
     features.update(get_inter_onset_interval_features(melody))
     features.update(get_metric_accent_features(melody))
     return features
-
 
 def get_expectation_features(melody: Melody) -> Dict:
     """Dynamically collect all expectation features for a melody.
@@ -1286,7 +869,6 @@ def get_expectation_features(melody: Melody) -> Dict:
 
     return features
 
-
 def get_metre_features(melody: Melody) -> Dict:
     """Dynamically collect all metre features for a melody.
 
@@ -1315,54 +897,6 @@ def get_metre_features(melody: Melody) -> Dict:
             features[name] = None
 
     return features
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Per-melody timing keys aligned with FeatureType taxonomy (see feature_decorators.py).
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 def _get_features_by_source(source: str) -> Dict[str, callable]:
     """Get all functions/classes decorated with a specific source.
@@ -1396,7 +930,6 @@ def _get_features_by_source(source: str) -> Dict[str, callable]:
 
     return source_features
 
-
 def get_fantastic_features(
     melody: Melody,
     corpus_stats: Optional[dict] = None,
@@ -1429,7 +962,6 @@ def get_fantastic_features(
         max_ngram_order=max_ngram_order
     )
 
-
 def get_jsymbolic_features(melody: Melody) -> Dict:
     """Get all jSymbolic features for a melody.
 
@@ -1444,7 +976,6 @@ def get_jsymbolic_features(melody: Melody) -> Dict:
         Dictionary containing all jSymbolic features
     """
     return _compute_features_by_source(melody, "jsymbolic")
-
 
 def get_midi_toolbox_features(melody: Melody) -> Dict:
     """Get all MIDI Toolbox features for a melody.
@@ -1461,7 +992,6 @@ def get_midi_toolbox_features(melody: Melody) -> Dict:
     """
     return _compute_features_by_source(melody, "midi_toolbox")
 
-
 def get_idyom_features(melody: Melody) -> Dict:
     """Get all IDyOM features for a melody.
 
@@ -1476,7 +1006,6 @@ def get_idyom_features(melody: Melody) -> Dict:
         Dictionary containing all IDyOM features
     """
     return _compute_features_by_source(melody, "idyom")
-
 
 def get_simile_features(melody: Melody) -> Dict:
     """Get all SIMILE features for a melody.
@@ -1493,7 +1022,6 @@ def get_simile_features(melody: Melody) -> Dict:
     """
     return _compute_features_by_source(melody, "simile")
 
-
 def get_novel_features(melody: Melody) -> Dict:
     """Get all novel/custom features for a melody.
 
@@ -1508,7 +1036,6 @@ def get_novel_features(melody: Melody) -> Dict:
         Dictionary containing all novel features
     """
     return _compute_features_by_source(melody, "custom")
-
 
 def _compute_features_by_source(
     melody: Melody,
@@ -1563,8 +1090,6 @@ def _compute_features_by_source(
             continue
 
     return computed_features
-
-
 
 def get_all_features(
     input: Union[os.PathLike, List[os.PathLike]],

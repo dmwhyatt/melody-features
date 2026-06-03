@@ -1,5 +1,6 @@
 __pycache__/
 idyom_results/
+.venv/
 venv/
 dist/
 src/melody_features.egg-info
@@ -25,3 +26,5 @@ export_features_table.py
 # table generation helpers
 build.sh
 delete.sh
+/.quarto/
+**/*.quarto_ipynb

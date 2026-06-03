@@ -75,10 +75,9 @@ def test_core_imports():
         "melody_features.pipeline.timing",
         "melody_features.idyom_interface",
         "melody_features.import_mid",
-        "melody_features.interpolation_contour",
+        "melody_features.contour",
         "melody_features.melody_tokenizer",
         "melody_features.ngram_counter",
-        "melody_features.step_contour",
         "melody_features.melsim_wrapper.melsim",
     ]
 
