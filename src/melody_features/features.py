@@ -350,6 +350,7 @@ from .idyom.config import (
     IDyOMConfig,
     _DEFAULT_CORPUS,
     _DEFAULT_IDYOM_CONFIGS,
+    _default_idyom_configs,
     _IDYOM_MEAN_INFORMATION_CONTENT_EXPORTS,
     _resolve_idyom_corpus,
     _validate_viewpoints,
@@ -496,7 +497,6 @@ from melody_features.tonal_tension import (
 
 
 # Setup config classes for the different feature sets
-@dataclass
 
 
 
@@ -510,10 +510,8 @@ from melody_features.tonal_tension import (
 # Inclusive maximum m-type length (FANTASTIC n.limits default: 1–5).
 
 
-@dataclass
 
 
-@dataclass
 
 
 
