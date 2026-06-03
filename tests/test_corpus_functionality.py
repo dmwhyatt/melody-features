@@ -22,7 +22,7 @@ from melody_features.corpus import (
     get_corpus_files,
     list_available_corpora
 )
-from melody_features.representations import Melody
+from melody_features.core.representations import Melody
 
 
 def create_test_midi_file(pitches, starts, ends, tempo=120, filepath=None):

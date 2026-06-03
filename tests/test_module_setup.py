@@ -44,7 +44,14 @@ def test_core_imports():
         "melody_features.features",
         "melody_features.corpus",
         "melody_features.algorithms",
-        "melody_features.distributional",
+        "melody_features.algorithms.common",
+        "melody_features.algorithms.meter_estimation",
+        "melody_features.algorithms.narmour",
+        "melody_features.algorithms.pitch_spelling",
+        "melody_features.algorithms.tonal_tension",
+        "melody_features.core.representations",
+        "melody_features.utils.distributional",
+        "melody_features.utils.stats",
         "melody_features.feature_definitions.absolute_pitch",
         "melody_features.feature_definitions.pitch_class",
         "melody_features.feature_definitions.pitch_interval",
@@ -71,9 +78,6 @@ def test_core_imports():
         "melody_features.interpolation_contour",
         "melody_features.melody_tokenizer",
         "melody_features.ngram_counter",
-        "melody_features.narmour",
-        "melody_features.representations",
-        "melody_features.stats",
         "melody_features.step_contour",
         "melody_features.melsim_wrapper.melsim",
     ]
@@ -230,3 +234,23 @@ def test_refactored_package_paths_and_top_level_exports():
     assert features_module.Config is pipeline_config.Config
     assert features_module.FantasticConfig is pipeline_config.FantasticConfig
     assert features_module.IDyOMConfig is pipeline_config.IDyOMConfig
+
+
+def test_internal_support_modules_are_not_root_import_paths():
+    """Internal support modules live under core, algorithms, or utils packages."""
+    removed_modules = [
+        "melody_features.representations",
+        "melody_features.distributional",
+        "melody_features.stats",
+        "melody_features.narmour",
+        "melody_features.pitch_spelling",
+        "melody_features.tonal_tension",
+        "melody_features.meter_estimation",
+    ]
+
+    for module_name in removed_modules:
+        assert importlib.util.find_spec(module_name) is None
+
+    import melody_features
+
+    assert not hasattr(melody_features, "Melody")

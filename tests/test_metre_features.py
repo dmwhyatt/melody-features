@@ -6,7 +6,7 @@ from melody_features.features import (
     syncopicity,
     tempo_variability,
 )
-from melody_features.representations import Melody
+from melody_features.core.representations import Melody
 
 
 def _build_melody(

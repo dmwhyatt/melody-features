@@ -5,7 +5,7 @@ __author__ = "David Whyatt"
 # I originally wrote this for AMADS, see https://github.com/music-computing/amads
 # and this version has been adapted for my melody-features package
 
-from melody_features.representations import Melody
+from melody_features.core.representations import Melody
 
 
 class PolynomialContour:

@@ -6,7 +6,7 @@ from melody_features.features import (
     get_step_contour_features,
 )
 from melody_features.interpolation_contour import InterpolationContour
-from melody_features.representations import Melody
+from melody_features.core.representations import Melody
 from melody_features.step_contour import StepContour
 
 

@@ -38,7 +38,7 @@ from melody_features.features import (
 )
 from melody_features.import_mid import import_midi
 from melody_features.ngram_counter import NGramCounter
-from melody_features.representations import Melody
+from melody_features.core.representations import Melody
 
 
 def create_test_midi_file(pitches, starts, ends, tempo=120, filepath=None):

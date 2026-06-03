@@ -5,12 +5,12 @@ import numpy as np
 from ..algorithms import compute_tonality_vector
 from ..feature_decorators import both, complexity, fantastic, midi_toolbox, novel, pitch, rhythm
 from ..feature_utils import _get_durations
-from ..meter_estimation import duration_accent as _duration_accent
+from ..algorithms.meter_estimation import duration_accent as _duration_accent
 from .metre import _meter_accent_mean
 from .pitch_class import _pcdist1_vector
 from .pitch_interval import _ivdist1_vector, pitch_interval
-from ..representations import Melody
-from ..stats import distribution_entropy, midi_toolbox_entropy, shannon_entropy
+from ..core.representations import Melody
+from ..utils.stats import distribution_entropy, midi_toolbox_entropy, shannon_entropy
 from .timing import _durdist1_vector
 
 

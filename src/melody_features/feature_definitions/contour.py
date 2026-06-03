@@ -7,7 +7,7 @@ from ..feature_utils import _get_durations
 from ..huron_contour import HuronContour
 from ..interpolation_contour import InterpolationContour
 from ..polynomial_contour import PolynomialContour
-from ..representations import Melody
+from ..core.representations import Melody
 from ..step_contour import StepContour
 
 

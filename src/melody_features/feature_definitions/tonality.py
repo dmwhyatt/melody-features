@@ -5,11 +5,11 @@ from typing import Dict, Literal, Optional
 import numpy as np
 
 from ..algorithms import compute_tonality_vector
-from ..distributional import histogram_bins
+from ..utils.distributional import histogram_bins
 from .expectation import _get_key_distances
 from ..feature_decorators import fantastic, idyom, midi_toolbox, novel, partitura, pitch, tonality
-from ..representations import Melody
-from ..tonal_tension import ALPHA, BETA, DEFAULT_WEIGHTS, SCALE_FACTOR, estimate_tonaltension
+from ..core.representations import Melody
+from ..algorithms.tonal_tension import ALPHA, BETA, DEFAULT_WEIGHTS, SCALE_FACTOR, estimate_tonaltension
 
 
 __all__ = [

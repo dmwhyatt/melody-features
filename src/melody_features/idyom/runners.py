@@ -14,7 +14,7 @@ from natsort import natsorted
 
 from ..feature_definitions.tonality import infer_key_from_pitches
 from ..io.midi import import_midi
-from ..representations import Melody
+from ..core.representations import Melody
 from .config import _DEFAULT_IDYOM_CONFIGS, _resolve_idyom_corpus
 
 

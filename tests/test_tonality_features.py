@@ -16,7 +16,7 @@ from melody_features.features import (
     tonalness,
 )
 from melody_features.import_mid import import_midi
-from melody_features.representations import Melody
+from melody_features.core.representations import Melody
 
 
 def _build_test_melody(

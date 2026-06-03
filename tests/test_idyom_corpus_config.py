@@ -20,7 +20,7 @@ from melody_features.features import (
     pitch_ltm_mean_information_content,
     pitch_stm_mean_information_content,
 )
-from melody_features.representations import Melody
+from melody_features.core.representations import Melody
 
 SAMPLE_MELODY = Melody(
     {

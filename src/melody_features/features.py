@@ -433,7 +433,7 @@ from melody_features.algorithms import (
     stepwise_motion_proportion,
 )
 from melody_features.corpus import load_corpus_stats, make_corpus_stats
-from melody_features.distributional import (
+from melody_features.utils.distributional import (
     distribution_proportions,
     histogram_bins,
     kurtosis,
@@ -443,7 +443,7 @@ from melody_features.huron_contour import HuronContour
 from melody_features.io.midi import import_midi
 from melody_features.interpolation_contour import InterpolationContour
 from melody_features.melody_tokenizer import FantasticTokenizer
-from melody_features.narmour import (
+from melody_features.algorithms.narmour import (
     closure,
     intervallic_difference,
     proximity,
@@ -452,7 +452,7 @@ from melody_features.narmour import (
 )
 from melody_features.ngram_counter import NGramCounter
 from melody_features.polynomial_contour import PolynomialContour
-from melody_features.representations import Melody
+from melody_features.core.representations import Melody
 from melody_features.feature_histogram import (
     PitchHistogram,
     PitchClassHistogram,
@@ -462,7 +462,7 @@ from melody_features.feature_histogram import (
     create_beat_histogram,
     create_melodic_interval_histogram,
 )
-from melody_features.stats import (
+from melody_features.utils.stats import (
     distribution_entropy,
     get_mode,
     midi_toolbox_entropy,
@@ -471,16 +471,16 @@ from melody_features.stats import (
     standard_deviation,
 )
 from melody_features.step_contour import StepContour
-from melody_features.meter_estimation import (
+from melody_features.algorithms.meter_estimation import (
     compute_onset_autocorrelation,
     duration_accent as _duration_accent,
     melodic_accent as _melodic_accent,
     metric_hierarchy as _metric_hierarchy,
 )
-from melody_features.pitch_spelling import (
+from melody_features.algorithms.pitch_spelling import (
     estimate_spelling_from_melody as _estimate_spelling_from_melody,
 )
-from melody_features.tonal_tension import (
+from melody_features.algorithms.tonal_tension import (
     estimate_tonaltension,
     SCALE_FACTOR,
     DEFAULT_WEIGHTS,
