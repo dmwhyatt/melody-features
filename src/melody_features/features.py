@@ -2831,6 +2831,31 @@ def _invoke_feature(func, melody: Melody, **extra):
     return func(**kwargs)
 
 
+def _collect_feature_values(
+    feature_functions: Dict[str, callable],
+    melody: Melody,
+    *,
+    tuple_suffix: Optional[str] = None,
+    **extra,
+) -> Dict[str, Any]:
+    """Compute feature functions with shared melody argument dispatch."""
+    features: Dict[str, Any] = {}
+
+    for name, func in feature_functions.items():
+        try:
+            result = _invoke_feature(func, melody, **extra)
+            if tuple_suffix and isinstance(result, tuple) and len(result) == 2:
+                features[f"{name}_mean"] = result[0]
+                features[f"{name}_{tuple_suffix}"] = result[1]
+            else:
+                features[name] = result
+        except Exception as e:
+            print(f"Warning: Could not compute {name}: {e}")
+            features[name] = None
+
+    return features
+
+
 def get_pitch_features(melody: Melody) -> Dict:
     """Dynamically collect all pitch features for a melody.
     
@@ -2846,45 +2871,8 @@ def get_pitch_features(melody: Melody) -> Dict:
     Dict
         Dictionary of pitch feature values
     """
-    features = {}
     pitch_functions = _get_features_by_domain_and_types("pitch", ["absolute"])
-    
-    for name, func in pitch_functions.items():
-        try:
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            
-            # Call function with appropriate parameters based on signature
-            if 'pitches' in params and 'starts' in params and 'ends' in params and 'tempo' in params:
-                result = func(melody.pitches, melody.starts, melody.ends, melody.tempo)
-            elif 'pitches' in params and 'starts' in params and 'ends' in params:
-                result = func(melody.pitches, melody.starts, melody.ends)
-            elif 'pitches' in params and 'starts' in params:
-                if 'tempo' in params and 'ppqn' in params:
-                    result = func(melody.pitches, melody.starts, melody.tempo, 480)
-                elif 'tempo' in params:
-                    result = func(melody.pitches, melody.starts, melody.tempo)
-                else:
-                    result = func(melody.pitches, melody.starts)
-            elif 'pitches' in params:
-                result = func(melody.pitches)
-            elif 'starts' in params and 'ends' in params:
-                result = func(melody.starts, melody.ends)
-            elif 'starts' in params:
-                result = func(melody.starts)
-            elif 'ends' in params:
-                result = func(melody.ends)
-            elif 'melody' in params:
-                result = func(melody)
-            else:
-                result = func(melody)
-
-            features[name] = result
-        except Exception as e:
-            print(f"Warning: Could not compute {name}: {e}")
-            features[name] = None
-
-    return features
+    return _collect_feature_values(pitch_functions, melody)
 
 
 def get_pitch_class_features(melody: Melody) -> Dict:
@@ -2902,45 +2890,8 @@ def get_pitch_class_features(melody: Melody) -> Dict:
     Dict
         Dictionary of pitch class feature values
     """
-    features = {}
     pitch_class_functions = _get_features_by_domain_and_types("pitch", ["pitch_class"])
-    
-    for name, func in pitch_class_functions.items():
-        try:
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            
-            # Call function with appropriate parameters based on signature
-            if 'pitches' in params and 'starts' in params and 'ends' in params and 'tempo' in params:
-                result = func(melody.pitches, melody.starts, melody.ends, melody.tempo)
-            elif 'pitches' in params and 'starts' in params and 'ends' in params:
-                result = func(melody.pitches, melody.starts, melody.ends)
-            elif 'pitches' in params and 'starts' in params:
-                if 'tempo' in params and 'ppqn' in params:
-                    result = func(melody.pitches, melody.starts, melody.tempo, 480)
-                elif 'tempo' in params:
-                    result = func(melody.pitches, melody.starts, melody.tempo)
-                else:
-                    result = func(melody.pitches, melody.starts)
-            elif 'pitches' in params:
-                result = func(melody.pitches)
-            elif 'starts' in params and 'ends' in params:
-                result = func(melody.starts, melody.ends)
-            elif 'starts' in params:
-                result = func(melody.starts)
-            elif 'ends' in params:
-                result = func(melody.ends)
-            elif 'melody' in params:
-                result = func(melody)
-            else:
-                result = func(melody)
-
-            features[name] = result
-        except Exception as e:
-            print(f"Warning: Could not compute {name}: {e}")
-            features[name] = None
-
-    return features
+    return _collect_feature_values(pitch_class_functions, melody)
 
 
 @fantastic
@@ -9642,49 +9593,8 @@ def get_interval_features(melody: Melody) -> Dict:
     Dict
         Dictionary of interval feature values
     """
-    features = {}
     interval_functions = _get_features_by_domain_and_types("pitch", ["interval"])
-    
-    for name, func in interval_functions.items():
-        try:
-            # Get function signature to determine parameters
-            sig = inspect.signature(func)
-            params = list(sig.parameters.keys())
-            
-            # Call function with appropriate parameters based on signature
-            if 'pitches' in params and 'starts' in params and 'ends' in params and 'tempo' in params:
-                result = func(melody.pitches, melody.starts, melody.ends, melody.tempo)
-            elif 'pitches' in params and 'starts' in params and 'ends' in params:
-                result = func(melody.pitches, melody.starts, melody.ends)
-            elif 'pitches' in params and 'interval_level' in params:
-                # Special case for variable_melodic_intervals
-                result = func(melody.pitches, 7)  # Default interval level
-            elif 'pitches' in params:
-                result = func(melody.pitches)
-            elif 'starts' in params and 'ends' in params and 'tau' in params:
-                # edge case for mean_duration_accent
-                result = func(melody.starts, melody.ends, 0.5, 2.0)
-            elif 'starts' in params and 'ends' in params:
-                result = func(melody.starts, melody.ends)
-            elif 'starts' in params:
-                result = func(melody.starts)
-            elif 'melody' in params:
-                result = func(melody)
-            else:
-                result = func(melody)
-            
-            # Handle functions that return tuples (like interval_direction)
-            if isinstance(result, tuple) and len(result) == 2:
-                features[f"{name}_mean"] = result[0]
-                features[f"{name}_sd"] = result[1]
-            else:
-                features[name] = result
-                
-        except Exception as e:
-            print(f"Warning: Could not compute {name}: {e}")
-            features[name] = None
-    
-    return features
+    return _collect_feature_values(interval_functions, melody, tuple_suffix="sd")
 
 
 def get_contour_features(melody: Melody) -> Dict:
