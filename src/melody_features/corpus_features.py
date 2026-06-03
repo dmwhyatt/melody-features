@@ -8,7 +8,7 @@ import numpy as np
 import scipy
 
 from .corpus import load_corpus_stats, make_corpus_stats
-from .feature_decorators import both, complexity, corpus, fantastic
+from .feature_decorators import both, corpus, fantastic
 from .melody_tokenizer import FantasticTokenizer
 from .ngram_counter import NGramCounter
 from .representations import Melody
@@ -66,11 +66,11 @@ def get_ngram_document_frequency(ngram: tuple, corpus_stats: dict) -> int:
 
 @fantastic
 @both
-@complexity
+@corpus
 class InverseEntropyWeighting:
-    """Calculate local weights for n-grams using an inverse-entropy measure. 
+    """Calculate local weights for n-grams using an inverse-entropy measure.
 
-    Inverse-entropy weighting is implemented following the specification in 
+    Inverse-entropy weighting is implemented following the specification in
     FANTASTIC and the Handbook of Latent Semantic Analysis (Landauer et al., 2007).
     It provides several quantifiers of the importance of an n-gram (here: m-type)
     based on its relative frequency in a given passage (here: melody)
@@ -86,9 +86,9 @@ class InverseEntropyWeighting:
     @property
     def local_weights(self) -> list[float]:
         """Calculate local weights for n-grams using an inverse-entropy measure.
-        The local weight of an m-type is defined as 
-        `loc.w(τ) = log2(f(τ) + 1)` where `f(τ)` is the frequency of a 
-        given m-type in the melody. As such, the local weight can take any real value 
+        The local weight of an m-type is defined as
+        `loc.w(τ) = log2(f(τ) + 1)` where `f(τ)` is the frequency of a
+        given m-type in the melody. As such, the local weight can take any real value
         greater than zero. High values mean that the m-type provides a lot of information
         about the melody, while low values mean that the m-type provides little information.
 
@@ -111,7 +111,7 @@ class InverseEntropyWeighting:
             local_weights.append(local_weight)
 
         return local_weights
-    
+
     @property
     def global_weights(self) -> list[float]:
         """Calculate global weights for n-grams using an inverse-entropy measure.
@@ -119,8 +119,8 @@ class InverseEntropyWeighting:
         of the same m-type in the corpus is calculated:
         `Pc(τ) = fc(τ)/fC(τ)` where `fc(τ)` is the frequency of a given m-type in the melody,
         and `fC(τ)` is the frequency of the same m-type in the corpus.
-        This ratio is then used to calculate the global weight of an m-type: 
-        `glob.w = 1 + Σ Pc(τ) · log2(Pc(τ)) / log2(|C|)` where `|C|` is the number of 
+        This ratio is then used to calculate the global weight of an m-type:
+        `glob.w = 1 + Σ Pc(τ) · log2(Pc(τ)) / log2(|C|)` where `|C|` is the number of
         documents in the corpus.
         Global weights take a value from 0 to 1. A high value corresponds to a less informative m-type,
         while a low value corresponds to a more informative m-type, with regard to its position in the melody.
@@ -186,7 +186,7 @@ class InverseEntropyWeighting:
         """
         if not self.ngram_counts or not self.corpus_stats:
             return []
-    
+
         if len(self.local_weights) != len(self.global_weights):
             return []
 
@@ -358,7 +358,7 @@ def tfdf_spearman(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
         Gap threshold for phrase segmentation
     max_ngram_order : int
         Maximum n-gram order to consider
-        
+
     Returns
     -------
     float
@@ -389,7 +389,7 @@ def tfdf_kendall(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngra
         Gap threshold for phrase segmentation
     max_ngram_order : int
         Maximum n-gram order to consider
-        
+
     Returns
     -------
     float
@@ -423,7 +423,7 @@ def mean_log_tfdf(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
         Gap threshold for phrase segmentation
     max_ngram_order : int
         Maximum n-gram order to consider
-        
+
     Returns
     -------
     float
@@ -452,7 +452,7 @@ def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
         Gap threshold for phrase segmentation
     max_ngram_order : int
         Maximum n-gram order to consider
-        
+
     Returns
     -------
     float
@@ -466,8 +466,8 @@ def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
 @corpus
 @both
 def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """log2 of the largest corpus document frequency among melody m-types. Highlights how 
-    frequent the most common pattern in the melody is relative to the corpus. Large values indicate that the melody 
+    """log2 of the largest corpus document frequency among melody m-types. Highlights how
+    frequent the most common pattern in the melody is relative to the corpus. Large values indicate that the melody
     contains at least one pattern that is very frequent in the corpus.
 
     Parameters
@@ -480,7 +480,7 @@ def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_
         Gap threshold for phrase segmentation
     max_ngram_order : int
         Maximum n-gram order to consider
-        
+
     Returns
     -------
     float
@@ -494,8 +494,8 @@ def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_
 @corpus
 @both
 def min_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
-    """log2 of the smallest corpus DF among melody m-types. Highlights how 
-    frequent the least common pattern in the melody is relative to the corpus. Small values indicate that the melody 
+    """log2 of the smallest corpus DF among melody m-types. Highlights how
+    frequent the least common pattern in the melody is relative to the corpus. Small values indicate that the melody
     contains at least one pattern that is very rare in the corpus.
 
     Parameters
@@ -508,7 +508,7 @@ def min_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_
         Gap threshold for phrase segmentation
     max_ngram_order : int
         Maximum n-gram order to consider
-        
+
     Returns
     -------
     float
@@ -537,7 +537,7 @@ def mean_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram
         Gap threshold for phrase segmentation
     max_ngram_order : int
         Maximum n-gram order to consider
-        
+
     Returns
     -------
     float
@@ -567,7 +567,7 @@ def mean_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: flo
         Gap threshold for phrase segmentation
     max_ngram_order : int
         Maximum n-gram order to consider
-        
+
     Returns
     -------
     float
@@ -593,7 +593,7 @@ def std_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: floa
         Gap threshold for phrase segmentation
     max_ngram_order : int
         Maximum n-gram order to consider
-        
+
     Returns
     -------
     float
@@ -622,7 +622,7 @@ def mean_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, ma
         Gap threshold for phrase segmentation
     max_ngram_order : int
         Maximum n-gram order to consider
-        
+
     Returns
     -------
     float
@@ -648,7 +648,7 @@ def std_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max
         Gap threshold for phrase segmentation
     max_ngram_order : int
         Maximum n-gram order to consider
-        
+
     Returns
     -------
     float
