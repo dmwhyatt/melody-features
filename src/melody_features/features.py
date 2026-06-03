@@ -110,6 +110,43 @@ from .pitch_interval_features import (
     amount_of_arpeggiation,
     chromatic_motion,
 )
+from .expectation_features import (
+    _get_key_distances,
+    get_narmour_features,
+    _stability_distance,
+    _get_simonton_transition_matrix,
+    narmour_registral_direction,
+    narmour_proximity,
+    narmour_closure,
+    narmour_registral_return,
+    narmour_intervallic_difference,
+    melodic_embellishment,
+    mobility,
+    mean_mobility,
+    mobility_std,
+    melodic_attraction,
+    mean_melodic_attraction,
+    melodic_attraction_std,
+    melodic_accent,
+    mean_melodic_accent,
+    melodic_accent_std,
+    compltrans,
+    pitch_stm_mean_information_content,
+    pitch_ltm_mean_information_content,
+    rhythm_stm_mean_information_content,
+    rhythm_ltm_mean_information_content,
+)
+from .metre_features import (
+    _meter_accent_mean,
+    metric_hierarchy,
+    meter_accent,
+    meter_numerator,
+    meter_denominator,
+    proportion_of_time_in_first_meter,
+    number_of_unique_time_signatures,
+    syncopation,
+    syncopicity,
+)
 
 warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pretty_midi")
@@ -5099,43 +5136,6 @@ def tonal_entropy(pitches: list[int]) -> float:
     return float(distribution_entropy(weights))
 
 
-def _get_key_distances() -> dict[str, int]:
-    """Returns a dictionary mapping key names to their semitone distances from C.
-    
-    Includes both sharp and flat enharmonic equivalents.
-
-    Returns
-    -------
-    dict[str, int]
-        Dictionary mapping key names (both major and minor) to semitone distances from C.
-    """
-    return {
-        "C": 0,
-        "C#": 1, "Db": 1,
-        "D": 2,
-        "D#": 3, "Eb": 3,
-        "E": 4, "Fb": 4,
-        "F": 5, "E#": 5,
-        "F#": 6, "Gb": 6,
-        "G": 7,
-        "G#": 8, "Ab": 8,
-        "A": 9,
-        "A#": 10, "Bb": 10,
-        "B": 11, "Cb": 11,
-        # Minor keys (lowercase)
-        "c": 0,
-        "c#": 1, "db": 1,
-        "d": 2,
-        "d#": 3, "eb": 3,
-        "e": 4, "fb": 4,
-        "f": 5, "e#": 5,
-        "f#": 6, "gb": 6,
-        "g": 7,
-        "g#": 8, "ab": 8,
-        "a": 9,
-        "a#": 10, "bb": 10,
-        "b": 11, "cb": 11,
-    }
 
 
 @idyom
@@ -5721,235 +5721,17 @@ def tonalness_histogram(pitches: list[int]) -> dict:
     correlation_values = [value for _, value in compute_tonality_vector(pitch_classes)]
     return histogram_bins(correlation_values, 24)
 
-@idyom
-@midi_toolbox
-@pitch
-@expectation
-def narmour_registral_direction(pitches: list[int]) -> int:
-    """Narmour registral-direction score for the final three notes.
 
-    The last three pitches define an implicative interval followed by a realized
-    interval. This feature returns ``1`` when a large implicative interval (greater
-    than a tritone) is followed by a change of direction, or when a small
-    implicative interval (smaller than a tritone) continues in the same direction.
-    It returns ``0`` otherwise.
 
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
 
-    Returns
-    -------
-    int
-        Narmour registral direction score (0 or 1)
 
-    Citation
-    --------
-    Narmour (1990)
-    """
-    return int(registral_direction(pitches))
 
-@idyom
-@midi_toolbox
-@pitch
-@expectation
-def narmour_proximity(pitches: list[int]) -> int:
-    """Narmour proximity score for the final melodic interval.
-
-    Proximity rewards small realized intervals. It is calculated as ``6 - d``,
-    where ``d`` is the absolute semitone distance between the final two notes, and
-    is clipped at ``0`` for intervals of a tritone or larger. Unisons therefore
-    receive ``6``, whole tones receive ``4``, perfect fourths receive ``1``, and
-    perfect fifths receive ``0``.
-
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-
-    Returns
-    -------
-    int
-        Narmour proximity score (0 to 6)
-
-    Citation
-    --------
-    Narmour (1990)
-    """
-    return int(proximity(pitches))
-
-@idyom
-@midi_toolbox
-@pitch
-@expectation
-def narmour_closure(pitches: list[int]) -> int:
-    """Narmour closure score for the final three-note pattern.
-
-    The last three pitches define two successive intervals. One point is awarded
-    when the second interval changes direction relative to the first. A second
-    point is awarded when the second interval is at least two semitones smaller
-    than the first in absolute size. The resulting score ranges from ``0`` to ``2``.
-
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-
-    Returns
-    -------
-    int
-        Narmour closure score (0 to 2)
-
-    Citation
-    --------
-    Narmour (1990)
-    """
-    return int(closure(pitches))
-
-@idyom
-@midi_toolbox
-@pitch
-@expectation
-def narmour_registral_return(pitches: list[int]) -> int:
-    """Narmour registral-return score for the final three-note pattern.
-
-    Registral return measures whether the last three notes move away from a pitch
-    and then return toward it. The contour must change direction and neither
-    interval may be a repeated note. An exact return to the first pitch scores
-    ``3``; returning within one semitone scores ``2``; returning within two
-    semitones scores ``1``; all other patterns score ``0``.
-
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-
-    Returns
-    -------
-    int
-        Narmour registral return score (0 to 3)
-
-    Citation
-    --------
-    Narmour (1990)
-    """
-    return int(registral_return(pitches))
-
-@idyom
-@midi_toolbox
-@pitch
-@expectation
-def narmour_intervallic_difference(pitches: list[int]) -> int:
-    """Narmour intervallic-difference score for the final three notes.
-
-    The last three pitches define an implicative interval followed by a realized
-    interval. If the implicative interval is large (greater than a tritone), this
-    feature returns ``1`` when the realized interval is sufficiently smaller: at
-    least three semitones smaller in the same direction, or at least two semitones
-    smaller after a direction change. If the implicative interval is small (smaller
-    than a tritone), it returns ``1`` when the realized interval is similar in size,
-    within the same margins. Otherwise it returns ``0``.
-
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-
-    Returns
-    -------
-    int
-        Narmour intervallic difference score (0 or 1)
-
-    Citation
-    --------
-    Narmour (1990)
-    """
-    return int(intervallic_difference(pitches))
-
-def get_narmour_features(melody: Melody) -> Dict:
-    """Calculate Narmour's implication-realization features.
-
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze as a Melody object
-
-    Returns
-    -------
-    Dict
-        Dictionary containing scores for:
-        - Registral direction (0 or 1)
-        - Proximity (0-6)
-        - Closure (0-2)
-        - Registral return (0-3)
-        - Intervallic difference (0 or 1)
-
-    Notes
-    -----
-    Features represent:
-    - Registral direction: Large intervals followed by direction change
-    - Proximity: Closeness of consecutive pitches
-    - Closure: Direction changes and interval size changes
-    - Registral return: Return to previous pitch level
-    - Intervallic difference: Relationship between consecutive intervals
-    """
-    pitches = melody.pitches
-    return {
-        "registral_direction": narmour_registral_direction(pitches),
-        "proximity": narmour_proximity(pitches),
-        "closure": narmour_closure(pitches),
-        "registral_return": narmour_registral_return(pitches),
-        "intervallic_difference": narmour_intervallic_difference(pitches),
-    }
 
 
 # Melodic Movement Features
 
 
 
-@jsymbolic
-@pitch
-@expectation
-def melodic_embellishment(
-    pitches: list[int], starts: list[float], ends: list[float]
-) -> float:
-    """The proportion of melodic embellishments in the melody. Melodic embellishments are identified by notes 
-    that are surrounded on both sides by notes with durations at least 3 times longer than the central 
-    note.
-
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-    starts : list[float]
-        List of note start times
-    ends : list[float]
-        List of note end times
-
-    Returns
-    -------
-    float
-        Proportion of notes that are embellishments (0.0-1.0).
-        Returns -1.0 if input is None, 0.0 if input is empty.
-    """
-    if not pitches or not starts or not ends:
-        return -1.0
-    if len(pitches) != len(starts) or len(starts) != len(ends):
-        return -1.0
-    if len(pitches) == 0:
-        return 0.0
-
-    durations = [end - start for start, end in zip(starts, ends)]
-
-    embellishment_count = 0
-    for i in range(1, len(pitches) - 1):
-        # Check if surrounded by notes with duration >= 3x this note
-        if (durations[i-1] >= 3 * durations[i] and 
-            durations[i+1] >= 3 * durations[i]):
-            embellishment_count += 1
-
-    return float(embellishment_count) / len(pitches)
 
 
 
@@ -6022,411 +5804,17 @@ def gradus(pitches: list[int]) -> float:
     
     return float(np.mean(gradus_values)) if gradus_values else 0.0
 
-@midi_toolbox
-@pitch
-@expectation
-def mobility(pitches: list[int]) -> list[float]:
-    """
-    The melodic `mobility` for each note based on von Hippel (2000).
-    Mobility describes why melodies change direction after large skips by 
-    observing that they would otherwise run out of the comfortable melodic range.
-    It uses lag-one autocorrelation between successive pitch heights.
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-    
-    Returns
-    -------
-    list[float]
-        One mobility value per input pitch (length matches ``pitches``).
-    
-    Citation
-    --------
-    von Hippel (2000)
-    """
-    if not pitches:
-        return []
-    if len(pitches) == 1:
-        return [0.0]
-
-    p = np.asarray(pitches, dtype=float)
-    n = len(p)
-
-    # 1-based MATLAB arrays; index 0 unused
-    p_hist = np.zeros(n + 1)
-    p2 = np.zeros(n + 1)
-    mob = np.zeros(n + 1)
-    y = np.zeros(n - 1)
-
-    for i in range(2, n + 1):
-        m_im1 = float(np.mean(p[: i - 1]))
-        p_hist[i - 1] = p[i - 2] - m_im1
-        p2[i] = p[i - 2] - m_im1
-
-        z = np.concatenate([p_hist[1:i], [p_hist[i - 1]]])
-        len_z = len(z)
-        p2_row = p2[1 : len_z + 1]
-        p3 = np.column_stack([p2_row, z])
-
-        if p3.shape[0] >= 2 and np.std(p3[:, 0]) > 0 and np.std(p3[:, 1]) > 0:
-            corr = np.corrcoef(p3, rowvar=False)
-            mob[i] = float(corr[0, 1]) if not np.isnan(corr[0, 1]) else 0.0
-        else:
-            mob[i] = 0.0
-
-        y[i - 2] = mob[i - 1] * (p[i - 1] - m_im1)
-
-    if len(y) >= 2:
-        y[1] = 0.0
-    elif len(y) == 1:
-        y = np.array([y[0], 0.0])
-
-    y = np.abs(np.concatenate([[0.0], y]))
-    if len(y) > n:
-        y = y[:n]
-    return [float(v) for v in y]
-
-@midi_toolbox
-@pitch
-@expectation
-def mean_mobility(pitches: list[int]) -> float:
-    """
-    The arithmetic mean of the `mobility` values across all notes.
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-        
-    Returns
-    -------
-    float
-        Mean mobility value
-    """
-    mob_values = mobility(pitches)
-    if not mob_values:
-        return 0.0
-    return float(np.mean(mob_values))
 
 
-@midi_toolbox
-@pitch
-@expectation
-def mobility_std(pitches: list[int]) -> float:
-    """
-    The standard deviation of the `mobility` values across all notes.
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-        
-    Returns
-    -------
-    float
-        Standard deviation of mobility values
-    """
-    mob_values = mobility(pitches)
-    if len(mob_values) < 2:
-        return 0.0
-    return float(np.std(mob_values, ddof=1))
 
 
-def _stability_distance(weight1: float, weight2: float, proximity: float) -> float:
-    """Calculate stability distance for melodic attraction.
-    
-    Helper function implementing the stabilitydistance subfunction from melattraction.m
-    
-    Parameters
-    ----------
-    weight1 : float
-        Anchoring weight of first note
-    weight2 : float  
-        Anchoring weight of second note
-    proximity : float
-        Distance in semitones between notes
-        
-    Returns
-    -------
-    float
-        Stability distance value
-    """
-    if weight1 == 0 or proximity == 0:
-        return 0.0
 
-    return (weight2 / weight1) * (1.0 / (proximity ** 2))
 
-@midi_toolbox
-@pitch
-@expectation
-def melodic_attraction(pitches: list[int]) -> list[float]:
-    """Melodic attraction values following Lerdahl's tonal-attraction model.
 
-    The melody's key is estimated from its pitch-class content, then each pitch
-    class is assigned a tonal anchoring weight in that key. For each adjacent
-    pitch pair, attraction depends on tonal stability, pitch proximity, and whether
-    the melodic motion continues or changes direction. Values are scaled to the
-    interval ``[0, 1]``.
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
 
-    Citation
-    --------
-    Lerdahl (1996)
-        
-    Returns
-    -------
-    list[float]
-        Melodic attraction values for each note (0-1 scale, higher = more attraction)
 
-    Notes
-    -----
-    Uses anchoring weights, directed motion, and scaled output. We
-    currently validate it via structural and range tests rather than a full
-    one-to-one parity fixture set from MIDI Toolbox example corpora.
-    """
-    if len(pitches) < 2:
-        return [0.0] if len(pitches) == 1 else []
 
-    pitch_classes = [pitch % 12 for pitch in pitches]
-    correlations = compute_tonality_vector(pitch_classes)
 
-    if not correlations:
-        return [0.0] * len(pitches)
-
-    key_name = correlations[0][0].split()[0]
-    is_major = "major" in correlations[0][0]
-
-    # Get tonic pitch class for transposition to C
-    key_distances = _get_key_distances()
-    tonic_pc = key_distances[key_name]
-
-    transposed_pcs = [(pc - tonic_pc) % 12 for pc in pitch_classes]
-    
-    # Anchoring weights for each pitch class (C=0, C#=1, ..., B=11)
-    if is_major:
-        anchor_weights = [4, 1, 2, 1, 3, 2, 1, 3, 1, 2, 1, 2]  # MAJOR
-    else:
-        anchor_weights = [4, 1, 2, 3, 1, 2, 1, 3, 2, 2, 1, 2]  # MINOR
-    
-    pc_weights = [anchor_weights[pc] for pc in transposed_pcs]
-    
-    # Calculate directed motion index
-    # (change of direction = -1, repetition = 0, continuation = 1)
-    pitch_diffs = [pitches[i+1] - pitches[i] for i in range(len(pitches)-1)]
-    directions = [1 if diff > 0 else -1 if diff < 0 else 0 for diff in pitch_diffs]
-    
-    motion = [0]
-    for i in range(1, len(directions)):
-        if directions[i] == 0:
-            motion.append(0)
-        elif directions[i-1] == 0:  # After a repetition, treat as continuation onset
-            motion.append(1)
-        elif directions[i] == directions[i-1]:  # Continuation
-            motion.append(1)
-        else:  # Direction change
-            motion.append(-1)
-    
-    attraction_values = [0.0]
-    
-    for i in range(len(pitches) - 1):
-        current_weight = pc_weights[i]
-        next_weight = pc_weights[i + 1]
-        proximity = abs(pitches[i + 1] - pitches[i])
-        
-        # Primary attraction (sd1)
-        if current_weight >= next_weight:
-            sd1 = 0.0
-        else:
-            sd1 = _stability_distance(current_weight, next_weight, proximity)
-        
-        # Alternative attraction (sd2) - attraction to other stable tones
-        current_pc = transposed_pcs[i]
-        
-        # Check other pitch classes for stronger alternatives
-        sd2_values = []
-        for candidate_pc in range(12):
-            candidate_weight = anchor_weights[candidate_pc]
-            
-            # Only consider stable candidates
-            if candidate_weight > current_weight and candidate_pc != transposed_pcs[i + 1]:
-                candidate_distance = min(abs(candidate_pc - current_pc), 12 - abs(candidate_pc - current_pc))
-                sd2_candidate = _stability_distance(current_weight, candidate_weight, candidate_distance)
-                sd2_values.append(sd2_candidate)
-        
-        # Calculate total alternative attraction
-        if len(sd2_values) > 1:
-            # Take max + half of others
-            max_sd2 = max(sd2_values)
-            other_sd2 = sum(val * 0.5 for val in sd2_values if val != max_sd2)
-            sd2 = max_sd2 + other_sd2
-        elif len(sd2_values) == 1:
-            sd2 = sd2_values[0]
-        else:
-            sd2 = 0.0
-        
-        # Combine with directed motion
-        anchoring = sd1 - sd2
-        attraction = motion[i] + anchoring
-        
-        attraction_values.append(attraction)
-
-    # Scale results between 0 and 1
-    scaled_attraction = [(val + 1) / 5 for val in attraction_values]
-
-    # Clamp to [0, 1]
-    scaled_attraction = [max(0.0, min(1.0, val)) for val in scaled_attraction]
-
-    return scaled_attraction
-
-@midi_toolbox
-@pitch
-@expectation
-def mean_melodic_attraction(pitches: list[int]) -> float:
-    """The arithmetic mean of Lerdahl melodic-attraction values.
-
-    Melodic attraction estimates how strongly each note is drawn toward the next
-    note, based on tonal anchoring weights, pitch proximity, and directed motion.
-    This feature averages those per-note attraction values across the melody.
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-        
-    Returns
-    -------
-    float
-        Mean melodic attraction value
-
-    Citation
-    --------
-    Lerdahl (1996)
-    """
-    attraction_values = melodic_attraction(pitches)
-    if not attraction_values:
-        return 0.0
-    return float(np.mean(attraction_values))
-
-@midi_toolbox
-@pitch
-@expectation
-def melodic_attraction_std(pitches: list[int]) -> float:
-    """The sample standard deviation of Lerdahl melodic-attraction values.
-
-    Melodic attraction estimates note-to-note tonal pull from anchoring weights,
-    pitch proximity, and directed motion. This feature summarizes how much those
-    attraction values vary across the melody.
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-        
-    Returns
-    -------
-    float
-        Standard deviation of melodic attraction values
-
-    Citation
-    --------
-    Lerdahl (1996)
-    """
-    attraction_values = melodic_attraction(pitches)
-    if len(attraction_values) < 2:
-        return 0.0
-    return float(np.std(attraction_values, ddof=1))
-
-@midi_toolbox
-@pitch
-@expectation
-def melodic_accent(pitches: list[int]) -> list[float]:
-    """Melodic accent salience for each note using Thomassen's contour model.
-
-    Thomassen's model assigns accent strength from the melodic contour formed by
-    three-note pitch windows. Notes at locally salient contour positions receive
-    higher values. The implementation follows the MIDI Toolbox ``melaccent.m``
-    convention and returns values from ``0`` (no salience) to ``1`` (maximum
-    salience).
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-        
-    Returns
-    -------
-    list[float]
-        List of melodic accent values for each note
-
-    Citation
-    --------
-    Thomassen (1982)
-    """
-    return _melodic_accent(pitches)
-
-@midi_toolbox
-@pitch
-@expectation
-def mean_melodic_accent(pitches: list[int]) -> float:
-    """The arithmetic mean of Thomassen melodic-accent values.
-
-    Melodic accent values estimate local contour salience from three-note pitch
-    windows. This feature averages those note-level salience values across the
-    melody.
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-        
-    Returns
-    -------
-    float
-        Mean melodic accent value
-
-    Citation
-    --------
-    Thomassen (1982)
-    """
-    accents = melodic_accent(pitches)
-    if not accents:
-        return 0.0
-    return float(np.mean(accents))
-
-@midi_toolbox
-@pitch
-@expectation
-def melodic_accent_std(pitches: list[int]) -> float:
-    """The sample standard deviation of Thomassen melodic-accent values.
-
-    Melodic accent values estimate local contour salience from three-note pitch
-    windows. This feature summarizes how unevenly that salience is distributed
-    across the melody.
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-        
-    Returns
-    -------
-    float
-        Standard deviation of melodic accent values
-
-    Citation
-    --------
-    Thomassen (1982)
-    """
-    accents = melodic_accent(pitches)
-    if not accents:
-        return 0.0
-    return float(np.std(accents, ddof=1))
 
 @fantastic
 @both
@@ -6661,115 +6049,7 @@ class InverseEntropyWeighting:
 
         return [l * g for l, g in zip(self.local_weights, self.global_weights)]
 
-def _get_simonton_transition_matrix() -> np.ndarray:
-    """Get Simonton's pitch class transition probabilities from 15,618 classical themes.
-    
-    This is basically just refstat('pcdist2classical1') from MIDI toolbox.
-    Matrix indices correspond to an enumeration of the 12 pitch classes.
-    
-    Returns
-    -------
-    np.ndarray
-        12x12 matrix of transition probabilities
-    """
-    transition_matrix = np.zeros((12, 12))
-    
-    transition_matrix[4, :] = 0.005  
-    transition_matrix[9, :] = 0.005  
-    transition_matrix[11, :] = 0.005  
-    transition_matrix[:, 4] = 0.005  
-    transition_matrix[:, 9] = 0.005  
-    transition_matrix[:, 11] = 0.005  
-    transition_matrix[7, 8] = 0.005  
-    transition_matrix[8, 7] = 0.005  
-    
-    common_transitions = [
-        (8, 8, 0.067),  
-        (1, 1, 0.053),  
-        (8, 1, 0.049),  
-        (1, 3, 0.044),  
-        (1, 12, 0.032), 
-        (1, 8, 0.032),  
-        (8, 6, 0.031),  
-        (5, 5, 0.030),  
-        (5, 3, 0.030),  
-        (3, 1, 0.030),  
-        (8, 5, 0.029),  
-        (8, 10, 0.029), 
-        (5, 6, 0.028),  
-        (5, 8, 0.026),  
-        (3, 5, 0.024),  
-        (12, 1, 0.023), 
-        (1, 5, 0.022),  
-        (6, 8, 0.021),  
-        (6, 5, 0.021),  
-        (10, 8, 0.020), 
-        (4, 3, 0.018),  
-        (5, 1, 0.016),  
-        (3, 4, 0.014),  
-        (10, 12, 0.012),
-        (12, 10, 0.011),
-        (3, 3, 0.011),  
-        (9, 8, 0.011),  
-    ]
-    
-    # convert from 1-indexed MATLAB to 0-indexed Python and set probabilities
-    for from_pc_matlab, to_pc_matlab, prob in common_transitions:
-        from_pc = (from_pc_matlab - 1) % 12
-        to_pc = (to_pc_matlab - 1) % 12
-        transition_matrix[from_pc, to_pc] = prob
-    
-    return transition_matrix
 
-@midi_toolbox
-@pitch
-@expectation
-def compltrans(melody: Melody) -> float:
-    """The melodic originality measure, according to Simonton (1984).
-    Calculated based on 2nd order pitch-class distribution derived from 15,618 classical music themes.
-    Higher values indicate higher melodic originality (less predictable transitions).
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    float
-        Originality score scaled 0-10 (higher = more original/unexpected)
-
-    Citation
-    --------
-    Simonton (1984)
-    """
-    if not melody.pitches or len(melody.pitches) < 2:
-        return 5.0  # Return neutral originality for edge cases
-    
-    melody_pitch_classes = [pitch % 12 for pitch in melody.pitches]
-    
-    melody_transition_matrix = np.zeros((12, 12))
-    for i in range(len(melody_pitch_classes) - 1):
-        from_pitch_class = melody_pitch_classes[i]
-        to_pitch_class = melody_pitch_classes[i + 1]
-        melody_transition_matrix[from_pitch_class, to_pitch_class] += 1
-
-    classical_transition_probabilities = _get_simonton_transition_matrix()
-
-    transition_probability_products = melody_transition_matrix * classical_transition_probabilities
-    total_weighted_probability = np.sum(transition_probability_products)
-    total_melody_transitions = len(melody_pitch_classes) - 1
-    
-    if total_melody_transitions == 0:
-        return 5.0
-    
-    average_transition_probability = total_weighted_probability / total_melody_transitions
-    inverted_probability = average_transition_probability * -1.0
-    
-    # Apply Simonton's scaling formula (0-10 scale, 10 = most original)
-    simonton_originality_score = (inverted_probability + 0.0530) * 188.68
-    
-    return float(simonton_originality_score)
 
 def _complebm(melody: Melody, method: str = 'o') -> float:
     """Expectancy-based melodic complexity (MIDI Toolbox ``complebm.m``).
@@ -6963,116 +6243,18 @@ def _idyom_mean_information_content(
     return float(melody_features["mean_information_content"])
 
 
-@idyom
-@expectation
-@pitch
-def pitch_stm_mean_information_content(melody: Melody) -> float:
-    """The average information content across all notes in a melody,
-    calculated using IDyOM's prediction-by-partial-matching (PPM) algorithm.
-    Information content is perceptually related to surprise, and can be calculated
-    for pitches or rhythms.
-
-    Citation
-    --------
-    Pearce, M. (2005)
-    """
-    return _idyom_mean_information_content(melody, "pitch_stm")
 
 
-@idyom
-@expectation
-@pitch
-def pitch_ltm_mean_information_content(melody: Melody) -> float:
-    """The average information content across all notes in a melody,
-    calculated using IDyOM's long-term model (LTM). Information content is
-    perceptually related to surprise, and can be calculated for pitches or rhythms.
-
-    Citation
-    --------
-    Pearce, M. (2005)
-    """
-    return _idyom_mean_information_content(melody, "pitch_ltm")
 
 
-@idyom
-@expectation
-@rhythm
-def rhythm_stm_mean_information_content(melody: Melody) -> float:
-    """The average rhythmic information content across all notes in a melody,
-    calculated using IDyOM's short-term model (STM). Information content is
-    perceptually related to surprise, and can be calculated for pitches or rhythms.
-
-    Citation
-    --------
-    Pearce, M. (2005)
-    """
-    return _idyom_mean_information_content(melody, "rhythm_stm")
 
 
-@idyom
-@expectation
-@rhythm
-def rhythm_ltm_mean_information_content(melody: Melody) -> float:
-    """The average rhythmic information content across all notes in a melody,
-    calculated using IDyOM's long-term model (LTM). Information content is
-    perceptually related to surprise, and can be calculated for pitches or rhythms.
-
-    Citation
-    --------
-    Pearce, M. (2005)
-    """
-    return _idyom_mean_information_content(melody, "rhythm_ltm")
 
 
-@rhythm
-@metre
-@midi_toolbox
-def metric_hierarchy(melody: Melody) -> list[int]:
-    """Metric hierarchy values for each note, indicating the strength of each note
-    position within the known or estimated meter. Higher values indicate stronger
-    metric positions (e.g., downbeat = 5, beat = 4, half-beat = 3, etc.).
-
-    Implementation based on MIDI toolbox metrichierarchy.m.
-    """
-    return _metric_hierarchy(
-        melody.starts,
-        melody.ends,
-        time_signature=melody.meter,
-        tempo=melody.tempo,
-        pitches=melody.pitches,
-    )
 
 
-def _meter_accent_mean(melody: Melody) -> float:
-    """``meteraccent.m`` synchrony (float, unrounded)."""
-    hierarchy_values = metric_hierarchy(melody)
-    if not hierarchy_values:
-        return 0.0
-    melodic_accents = melodic_accent(melody.pitches)
-    durational_accents = duration_accent(melody.starts, melody.ends)
-    n = min(len(hierarchy_values), len(melodic_accents), len(durational_accents))
-    if n == 0:
-        return 0.0
-    products = [
-        h * m * d
-        for h, m, d in zip(
-            hierarchy_values[:n], melodic_accents[:n], durational_accents[:n]
-        )
-    ]
-    return float(-1.0 * np.mean(products))
 
 
-@rhythm
-@metre
-@midi_toolbox
-def meter_accent(melody: Melody) -> int:
-    """Phenomenal accent synchrony measure, calculated as the negative mean of
-    the product of metric hierarchy, melodic accent, and durational accent
-    for each note. Higher values indicate stronger accent synchrony.
-
-    Implementation based on MIDI toolbox meteraccent.m.
-    """
-    return int(round(_meter_accent_mean(melody)))
 
 
 def get_complexity_features(
@@ -7884,249 +7066,13 @@ def get_metre_features(melody: Melody) -> Dict:
     return features
 
 
-@jsymbolic
-@rhythm
-@metre
-def meter_numerator(melody: Melody) -> int:
-    """The numerator of the melody's active time signature.
-
-    For a time signature written as ``numerator/denominator``, the numerator is
-    the number of beats in each notated bar. If a melody contains meter changes,
-    this returns the meter stored on the melody object as its primary meter.
-
-    Returns
-    -------
-    int
-        The numerator of the notated meter.
-    """
-    return melody.meter[0]
 
 
-@jsymbolic
-@rhythm
-@metre
-def meter_denominator(melody: Melody) -> int:
-    """The denominator of the melody's active time signature.
-
-    For a time signature written as ``numerator/denominator``, the denominator
-    gives the note value that represents one beat: for example, ``4`` means a
-    quarter-note beat and ``8`` means an eighth-note beat.
-
-    Returns
-    -------
-    int
-        The denominator of the notated meter.
-    """
-    return melody.meter[1]
 
 
-@novel
-@rhythm
-@metre
-def proportion_of_time_in_first_meter(melody: Melody) -> float:
-    """The proportion of the melody's duration spent in its first time signature.
 
-    The numerator and denominator of the first encountered time signature define
-    the initial meter. This feature reports the fraction of total melody duration
-    before any subsequent meter change. Melodies with no meter change therefore
-    return ``1.0``.
 
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
 
-    Returns
-    -------
-    float
-        The proportion of time spent in the first time signature.
-    """
-    return melody.proportion_of_time_in_first_meter
-
-@jsymbolic
-@rhythm
-@metre
-def number_of_unique_time_signatures(melody: Melody) -> int:
-    """
-    The number of unique time signatures in the melody.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    int
-        The number of unique time signatures in the melody.
-    
-    Note
-    -----
-    This feature is named `Metrical Diversity` in jSymbolic.
-    """
-    return len({(numerator, denominator) for _, numerator, denominator in melody.time_signatures})
-
-@novel
-@rhythm
-@metre
-def syncopation(melody: Melody) -> float:
-    """
-    Calculate the mean `syncopation` value based on the Longuet-Higgins and Lee (1984) model.
-    This `syncopation` model assigns metrical weights to each
-    note position based on its position in the metric hierarchy. Syncopation occurs when
-    a rest or tied note is preceded by a sounded note of lower metrical weight. The 
-    `syncopation` value is the difference between the rest weight and the preceding note weight.
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    float
-        The mean syncopation value across all syncopation events (0.0 if no syncopation)
-        
-    Citation
-    --------
-    Longuet-Higgins & Lee (1984)
-    """
-    if not melody.starts or len(melody.starts) < 2:
-        return 0.0
-
-    hierarchy_values = _metric_hierarchy(
-        melody.starts, 
-        melody.ends, 
-        time_signature=melody.meter, 
-        tempo=melody.tempo, 
-        pitches=melody.pitches
-    )
-
-    if not hierarchy_values or len(hierarchy_values) != len(melody.starts):
-        return 0.0
-
-    # Hierarchy 5 (downbeat/measure start) -> weight 0 (strongest)
-    # Hierarchy 4 (beat) -> weight -1
-    # Hierarchy 3 (half-beat) -> weight -2
-    # Hierarchy 2 (quarter-beat) -> weight -3
-    # Hierarchy 1 (weakest offbeat) -> weight -4
-    weights = [5 - h for h in hierarchy_values]
-
-    syncopation_values = []
-
-    for i in range(len(melody.starts) - 1):
-        current_note_end = melody.ends[i]
-        next_note_start = melody.starts[i + 1]
-
-        gap_duration = next_note_start - current_note_end
-
-        if gap_duration > 0.001:
-            rest_weight = weights[i + 1]
-            preceding_note_weight = weights[i]
-
-            syncopation_value = rest_weight - preceding_note_weight
-
-            if syncopation_value > 0:
-                syncopation_values.append(syncopation_value)
-
-    if not syncopation_values:
-        return 0.0
-    
-    return float(np.mean(syncopation_values))
-
-@simile
-@rhythm
-@metre
-def syncopicity(melody: Melody) -> float:
-    """
-    Calculates the sum `syncopicity` of a melody across metric levels.
-    Syncopicity measures the degree to which notes occur off the main metrical grid
-    but are long enough to span across metric boundaries. This calculates syncopations at 
-    four metric levels:
-    1) Half bar level
-    2) Beat level  
-    3) First subdivision (half-beat)
-    4) Second subdivision (quarter-beat)
-    
-    An event is considered syncopated at a given level if:
-    1) It does not fall on a grid point of this level
-    2) It falls on a grid point of the next lower level
-    3) Its IOI extends beyond the lower level time unit (or it's the last note)
-    
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-        
-    Returns
-    -------
-    float
-        Sum of per-level syncopation proportions across tested levels (half-bar,
-        beat, and first subdivision). Each level contributes
-        ``syncopation_count / number_of_notes``, so this is not a raw event count.
-    
-    Note
-    ----
-    Grid durations are derived from the melody's initial meter and tempo and
-    therefore assume constant meter/tempo over the analyzed passage.
-    """
-    if not melody.starts or len(melody.starts) < 2:
-        return 0.0
-
-    numerator, denominator = melody.meter
-    tempo = melody.tempo
-
-    quarter_note_duration = 60.0 / tempo
-
-    beat_duration = (4.0 / denominator) * quarter_note_duration
-
-    measure_duration = numerator * beat_duration
-
-    levels = [
-        measure_duration / 2.0,  # Half bar
-        beat_duration,           # Beat
-        beat_duration / 2.0,     # First subdivision
-        beat_duration / 4.0      # Second subdivision
-    ]
-
-    n_notes = len(melody.starts)
-    total_syncopicity = 0.0
-
-    iois = []
-    for i in range(n_notes - 1):
-        iois.append(melody.starts[i + 1] - melody.starts[i])
-    iois.append(0)
-
-    for level_idx in range(len(levels) - 1):
-        level_duration = levels[level_idx]
-        next_lower_duration = levels[level_idx + 1]
-
-        syncopation_count = 0
-        tolerance = 0.01
-
-        for note_idx, start_time in enumerate(melody.starts):
-            position_in_level = start_time % level_duration
-            on_current_grid = position_in_level < tolerance or position_in_level > (level_duration - tolerance)
-
-            if on_current_grid:
-                continue
-
-            position_in_lower = start_time % next_lower_duration
-            on_lower_grid = position_in_lower < tolerance or position_in_lower > (next_lower_duration - tolerance)
-
-            if not on_lower_grid:
-                continue
-
-            is_last_note = note_idx == n_notes - 1
-            ioi_extends = iois[note_idx] > (next_lower_duration + tolerance)
-            
-            if is_last_note or ioi_extends:
-                syncopation_count += 1
-
-        level_syncopicity = syncopation_count / n_notes if n_notes > 0 else 0.0
-        total_syncopicity += level_syncopicity
-
-    return float(total_syncopicity)
 
 
 @idyom

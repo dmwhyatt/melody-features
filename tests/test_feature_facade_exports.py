@@ -1,7 +1,9 @@
 import inspect
 
 import melody_features.absolute_pitch_features as absolute_pitch_features
+import melody_features.expectation_features as expectation_features
 import melody_features.features as features_module
+import melody_features.metre_features as metre_features
 import melody_features.pitch_class_features as pitch_class_features
 import melody_features.pitch_interval_features as pitch_interval_features
 
@@ -90,16 +92,66 @@ PITCH_INTERVAL_FEATURES = (
 
 PITCH_INTERVAL_HELPERS = ("variable_melodic_intervals",)
 
+EXPECTATION_FEATURES = (
+    "narmour_registral_direction",
+    "narmour_proximity",
+    "narmour_closure",
+    "narmour_registral_return",
+    "narmour_intervallic_difference",
+    "melodic_embellishment",
+    "mobility",
+    "mean_mobility",
+    "mobility_std",
+    "melodic_attraction",
+    "mean_melodic_attraction",
+    "melodic_attraction_std",
+    "melodic_accent",
+    "mean_melodic_accent",
+    "melodic_accent_std",
+    "compltrans",
+    "pitch_stm_mean_information_content",
+    "pitch_ltm_mean_information_content",
+    "rhythm_stm_mean_information_content",
+    "rhythm_ltm_mean_information_content",
+)
+
+EXPECTATION_HELPERS = (
+    "_get_key_distances",
+    "get_narmour_features",
+    "_stability_distance",
+    "_get_simonton_transition_matrix",
+)
+
+METRE_FEATURES = (
+    "metric_hierarchy",
+    "meter_accent",
+    "meter_numerator",
+    "meter_denominator",
+    "proportion_of_time_in_first_meter",
+    "number_of_unique_time_signatures",
+    "syncopation",
+    "syncopicity",
+)
+
+METRE_HELPERS = ("_meter_accent_mean",)
+
 FEATURE_MODULES = (
     (absolute_pitch_features, ABSOLUTE_PITCH_FEATURES),
     (pitch_class_features, PITCH_CLASS_FEATURES),
     (pitch_interval_features, PITCH_INTERVAL_FEATURES + PITCH_INTERVAL_HELPERS),
+    (expectation_features, EXPECTATION_FEATURES + EXPECTATION_HELPERS),
+    (metre_features, METRE_FEATURES + METRE_HELPERS),
 )
 
-FEATURE_DISCOVERY = (
+DOMAIN_DISCOVERY = (
     ("pitch", ["absolute"], ABSOLUTE_PITCH_FEATURES),
     ("pitch", ["pitch_class"], PITCH_CLASS_FEATURES),
     ("pitch", ["interval"], PITCH_INTERVAL_FEATURES),
+)
+
+TYPE_DISCOVERY = (
+    ("expectation", EXPECTATION_FEATURES),
+    ("metre", METRE_FEATURES),
 )
 
 ALIASES = {
@@ -130,8 +182,8 @@ def test_moved_feature_aliases_are_reexported_from_facade():
             assert getattr(features_module, alias) is getattr(module, alias)
 
 
-def test_moved_feature_facade_discovery_uses_canonical_names():
-    for domain, feature_types, names in FEATURE_DISCOVERY:
+def test_moved_feature_facade_domain_discovery_uses_canonical_names():
+    for domain, feature_types, names in DOMAIN_DISCOVERY:
         discovered = features_module._get_features_by_domain_and_types(domain, feature_types)
 
         for name in names:
@@ -142,6 +194,14 @@ def test_moved_feature_facade_discovery_uses_canonical_names():
                 assert alias not in discovered
 
 
+def test_moved_feature_facade_type_discovery_uses_canonical_names():
+    for feature_type, names in TYPE_DISCOVERY:
+        discovered = features_module._get_features_by_type(feature_type)
+
+        for name in names:
+            assert discovered[name] is getattr(features_module, name)
+
+
 def test_moved_features_stay_visible_to_facade_introspection():
     labelled = {
         name
@@ -149,7 +209,12 @@ def test_moved_features_stay_visible_to_facade_introspection():
         if inspect.isfunction(obj) and hasattr(obj, "_feature_source")
     }
 
-    expected = set(ABSOLUTE_PITCH_FEATURES).union(PITCH_CLASS_FEATURES, PITCH_INTERVAL_FEATURES)
+    expected = set(ABSOLUTE_PITCH_FEATURES).union(
+        PITCH_CLASS_FEATURES,
+        PITCH_INTERVAL_FEATURES,
+        EXPECTATION_FEATURES,
+        METRE_FEATURES,
+    )
     expected_aliases = {alias for aliases in ALIASES.values() for alias in aliases}
 
     assert expected.issubset(labelled)
