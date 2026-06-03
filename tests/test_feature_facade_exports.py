@@ -1,6 +1,7 @@
 import inspect
 
 import melody_features.absolute_pitch_features as absolute_pitch_features
+import melody_features.corpus_features as corpus_features
 import melody_features.expectation_features as expectation_features
 import melody_features.features as features_module
 import melody_features.metre_features as metre_features
@@ -135,12 +136,60 @@ METRE_FEATURES = (
 
 METRE_HELPERS = ("_meter_accent_mean",)
 
+CORPUS_FEATURES = (
+    "get_ngram_document_frequency",
+    "tfdf_spearman",
+    "tfdf_kendall",
+    "mean_log_tfdf",
+    "norm_log_dist",
+    "max_log_df",
+    "min_log_df",
+    "mean_log_df",
+    "mean_global_local_weight",
+    "std_global_local_weight",
+    "mean_global_weight",
+    "std_global_weight",
+    "get_corpus_features",
+)
+
+CORPUS_DECORATED_FEATURES = (
+    "tfdf_spearman",
+    "tfdf_kendall",
+    "mean_log_tfdf",
+    "norm_log_dist",
+    "max_log_df",
+    "min_log_df",
+    "mean_log_df",
+    "mean_global_local_weight",
+    "std_global_local_weight",
+    "mean_global_weight",
+    "std_global_weight",
+)
+
+CORPUS_CLASSES = ("InverseEntropyWeighting",)
+
+CORPUS_LABELLED_EXPORTS = CORPUS_DECORATED_FEATURES + (
+    "get_ngram_document_frequency",
+    "InverseEntropyWeighting",
+)
+
+CORPUS_HELPERS = (
+    "_fantastic_melody_tokens",
+    "_fantastic_melody_tf_df",
+    "_fantastic_log_normalized_tf_df",
+    "_fantastic_melody_ngram_counts",
+    "_fantastic_min_tie_ranks",
+    "_compute_corpus_feature_bundle",
+    "_setup_corpus_statistics",
+)
+
 FEATURE_MODULES = (
     (absolute_pitch_features, ABSOLUTE_PITCH_FEATURES),
     (pitch_class_features, PITCH_CLASS_FEATURES),
     (pitch_interval_features, PITCH_INTERVAL_FEATURES + PITCH_INTERVAL_HELPERS),
     (expectation_features, EXPECTATION_FEATURES + EXPECTATION_HELPERS),
     (metre_features, METRE_FEATURES + METRE_HELPERS),
+    (corpus_features, CORPUS_FEATURES + CORPUS_CLASSES + CORPUS_HELPERS),
 )
 
 DOMAIN_DISCOVERY = (
@@ -152,6 +201,7 @@ DOMAIN_DISCOVERY = (
 TYPE_DISCOVERY = (
     ("expectation", EXPECTATION_FEATURES),
     ("metre", METRE_FEATURES),
+    ("corpus", CORPUS_DECORATED_FEATURES),
 )
 
 ALIASES = {
@@ -214,8 +264,20 @@ def test_moved_features_stay_visible_to_facade_introspection():
         PITCH_INTERVAL_FEATURES,
         EXPECTATION_FEATURES,
         METRE_FEATURES,
+        CORPUS_LABELLED_EXPORTS,
     )
     expected_aliases = {alias for aliases in ALIASES.values() for alias in aliases}
 
     assert expected.issubset(labelled)
     assert expected_aliases.issubset(labelled)
+
+
+def test_moved_classes_stay_visible_to_facade_introspection():
+    labelled_callables = {
+        name
+        for name, obj in inspect.getmembers(features_module)
+        if (inspect.isclass(obj) or (hasattr(obj, "__call__") and hasattr(obj, "__name__")))
+        and hasattr(obj, "_feature_source")
+    }
+
+    assert set(CORPUS_CLASSES).issubset(labelled_callables)

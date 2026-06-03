@@ -10,7 +10,7 @@ warnings.filterwarnings(
 """
 Module for computing corpus-based features from melodic n-grams, similar to FANTASTIC's
 implementation. This module handles the corpus analysis and saves statistics to JSON.
-The actual feature calculations are handled in features.py.
+Runtime corpus-dependent feature calculations are handled in corpus_features.py.
 """
 import json
 import logging

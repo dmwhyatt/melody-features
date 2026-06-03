@@ -618,6 +618,7 @@ def _get_feature_category(obj, domain: str = None, feature_name: str = None) -> 
         'metre': 'Metre',
         'expectation': 'Expectation',
         'lexical_diversity': 'Lexical Diversity',
+        'corpus': 'Corpus',
         'mtype': 'Lexical Diversity',
         'pitch_class': 'Pitch Class',  
         'absolute': 'Absolute Pitch',

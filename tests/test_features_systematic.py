@@ -135,6 +135,7 @@ def _get_feature_category_mapping():
         FeatureType.METRE: 'metre_features',
         FeatureType.EXPECTATION: 'expectation_features',
         FeatureType.COMPLEXITY: 'complexity_features',
+        FeatureType.CORPUS: 'corpus_features',
         # back compatible mappings for corpus
         'corpus': 'corpus_features',
     }
