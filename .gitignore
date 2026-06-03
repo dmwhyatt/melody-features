@@ -13,6 +13,7 @@ temp.py
 test.py
 essen_corpus_features.csv
 test_corpus_corpus_stats.json
+*_corpus_stats_pg*.json
 .coverage*
 coverage.xml
 htmlcov/

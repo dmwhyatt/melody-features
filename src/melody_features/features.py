@@ -9965,8 +9965,10 @@ def get_all_features(
     logger.info(f"    Max N-gram Order: {config.fantastic.max_ngram_order}")
     logger.info(f"    Corpus: {config.fantastic.corpus if config.fantastic.corpus else 'Using Corpus Path from Config'}")
 
-    # Use a temporary output file path for corpus statistics
-    temp_output_file = "temp_corpus_stats.csv"
+    # Keep internal corpus-stat caches out of the caller's working tree.
+    corpus_cache_dir = Path(tempfile.gettempdir()) / "melody_features" / "corpus_stats"
+    corpus_cache_dir.mkdir(parents=True, exist_ok=True)
+    temp_output_file = str(corpus_cache_dir / "temp_corpus_stats.csv")
     corpus_stats = _setup_corpus_statistics(config, temp_output_file)
 
     melody_data_list = _load_melody_data(input)
