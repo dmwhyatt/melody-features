@@ -22,7 +22,7 @@ from .feature_registry import (
 )
 from .feature_registry import get_features_by_source as _registry_get_features_by_source
 from .feature_registry import get_features_by_type as _registry_get_features_by_type
-from .absolute_pitch_features import (
+from .feature_definitions.absolute_pitch import (
     pitch_range,
     ambitus,
     pitch_standard_deviation,
@@ -50,7 +50,7 @@ from .absolute_pitch_features import (
     repeated_notes,
     stepwise_motion,
 )
-from .pitch_class_features import (
+from .feature_definitions.pitch_class import (
     _pcdist1_vector,
     _consecutive_fifths,
     pitch_class_variability,
@@ -74,7 +74,7 @@ from .pitch_class_features import (
     pitch_class_kurtosis_after_folding,
     strong_tonal_centres,
 )
-from .pitch_interval_features import (
+from .feature_definitions.pitch_interval import (
     _ivdist1_vector,
     pitch_interval,
     absolute_interval_range,
@@ -110,7 +110,7 @@ from .pitch_interval_features import (
     amount_of_arpeggiation,
     chromatic_motion,
 )
-from .expectation_features import (
+from .feature_definitions.expectation import (
     _get_key_distances,
     get_narmour_features,
     _stability_distance,
@@ -136,7 +136,7 @@ from .expectation_features import (
     rhythm_stm_mean_information_content,
     rhythm_ltm_mean_information_content,
 )
-from .metre_features import (
+from .feature_definitions.metre import (
     _meter_accent_mean,
     metric_hierarchy,
     meter_accent,
@@ -147,7 +147,7 @@ from .metre_features import (
     syncopation,
     syncopicity,
 )
-from .corpus_features import (
+from .feature_definitions.corpus import (
     _fantastic_melody_tokens,
     _fantastic_melody_tf_df,
     _fantastic_log_normalized_tf_df,
@@ -171,7 +171,7 @@ from .corpus_features import (
     get_corpus_features,
 )
 from .feature_utils import _get_durations
-from .contour_features import (
+from .feature_definitions.contour import (
     get_step_contour_features,
     get_interpolation_contour_features,
     comb_contour_matrix,
@@ -180,7 +180,7 @@ from .contour_features import (
     get_huron_contour_features,
     get_contour_features,
 )
-from .tonality_features import (
+from .feature_definitions.tonality import (
     _normalize_key_root,
     _canonical_key_string,
     _resolve_key_for_melody,
@@ -209,7 +209,7 @@ from .tonality_features import (
     mode,
     get_tonality_features,
 )
-from .timing_features import (
+from .feature_definitions.timing import (
     _durdist1_vector,
     _get_tempo,
     _rhythmic_run_lengths,
@@ -306,7 +306,7 @@ from .timing_features import (
     onset_autocorrelation,
     onset_autocorr_peak,
 )
-from .inter_onset_interval_features import (
+from .feature_definitions.inter_onset_interval import (
     ioi,
     ioi_mean,
     average_time_between_attacks,
@@ -321,7 +321,7 @@ from .inter_onset_interval_features import (
     ioi_contour_standard_deviation,
     ioi_histogram,
 )
-from .complexity_features import (
+from .feature_definitions.complexity import (
     _KK_MAJ_PROFILE,
     _KK_MIN_PROFILE,
     _kkcc_from_pcd,
@@ -341,7 +341,7 @@ from .complexity_features import (
     complebm_rhythm,
     complebm_optimal,
 )
-from .lexical_diversity_features import (
+from .feature_definitions.lexical_diversity import (
     get_mtype_features,
     get_lexical_diversity_features,
 )
@@ -399,7 +399,7 @@ from melody_features.distributional import (
 )
 from melody_features.huron_contour import HuronContour
 from melody_features.idyom_interface import run_idyom
-from melody_features.import_mid import import_midi
+from melody_features.io.midi import import_midi
 from melody_features.interpolation_contour import InterpolationContour
 from melody_features.melody_tokenizer import FantasticTokenizer
 from melody_features.narmour import (
