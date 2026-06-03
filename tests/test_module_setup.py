@@ -195,3 +195,19 @@ def test_environment_consistency():
     assert (
         essen_from_function == essen_from_corpus
     ), "get_corpus_path inconsistent with direct import"
+
+
+def test_refactored_package_paths_and_shims():
+    """Test new package paths and backwards-compatible shims."""
+    import melody_features.features as features_module
+    import melody_features.import_mid as import_mid_shim
+    import melody_features.io.midi as midi_module
+    import melody_features.idyom.interface as idyom_interface_module
+    import melody_features.idyom_interface as idyom_interface_shim
+    import melody_features.pipeline.config as pipeline_config
+
+    assert import_mid_shim.import_midi is midi_module.import_midi
+    assert idyom_interface_shim is idyom_interface_module
+    assert features_module.Config is pipeline_config.Config
+    assert features_module.FantasticConfig is pipeline_config.FantasticConfig
+    assert features_module.IDyOMConfig is pipeline_config.IDyOMConfig

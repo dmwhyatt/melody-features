@@ -1,34 +1,61 @@
 import inspect
 
 import melody_features.absolute_pitch_features as absolute_pitch_features
+import melody_features.feature_definitions.absolute_pitch as absolute_pitch_definitions
 import melody_features.complexity_features as complexity_features
+import melody_features.feature_definitions.complexity as complexity_definitions
 import melody_features.contour_features as contour_features
+import melody_features.feature_definitions.contour as contour_definitions
 import melody_features.corpus_features as corpus_features
+import melody_features.feature_definitions.corpus as corpus_definitions
 import melody_features.expectation_features as expectation_features
+import melody_features.feature_definitions.expectation as expectation_definitions
 import melody_features.features as features_module
 import melody_features.inter_onset_interval_features as inter_onset_interval_features
+import melody_features.feature_definitions.inter_onset_interval as inter_onset_interval_definitions
 import melody_features.lexical_diversity_features as lexical_diversity_features
+import melody_features.feature_definitions.lexical_diversity as lexical_diversity_definitions
 import melody_features.metre_features as metre_features
+import melody_features.feature_definitions.metre as metre_definitions
 import melody_features.pitch_class_features as pitch_class_features
+import melody_features.feature_definitions.pitch_class as pitch_class_definitions
 import melody_features.pitch_interval_features as pitch_interval_features
+import melody_features.feature_definitions.pitch_interval as pitch_interval_definitions
 import melody_features.timing_features as timing_features
+import melody_features.feature_definitions.timing as timing_definitions
 import melody_features.tonality_features as tonality_features
+import melody_features.feature_definitions.tonality as tonality_definitions
 
 
 MOVED_MODULES = (
-    absolute_pitch_features,
-    pitch_class_features,
-    pitch_interval_features,
-    contour_features,
-    timing_features,
-    inter_onset_interval_features,
-    tonality_features,
-    expectation_features,
-    metre_features,
-    corpus_features,
-    complexity_features,
-    lexical_diversity_features,
+    absolute_pitch_definitions,
+    pitch_class_definitions,
+    pitch_interval_definitions,
+    contour_definitions,
+    timing_definitions,
+    inter_onset_interval_definitions,
+    tonality_definitions,
+    expectation_definitions,
+    metre_definitions,
+    corpus_definitions,
+    complexity_definitions,
+    lexical_diversity_definitions,
 )
+
+SHIM_MODULES = {
+    absolute_pitch_features: absolute_pitch_definitions,
+    pitch_class_features: pitch_class_definitions,
+    pitch_interval_features: pitch_interval_definitions,
+    contour_features: contour_definitions,
+    timing_features: timing_definitions,
+    inter_onset_interval_features: inter_onset_interval_definitions,
+    tonality_features: tonality_definitions,
+    expectation_features: expectation_definitions,
+    metre_features: metre_definitions,
+    corpus_features: corpus_definitions,
+    complexity_features: complexity_definitions,
+    lexical_diversity_features: lexical_diversity_definitions,
+}
 
 ALIASES = {
     absolute_pitch_features: {
@@ -103,6 +130,13 @@ def test_moved_exports_are_reexported_from_facade():
     for module in MOVED_MODULES:
         for name in _module_exports(module):
             assert getattr(features_module, name) is getattr(module, name)
+
+
+def test_root_feature_modules_are_compatibility_shims():
+    for shim_module, canonical_module in SHIM_MODULES.items():
+        assert _module_exports(shim_module) == _module_exports(canonical_module)
+        for name in _module_exports(canonical_module):
+            assert getattr(shim_module, name) is getattr(canonical_module, name)
 
 
 def test_moved_feature_aliases_are_reexported_from_facade():
