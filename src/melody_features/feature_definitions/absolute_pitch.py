@@ -2,16 +2,16 @@
 
 import numpy as np
 
-from .algorithms import (
+from ..algorithms import (
     n_percent_significant_values,
     repeated_notes_proportion,
     stepwise_motion_proportion,
 )
-from .feature_decorators import absolute, fantastic, jsymbolic, midi_toolbox, partitura, pitch
-from .feature_histogram import PitchHistogram
-from .pitch_spelling import estimate_spelling_from_melody as _estimate_spelling_from_melody
-from .representations import Melody
-from .stats import get_mode, range_func
+from ..feature_decorators import absolute, fantastic, jsymbolic, midi_toolbox, partitura, pitch
+from ..feature_histogram import PitchHistogram
+from ..pitch_spelling import estimate_spelling_from_melody as _estimate_spelling_from_melody
+from ..representations import Melody
+from ..stats import get_mode, range_func
 
 
 __all__ = [
@@ -188,7 +188,7 @@ def melodic_pitch_variety(pitches: list[int], starts: list[float], tempo: float 
     if not pitches or len(pitches) < 2:
         return 0.0
 
-    from .stats import time_to_ticks
+    from ..stats import time_to_ticks
     
     note_sequence = sorted(zip(starts, pitches))
     starts_ordered, pitches_ordered = zip(*note_sequence)

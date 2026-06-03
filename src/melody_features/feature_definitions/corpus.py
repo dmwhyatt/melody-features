@@ -7,11 +7,11 @@ from typing import Dict, Optional
 import numpy as np
 import scipy
 
-from .corpus import load_corpus_stats, make_corpus_stats
-from .feature_decorators import both, corpus, fantastic
-from .melody_tokenizer import FantasticTokenizer
-from .ngram_counter import NGramCounter
-from .representations import Melody
+from ..corpus import load_corpus_stats, make_corpus_stats
+from ..feature_decorators import both, corpus, fantastic
+from ..melody_tokenizer import FantasticTokenizer
+from ..ngram_counter import NGramCounter
+from ..representations import Melody
 
 
 __all__ = [

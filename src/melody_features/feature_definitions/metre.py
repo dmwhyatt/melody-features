@@ -2,13 +2,13 @@
 
 import numpy as np
 
-from .feature_decorators import jsymbolic, metre, midi_toolbox, novel, rhythm, simile
-from .meter_estimation import (
+from ..feature_decorators import jsymbolic, metre, midi_toolbox, novel, rhythm, simile
+from ..meter_estimation import (
     duration_accent as _duration_accent,
     melodic_accent as _melodic_accent,
     metric_hierarchy as _metric_hierarchy,
 )
-from .representations import Melody
+from ..representations import Melody
 
 
 __all__ = [

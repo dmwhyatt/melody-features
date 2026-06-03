@@ -3,10 +3,10 @@
 import warnings
 from typing import Dict
 
-from .feature_decorators import both, fantastic, lexical_diversity
-from .melody_tokenizer import FantasticTokenizer
-from .ngram_counter import NGramCounter
-from .representations import Melody
+from ..feature_decorators import both, fantastic, lexical_diversity
+from ..melody_tokenizer import FantasticTokenizer
+from ..ngram_counter import NGramCounter
+from ..representations import Melody
 
 DEFAULT_MAX_NGRAM_ORDER = 5
 

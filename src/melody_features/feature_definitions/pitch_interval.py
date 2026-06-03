@@ -5,16 +5,16 @@ from typing import Union
 
 import numpy as np
 
-from .algorithms import (
+from ..algorithms import (
     arpeggiation_proportion,
     chromatic_motion_proportion,
     n_percent_significant_values,
 )
-from .distributional import distribution_proportions
-from .feature_decorators import fantastic, interval, jsymbolic, midi_toolbox, novel, pitch, simile
-from .feature_histogram import create_melodic_interval_histogram
-from .meter_estimation import duration_accent
-from .stats import get_mode, range_func
+from ..distributional import distribution_proportions
+from ..feature_decorators import fantastic, interval, jsymbolic, midi_toolbox, novel, pitch, simile
+from ..feature_histogram import create_melodic_interval_histogram
+from ..meter_estimation import duration_accent
+from ..stats import get_mode, range_func
 
 
 __all__ = [

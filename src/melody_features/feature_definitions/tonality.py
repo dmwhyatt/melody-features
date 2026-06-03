@@ -4,12 +4,12 @@ from typing import Dict, Literal, Optional
 
 import numpy as np
 
-from .algorithms import compute_tonality_vector
-from .distributional import histogram_bins
-from .expectation_features import _get_key_distances
-from .feature_decorators import fantastic, idyom, midi_toolbox, novel, partitura, pitch, tonality
-from .representations import Melody
-from .tonal_tension import ALPHA, BETA, DEFAULT_WEIGHTS, SCALE_FACTOR, estimate_tonaltension
+from ..algorithms import compute_tonality_vector
+from ..distributional import histogram_bins
+from .expectation import _get_key_distances
+from ..feature_decorators import fantastic, idyom, midi_toolbox, novel, partitura, pitch, tonality
+from ..representations import Melody
+from ..tonal_tension import ALPHA, BETA, DEFAULT_WEIGHTS, SCALE_FACTOR, estimate_tonaltension
 
 
 __all__ = [
@@ -890,7 +890,7 @@ def longest_monotonic_conjunct_scalar_passage(
     int
         Length of the longest monotonic conjunct scalar passage
     """
-    from .algorithms import longest_monotonic_conjunct_scalar_passage as _longest_monotonic_conjunct_scalar_passage
+    from ..algorithms import longest_monotonic_conjunct_scalar_passage as _longest_monotonic_conjunct_scalar_passage
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
@@ -925,7 +925,7 @@ def longest_conjunct_scalar_passage(
     int
         Length of the longest conjunct scalar passage
     """
-    from .algorithms import longest_conjunct_scalar_passage as _longest_conjunct_scalar_passage
+    from ..algorithms import longest_conjunct_scalar_passage as _longest_conjunct_scalar_passage
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
@@ -958,7 +958,7 @@ def proportion_conjunct_scalar(
     float
         Proportion of conjunct scalar motion
     """
-    from .algorithms import proportion_conjunct_scalar as _proportion_conjunct_scalar
+    from ..algorithms import proportion_conjunct_scalar as _proportion_conjunct_scalar
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
@@ -991,7 +991,7 @@ def proportion_scalar(
     float
         Proportion of scalar motion
     """
-    from .algorithms import proportion_scalar as _proportion_scalar
+    from ..algorithms import proportion_scalar as _proportion_scalar
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
@@ -1099,8 +1099,8 @@ def get_tonality_features(
 
 
     # Scalar passage features
-    from .algorithms import longest_monotonic_conjunct_scalar_passage as _longest_monotonic_conjunct_scalar_passage
-    from .algorithms import longest_conjunct_scalar_passage as _longest_conjunct_scalar_passage
+    from ..algorithms import longest_monotonic_conjunct_scalar_passage as _longest_monotonic_conjunct_scalar_passage
+    from ..algorithms import longest_conjunct_scalar_passage as _longest_conjunct_scalar_passage
     scalar_correlations = correlations
     if key_for_features:
         scalar_correlations = _tonality_correlations_for_key(correlations, key_for_features)
@@ -1111,8 +1111,8 @@ def get_tonality_features(
     tonality_features["longest_conjunct_scalar_passage"] = (
         _longest_conjunct_scalar_passage(melody.pitches, scalar_correlations)
     )
-    from .algorithms import proportion_conjunct_scalar as _proportion_conjunct_scalar
-    from .algorithms import proportion_scalar as _proportion_scalar
+    from ..algorithms import proportion_conjunct_scalar as _proportion_conjunct_scalar
+    from ..algorithms import proportion_scalar as _proportion_scalar
     tonality_features["proportion_conjunct_scalar"] = _proportion_conjunct_scalar(
         melody.pitches, scalar_correlations
     )

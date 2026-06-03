@@ -825,7 +825,7 @@ def load_midi_file(
     Tuple[List[int], List[float], List[float]]
         Tuple of (pitches, start_times, end_times)
     """
-    from melody_features.import_mid import import_midi
+    from melody_features.io.midi import import_midi
     
     midi_data = import_midi(str(file_path))
 

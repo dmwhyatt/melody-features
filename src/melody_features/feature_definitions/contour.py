@@ -2,13 +2,13 @@
 
 from typing import Dict, List, Tuple
 
-from .feature_decorators import contour, fantastic, midi_toolbox, pitch
-from .feature_utils import _get_durations
-from .huron_contour import HuronContour
-from .interpolation_contour import InterpolationContour
-from .polynomial_contour import PolynomialContour
-from .representations import Melody
-from .step_contour import StepContour
+from ..feature_decorators import contour, fantastic, midi_toolbox, pitch
+from ..feature_utils import _get_durations
+from ..huron_contour import HuronContour
+from ..interpolation_contour import InterpolationContour
+from ..polynomial_contour import PolynomialContour
+from ..representations import Melody
+from ..step_contour import StepContour
 
 
 __all__ = [

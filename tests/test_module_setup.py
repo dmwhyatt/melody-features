@@ -45,6 +45,27 @@ def test_core_imports():
         "melody_features.corpus",
         "melody_features.algorithms",
         "melody_features.distributional",
+        "melody_features.feature_definitions.absolute_pitch",
+        "melody_features.feature_definitions.pitch_class",
+        "melody_features.feature_definitions.pitch_interval",
+        "melody_features.feature_definitions.contour",
+        "melody_features.feature_definitions.timing",
+        "melody_features.feature_definitions.inter_onset_interval",
+        "melody_features.feature_definitions.tonality",
+        "melody_features.feature_definitions.expectation",
+        "melody_features.feature_definitions.metre",
+        "melody_features.feature_definitions.corpus",
+        "melody_features.feature_definitions.complexity",
+        "melody_features.feature_definitions.lexical_diversity",
+        "melody_features.io.midi",
+        "melody_features.idyom.config",
+        "melody_features.idyom.interface",
+        "melody_features.idyom.runners",
+        "melody_features.pipeline.config",
+        "melody_features.pipeline.loading",
+        "melody_features.pipeline.processing",
+        "melody_features.pipeline.output",
+        "melody_features.pipeline.timing",
         "melody_features.idyom_interface",
         "melody_features.import_mid",
         "melody_features.interpolation_contour",
@@ -195,3 +216,17 @@ def test_environment_consistency():
     assert (
         essen_from_function == essen_from_corpus
     ), "get_corpus_path inconsistent with direct import"
+
+
+def test_refactored_package_paths_and_top_level_exports():
+    """Test new package paths and package-root feature exports."""
+    import melody_features
+    import melody_features.feature_definitions.absolute_pitch as absolute_pitch_definitions
+    import melody_features.features as features_module
+    import melody_features.pipeline.config as pipeline_config
+
+    assert melody_features.pitch_range is absolute_pitch_definitions.pitch_range
+    assert "pitch_range" in melody_features.__all__
+    assert features_module.Config is pipeline_config.Config
+    assert features_module.FantasticConfig is pipeline_config.FantasticConfig
+    assert features_module.IDyOMConfig is pipeline_config.IDyOMConfig

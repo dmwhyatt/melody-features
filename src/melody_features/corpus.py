@@ -24,7 +24,7 @@ from typing import Dict, List, Tuple, Optional, Set, Union
 from natsort import natsorted
 from tqdm import tqdm
 
-from melody_features.import_mid import import_midi
+from melody_features.io.midi import import_midi
 from melody_features.melody_tokenizer import FantasticTokenizer
 from melody_features.representations import Melody, read_midijson
 
