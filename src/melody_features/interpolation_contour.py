@@ -13,7 +13,7 @@ import numpy as np
 class InterpolationContour:
     """Class for calculating and analyzing the interpolation contours of melodies, according to
     Müllensiefen (2009) [1]. This representation was first formalised by Steinbeck (1982)
-    [2], and informed a varient of the present implementation in Müllensiefen & Frieler
+    [2], and informed a variant of the present implementation in Müllensiefen & Frieler
     (2004) [3].
     An interpolation contour is produced by first identifying turning points in the melody,
     and then interpolating a linear gradient between each turning point. The resulting list

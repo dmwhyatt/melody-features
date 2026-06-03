@@ -2953,23 +2953,36 @@ def get_step_contour_features(
     tempo: float = 120.0,
     method: str = "amads",
 ) -> Tuple[float, float, float]:
-    """Calculate step contour features.
+    """Calculate summary features from a duration-weighted step contour.
+
+    A step contour represents a melody as a fixed-length sequence of pitch samples:
+    each note's MIDI pitch is repeated in proportion to its duration relative to the
+    whole melody. The implementation follows the FANTASTIC convention of resampling
+    the melody to 64 steps by default. The returned features summarize the resulting
+    pitch sequence as global variation, global direction, and local variation.
 
     Parameters
     ----------
     pitches : list[int]
-        List of MIDI pitch values
+        MIDI pitch values for the melody notes.
     starts : list[float]
-        List of note start times
+        Note onset times in seconds.
     ends : list[float]
-        List of note end times
+        Note offset times in seconds.
+    tempo : float, optional
+        Tempo in beats per minute, used to convert note durations to quarter-note
+        units.
     method : str, optional
-        Contour statistic method, either "amads" or "fantastic". Defaults to "amads".
+        Contour statistic method, either ``"amads"`` or ``"fantastic"``. Defaults
+        to ``"amads"``.
 
     Returns
     -------
     Tuple[float, float, float]
-        StepContour-derived values: global variation, global direction, and local variation
+        ``(global_variation, global_direction, local_variation)``, where global
+        variation is the standard deviation of the step-contour vector, global
+        direction is its correlation with an ascending linear ramp, and local
+        variation is the mean absolute difference between adjacent contour samples.
     """
     if not pitches or not starts or not ends or len(pitches) < 2:
         return 0.0, 0.0, 0.0
@@ -2987,20 +3000,28 @@ def get_step_contour_features(
 def get_interpolation_contour_features(
     pitches: list[int], starts: list[float]
 ) -> Tuple[int, float, float, float, str]:
-    """Calculate interpolation contour features.
+    """Calculate features from an interpolation contour.
+
+    An interpolation contour approximates melodic shape by identifying contour
+    turning points and replacing the pitch trajectory between successive turning
+    points with linear gradients. This function uses the AMADS turning-point method
+    by default, then summarizes the gradient sequence by overall direction, mean
+    absolute gradient, gradient variability, direction-change rate, and a four-letter
+    contour class.
 
     Parameters
     ----------
     pitches : list[int]
-        List of MIDI pitch values
+        MIDI pitch values for the melody notes.
     starts : list[float]
-        List of note start times
+        Note onset times in seconds.
 
     Returns
     -------
     Tuple[int, float, float, float, str]
-        Interpolation contour values:
-        global direction, mean absolute gradient, gradient std, direction changes, class label
+        ``(global_direction, mean_gradient, gradient_std, direction_changes,
+        class_label)``. The class label encodes four sampled gradient categories from
+        strong downward to strong upward.
     """
     ic = InterpolationContour(pitches, starts)
     return (
@@ -3069,7 +3090,12 @@ def get_polynomial_contour_features(
 @contour
 @pitch
 def get_huron_contour_features(melody: Melody) -> str:
-    """Calculate Huron contour features.
+    """Classify a melody using Huron's three-point contour scheme.
+
+    The Huron contour reduces a melody to three pitch points: the first pitch, a
+    rounded duration-weighted mean pitch, and the last pitch. Their relative ordering
+    is mapped to a categorical contour label such as ``"ascending"``,
+    ``"descending"``, ``"convex"``, ``"concave"``, or ``"horizontal"``.
 
     Parameters
     ----------
@@ -3079,7 +3105,7 @@ def get_huron_contour_features(melody: Melody) -> str:
     Returns
     -------
     str
-        Huron contour classification
+        Huron contour classification.
     """
     hc = HuronContour(melody)
     return hc.class_label
