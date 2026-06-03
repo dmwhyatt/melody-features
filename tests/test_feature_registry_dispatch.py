@@ -10,22 +10,22 @@ from melody_features.feature_registry import (
 )
 
 
-def _decorated_feature():
+def canonical():
     return 1
 
 
-_decorated_feature._feature_types = [FeatureType.ABSOLUTE]
-_decorated_feature._feature_domain = "pitch"
-_decorated_feature._feature_sources = ["jsymbolic"]
+canonical._feature_types = [FeatureType.ABSOLUTE]
+canonical._feature_domain = "pitch"
+canonical._feature_sources = ["jsymbolic"]
 
 
-def _other_feature():
+def other():
     return 2
 
 
-_other_feature._feature_types = [FeatureType.TIMING]
-_other_feature._feature_domain = "rhythm"
-_other_feature._feature_source = "legacy"
+other._feature_types = [FeatureType.TIMING]
+other._feature_domain = "rhythm"
+other._feature_source = "legacy"
 
 
 class _SourceFeature:
@@ -34,33 +34,33 @@ class _SourceFeature:
 
 def test_registry_deduplicates_aliases_for_category_discovery():
     module = SimpleNamespace(
-        canonical=_decorated_feature,
-        alias=_decorated_feature,
-        other=_other_feature,
+        canonical=canonical,
+        alias=canonical,
+        other=other,
     )
 
     by_type = get_features_by_type(module, FeatureType.ABSOLUTE)
     by_domain_and_type = get_features_by_domain_and_types(module, "pitch", [FeatureType.ABSOLUTE])
 
-    assert by_type == {"canonical": _decorated_feature}
-    assert by_domain_and_type == {"canonical": _decorated_feature}
+    assert by_type == {"canonical": canonical}
+    assert by_domain_and_type == {"canonical": canonical}
 
 
 def test_source_registry_preserves_aliases_and_legacy_source_metadata():
     module = SimpleNamespace(
-        canonical=_decorated_feature,
-        alias=_decorated_feature,
+        canonical=canonical,
+        alias=canonical,
         source_class=_SourceFeature,
-        legacy=_other_feature,
+        legacy=other,
     )
 
     jsymbolic_features = get_features_by_source(module, "jsymbolic")
     legacy_features = get_features_by_source(module, "legacy")
 
-    assert jsymbolic_features["canonical"] is _decorated_feature
-    assert jsymbolic_features["alias"] is _decorated_feature
+    assert jsymbolic_features["canonical"] is canonical
+    assert jsymbolic_features["alias"] is canonical
     assert jsymbolic_features["source_class"] is _SourceFeature
-    assert legacy_features == {"legacy": _other_feature}
+    assert legacy_features == {"legacy": other}
 
 
 def test_features_module_facade_uses_registry_without_changing_discovery_surface():
