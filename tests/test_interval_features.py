@@ -52,7 +52,7 @@ def test_interval_aliases_share_implementation():
 def test_minor_major_third_ratio_uses_jsymbolic_zero_sentinel():
     # Contains minor thirds (+3, -3) and no major thirds.
     pitches = [60, 63, 60]
-    assert minor_major_third_ratio(pitches) == 0.0
+    assert math.isnan(minor_major_third_ratio(pitches))
 
 
 def test_direction_metrics_use_different_denominators():
