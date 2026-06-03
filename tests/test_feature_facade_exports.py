@@ -152,7 +152,26 @@ CORPUS_FEATURES = (
     "get_corpus_features",
 )
 
+CORPUS_LEXICAL_FEATURES = (
+    "tfdf_spearman",
+    "tfdf_kendall",
+    "mean_log_tfdf",
+    "norm_log_dist",
+    "max_log_df",
+    "min_log_df",
+    "mean_log_df",
+    "mean_global_local_weight",
+    "std_global_local_weight",
+    "mean_global_weight",
+    "std_global_weight",
+)
+
 CORPUS_CLASSES = ("InverseEntropyWeighting",)
+
+CORPUS_LABELLED_EXPORTS = CORPUS_LEXICAL_FEATURES + (
+    "get_ngram_document_frequency",
+    "InverseEntropyWeighting",
+)
 
 CORPUS_HELPERS = (
     "_fantastic_melody_tokens",
@@ -182,7 +201,7 @@ DOMAIN_DISCOVERY = (
 TYPE_DISCOVERY = (
     ("expectation", EXPECTATION_FEATURES),
     ("metre", METRE_FEATURES),
-    ("lexical_diversity", CORPUS_FEATURES),
+    ("lexical_diversity", CORPUS_LEXICAL_FEATURES),
 )
 
 ALIASES = {
@@ -245,7 +264,7 @@ def test_moved_features_stay_visible_to_facade_introspection():
         PITCH_INTERVAL_FEATURES,
         EXPECTATION_FEATURES,
         METRE_FEATURES,
-        CORPUS_FEATURES,
+        CORPUS_LABELLED_EXPORTS,
     )
     expected_aliases = {alias for aliases in ALIASES.values() for alias in aliases}
 
@@ -254,10 +273,11 @@ def test_moved_features_stay_visible_to_facade_introspection():
 
 
 def test_moved_classes_stay_visible_to_facade_introspection():
-    labelled_classes = {
+    labelled_callables = {
         name
         for name, obj in inspect.getmembers(features_module)
-        if inspect.isclass(obj) and hasattr(obj, "_feature_source")
+        if (inspect.isclass(obj) or (hasattr(obj, "__call__") and hasattr(obj, "__name__")))
+        and hasattr(obj, "_feature_source")
     }
 
-    assert set(CORPUS_CLASSES).issubset(labelled_classes)
+    assert set(CORPUS_CLASSES).issubset(labelled_callables)
