@@ -92,9 +92,12 @@ class NGramCounter:
 
     @property
     def yules_k(self) -> float:
-        """Yule's K measure of lexical richness. This feature measures the rate
-        at which m-types are repeated in a sequence. Higher values indicate more
-        repetitive sequences.
+        """Yule's K measure of m-type repetitiveness.
+
+        This lexical-diversity feature is calculated from the frequency spectrum
+        of m-types in the melody. Higher values indicate that a smaller set of
+        m-types is repeated more often, whereas lower values indicate a more even
+        or varied m-type vocabulary.
         
         Citation
         --------
@@ -126,8 +129,11 @@ class NGramCounter:
 
     @property
     def simpsons_d(self) -> float:
-        """Simpson's D concentration index over m-type counts.
-        Higher values indicate greater concentration/repetition (lower diversity).
+        """Simpson's D measure of m-type concentration.
+
+        Simpson's D is calculated from squared m-type frequencies. Higher values
+        indicate a greater probability that two sampled tokens belong to the same
+        m-type, and therefore a more concentrated or repetitive m-type vocabulary.
         
         Citation
         --------
@@ -156,8 +162,11 @@ class NGramCounter:
 
     @property
     def sichels_s(self) -> float:
-        """Sichel's S measure corresponds to the proportion of m-types that occur exactly twice in a sequence.
-        Higher values indicate a greater amount of m-types that occur exactly twice.
+        """The proportion of m-types that occur exactly twice.
+
+        Sichel's S is the number of distinct m-types with frequency two divided
+        by the total number of distinct m-types. Higher values indicate that more
+        of the melody's m-type vocabulary consists of types that recur once.
         
         Citation
         --------
@@ -184,8 +193,12 @@ class NGramCounter:
 
     @property
     def honores_h(self) -> float:
-        """Honoré's H measure corresponds to the observation that the number of tokens occuring exactly once 
-        in a sequence is logarithmically related to the total number of tokens in the sequence.
+        """Honoré's H measure of m-type lexical richness.
+
+        Honoré's H relates the total number of m-type tokens to the proportion of
+        distinct m-types that occur exactly once (hapax legomena). It increases
+        when a sequence contains many single-occurrence m-types relative to its
+        overall m-type vocabulary.
         
         Citation
         --------
@@ -214,7 +227,12 @@ class NGramCounter:
 
     @property
     def mean_entropy(self) -> float:
-        """Mean zeroth-order m-type entropy across counted n-gram orders."""
+        """Mean zeroth-order m-type entropy across counted n-gram orders.
+
+        For each n-gram order, this feature treats the m-type counts as a discrete
+        distribution and computes zeroth-order entropy. The returned value is the
+        mean of those entropy values across the counted orders. Higher values
+        indicate more even m-type distributions."""
         try:
             if len(self.count_values) <= 1:
                 import warnings
@@ -245,9 +263,13 @@ class NGramCounter:
 
     @property
     def mean_productivity(self) -> float:
-        """Mean productivity is defined as the mean of the number of types
-        occurring only once divided by the total number of tokens. The types occurring
-        only once in a sequence are known as hapax legomena."""
+        """The proportion of distinct m-types that occur only once.
+
+        M-types that occur only once are hapax legomena. This feature divides the
+        number of hapax m-types by the total number of distinct m-types, so higher
+        values indicate that more of the melody's m-type vocabulary is used only
+        once.
+        """
         try:
             if len(self.count_values) <= 1:
                 import warnings
