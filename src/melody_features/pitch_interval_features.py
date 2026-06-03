@@ -586,7 +586,7 @@ def variable_melodic_intervals(pitches: list[int], interval_level: Union[int, li
     ----------
     pitches : list[int]
         List of MIDI pitch values
-    interval_level : int | list[int]
+    interval_level : Union[int, list[int]]
         Minimum interval size in semitones
 
     Returns

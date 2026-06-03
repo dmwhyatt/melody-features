@@ -149,7 +149,7 @@ def test_moved_features_stay_visible_to_facade_introspection():
         if inspect.isfunction(obj) and hasattr(obj, "_feature_source")
     }
 
-    expected = set(ABSOLUTE_PITCH_FEATURES) | set(PITCH_CLASS_FEATURES) | set(PITCH_INTERVAL_FEATURES)
+    expected = set(ABSOLUTE_PITCH_FEATURES).union(PITCH_CLASS_FEATURES, PITCH_INTERVAL_FEATURES)
     expected_aliases = {alias for aliases in ALIASES.values() for alias in aliases}
 
     assert expected.issubset(labelled)
