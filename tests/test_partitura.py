@@ -1,9 +1,9 @@
 import numpy as np
 
 from melody_features.import_mid import import_midi
-from melody_features.representations import Melody
-from melody_features.pitch_spelling import estimate_spelling_from_melody
-from melody_features.tonal_tension import estimate_tonaltension
+from melody_features.core.representations import Melody
+from melody_features.algorithms.pitch_spelling import estimate_spelling_from_melody
+from melody_features.algorithms.tonal_tension import estimate_tonaltension
 
 tonal_tension_vals = [( 0.  , 0.15509486, 0.00000000e+00, 0.07465585),
  ( 0.25, 0.15509486, 5.16982861e-02, 0.05403359),

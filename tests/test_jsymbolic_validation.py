@@ -7,7 +7,7 @@ first 5 melodies in the Essen Corpus.
 import pytest
 import csv
 from melody_features.features import get_jsymbolic_features
-from melody_features.representations import Melody
+from melody_features.core.representations import Melody
 from melody_features.import_mid import import_midi
 
 EXCLUDED_FEATURES = [

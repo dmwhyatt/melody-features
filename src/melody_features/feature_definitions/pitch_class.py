@@ -5,8 +5,8 @@ import numpy as np
 from ..algorithms import circle_of_fifths, n_percent_significant_values
 from ..feature_decorators import jsymbolic, midi_toolbox, pitch, pitch_class
 from ..feature_histogram import PitchClassHistogram
-from ..meter_estimation import duration_accent
-from ..stats import get_mode
+from ..algorithms.meter_estimation import duration_accent
+from ..utils.stats import get_mode
 
 
 __all__ = [

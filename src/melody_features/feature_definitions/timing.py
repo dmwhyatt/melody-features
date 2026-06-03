@@ -7,13 +7,13 @@ from typing import List
 import numpy as np
 
 from ..algorithms import get_duration_ratios
-from ..distributional import histogram_bins
+from ..utils.distributional import histogram_bins
 from ..feature_decorators import fantastic, jsymbolic, midi_toolbox, novel, rhythm, timing
 from ..feature_histogram import create_beat_histogram, create_rhythmic_value_histogram
 from ..feature_utils import _get_durations
-from ..meter_estimation import compute_onset_autocorrelation, duration_accent as _duration_accent
-from ..representations import Melody
-from ..stats import get_mode, range_func
+from ..algorithms.meter_estimation import compute_onset_autocorrelation, duration_accent as _duration_accent
+from ..core.representations import Melody
+from ..utils.stats import get_mode, range_func
 
 
 __all__ = [

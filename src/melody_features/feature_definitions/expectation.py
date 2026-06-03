@@ -6,15 +6,15 @@ import numpy as np
 
 from ..algorithms import compute_tonality_vector
 from ..feature_decorators import expectation, idyom, jsymbolic, midi_toolbox, pitch, rhythm
-from ..meter_estimation import melodic_accent as _melodic_accent
-from ..narmour import (
+from ..algorithms.meter_estimation import melodic_accent as _melodic_accent
+from ..algorithms.narmour import (
     closure,
     intervallic_difference,
     proximity,
     registral_direction,
     registral_return,
 )
-from ..representations import Melody
+from ..core.representations import Melody
 
 
 __all__ = [

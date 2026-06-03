@@ -6,7 +6,7 @@ import pretty_midi
 import mido
 from mido.midifiles.meta import KeySignatureError
 
-from ..meter_estimation import estimate_meter, meter_to_time_signature
+from ..algorithms.meter_estimation import estimate_meter, meter_to_time_signature
 
 # Suppress warnings from external libraries
 warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")

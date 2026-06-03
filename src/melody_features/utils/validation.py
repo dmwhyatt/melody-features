@@ -1,6 +1,6 @@
 """Validation helpers shared by pipeline modules."""
 
-from ..representations import Melody
+from ..core.representations import Melody
 
 
 def _check_is_monophonic(melody: Melody) -> bool:

@@ -26,7 +26,7 @@ from tqdm import tqdm
 
 from melody_features.io.midi import import_midi
 from melody_features.melody_tokenizer import FantasticTokenizer
-from melody_features.representations import Melody, read_midijson
+from melody_features.core.representations import Melody, read_midijson
 
 # Corpus paths for easy access
 try:

@@ -9,7 +9,7 @@ from typing import List, Union
 from natsort import natsorted
 
 from ..io.midi import import_midi
-from ..representations import Melody
+from ..core.representations import Melody
 from ..utils.validation import _check_is_monophonic
 
 

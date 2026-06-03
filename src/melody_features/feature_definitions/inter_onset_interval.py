@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from ..distributional import histogram_bins
+from ..utils.distributional import histogram_bins
 from ..feature_decorators import idyom, interval, jsymbolic, novel, rhythm
 
 

@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
-from ..representations import Melody
+from ..core.representations import Melody
 from .timing import TIMING_STAT_CATEGORIES, _init_timing_stats
 
 

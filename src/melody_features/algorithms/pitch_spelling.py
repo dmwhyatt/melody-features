@@ -32,7 +32,7 @@ of New Music Research, 35(2):121.
 import numpy as np
 from collections import namedtuple
 from typing import List
-from .representations import Melody
+from ..core.representations import Melody
 
 # from partitura.musicanalysis.utils import prepare_notearray
 
