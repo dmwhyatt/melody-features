@@ -152,7 +152,7 @@ CORPUS_FEATURES = (
     "get_corpus_features",
 )
 
-CORPUS_LEXICAL_FEATURES = (
+CORPUS_DECORATED_FEATURES = (
     "tfdf_spearman",
     "tfdf_kendall",
     "mean_log_tfdf",
@@ -168,7 +168,7 @@ CORPUS_LEXICAL_FEATURES = (
 
 CORPUS_CLASSES = ("InverseEntropyWeighting",)
 
-CORPUS_LABELLED_EXPORTS = CORPUS_LEXICAL_FEATURES + (
+CORPUS_LABELLED_EXPORTS = CORPUS_DECORATED_FEATURES + (
     "get_ngram_document_frequency",
     "InverseEntropyWeighting",
 )
@@ -201,7 +201,7 @@ DOMAIN_DISCOVERY = (
 TYPE_DISCOVERY = (
     ("expectation", EXPECTATION_FEATURES),
     ("metre", METRE_FEATURES),
-    ("lexical_diversity", CORPUS_LEXICAL_FEATURES),
+    ("corpus", CORPUS_DECORATED_FEATURES),
 )
 
 ALIASES = {

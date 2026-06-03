@@ -8,7 +8,7 @@ import numpy as np
 import scipy
 
 from .corpus import load_corpus_stats, make_corpus_stats
-from .feature_decorators import both, complexity, fantastic, lexical_diversity
+from .feature_decorators import both, complexity, corpus, fantastic
 from .melody_tokenizer import FantasticTokenizer
 from .ngram_counter import NGramCounter
 from .representations import Melody
@@ -336,7 +336,7 @@ def _compute_corpus_feature_bundle(
     return features
 
 @fantastic
-@lexical_diversity
+@corpus
 @both
 def tfdf_spearman(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Spearman rank correlation between TF and DF over m-types. Positive values mean
@@ -369,7 +369,7 @@ def tfdf_spearman(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
     )["tfdf_spearman"]
 
 @fantastic
-@lexical_diversity
+@corpus
 @both
 def tfdf_kendall(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Kendall's tau rank correlation between melody TF and corpus DF for each m-type.
@@ -405,7 +405,7 @@ def tfdf_kendall(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngra
     )["tfdf_kendall"]
 
 @fantastic
-@lexical_diversity
+@corpus
 @both
 def mean_log_tfdf(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Mean of log2-normalized TF × DF products over m-types.
@@ -434,7 +434,7 @@ def mean_log_tfdf(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
     )["mean_log_tfdf"]
 
 @fantastic
-@lexical_diversity
+@corpus
 @both
 def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Mean absolute difference between log2-normalized TF and DF.
@@ -463,7 +463,7 @@ def norm_log_dist(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
     )["norm_log_dist"]
 
 @fantastic
-@lexical_diversity
+@corpus
 @both
 def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """log2 of the largest corpus document frequency among melody m-types. Highlights how 
@@ -491,7 +491,7 @@ def max_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_
     )["max_log_df"]
 
 @fantastic
-@lexical_diversity
+@corpus
 @both
 def min_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """log2 of the smallest corpus DF among melody m-types. Highlights how 
@@ -519,7 +519,7 @@ def min_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_
     )["min_log_df"]
 
 @fantastic
-@lexical_diversity
+@corpus
 @both
 def mean_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Mean log2 corpus DF over melody m-types.
@@ -548,7 +548,7 @@ def mean_log_df(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram
     )["mean_log_df"]
 
 @fantastic
-@lexical_diversity
+@corpus
 @both
 def mean_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Mean combined local-global weights for n-grams.
@@ -578,7 +578,7 @@ def mean_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: flo
     )["mean_global_local_weight"]
 
 @fantastic
-@lexical_diversity
+@corpus
 @both
 def std_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Sample standard deviation of combined local-global weights for n-grams.
@@ -604,7 +604,7 @@ def std_global_local_weight(melody: Melody, corpus_stats: dict, phrase_gap: floa
     )["std_global_local_weight"]
 
 @fantastic
-@lexical_diversity
+@corpus
 @both
 def mean_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Mean global weight across m-types.
@@ -633,7 +633,7 @@ def mean_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, ma
     )["mean_global_weight"]
 
 @fantastic
-@lexical_diversity
+@corpus
 @both
 def std_global_weight(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Sample standard deviation of global weights for m-types.
