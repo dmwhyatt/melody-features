@@ -2542,18 +2542,18 @@ def minor_major_third_ratio(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Ratio of minor thirds to major thirds, or 0.0 if no major thirds exist
+        Ratio of minor thirds to major thirds, or NaN if no major thirds exist
 
     Note
     ----
-    To match jSymbolic behavior, this returns 0.0 when there are no major
-    thirds (including cases where minor thirds are present).
+    Instead of matching jSymbolic behavior (returning 0.0 when there are no major thirds), 
+    this returns NaN when there are no major thirds (including cases where minor thirds are present).
     """
     minor_thirds = variable_melodic_intervals(pitches, 3)
     major_thirds = variable_melodic_intervals(pitches, 4)
 
     if major_thirds == 0:
-        return 0.0
+        return float('nan')
 
     return minor_thirds / major_thirds
 
