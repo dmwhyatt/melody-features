@@ -282,6 +282,17 @@ def _process_melodies_parallel(
         List of feature rows
     """
     all_features = []
+    n_melodies = len(melody_args)
+    tqdm_kwargs = {
+        "total": n_melodies,
+        "unit": "melody",
+        "dynamic_ncols": True,
+        "mininterval": 0.15,
+        "maxinterval": 1.0,
+        "miniters": max(1, n_melodies // 200),
+        "smoothing": 0.45,
+        "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
+    }
 
     try:
         # Try to use multiprocessing
@@ -298,89 +309,23 @@ def _process_melodies_parallel(
         logger.info("Parallel processing initiated")
 
         n_cores = cpu_count()
-        chunk_size = max(1, len(melody_args) // (n_cores * 4))
+        chunk_size = max(1, n_melodies // (n_cores * 16))
 
         with Pool(n_cores) as pool:
-            # Use tqdm to show progress as melodies are processed
-            with tqdm(
-                total=len(melody_args),
-                desc="Processing melodies",
-                unit="melody",
-                ncols=80,
-                mininterval=0.5,
-                maxinterval=2.0,
-                miniters=1,
-                smoothing=0.1,
-                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"
-            ) as pbar:
-                for result in pool.imap(process_melody, melody_args, chunksize=chunk_size):
-                    try:
-                        melody_id, melody_features, timings = result
-                        melody_num = None
-                        for m in melody_data_list:
-                            if str(m["ID"]) == str(melody_id):
-                                melody_num = m.get("melody_num", None)
-                                break
-                        row = [melody_num, melody_id]
-                        for header in headers[2:]:  # Skip melody_num and melody_id headers
-                            if header.startswith("idyom_"):
-                                prefix, feature_name = header.split(".", 1)
-                                idyom_name = prefix[len("idyom_") : -len("_features")]
-                                # Use melody_num for IDyOM lookup since IDyOM results are indexed by melody number
-                                value = (
-                                    idyom_results_dict.get(idyom_name, {})
-                                    .get(str(melody_num), {})
-                                    .get(feature_name, 0.0)
-                                )
-                                row.append(value)
-                            else:
-                                category, feature_name = header.split(".", 1)
-                                value = melody_features.get(category, {}).get(
-                                    feature_name, 0.0
-                                )
-                                row.append(value)
-                        all_features.append(row)
-
-                        for category, duration in timings.items():
-                            timing_stats[category].append(duration)
-
-                        # Update progress bar
-                        pbar.update(1)
-
-                    except Exception as e:
-                        logger = logging.getLogger("melody_features")
-                        logger.error(f"Error processing melody: {str(e)}")
-                        pbar.update(1)  # Still update progress even on error
-                        continue
-
-    except Exception as e:
-        # Fall back to sequential processing if multiprocessing fails
-        logger = logging.getLogger("melody_features")
-        logger.warning(f"Parallel processing failed ({str(e)}), falling back to sequential processing")
-
-        with tqdm(
-            total=len(melody_args),
-            desc="Processing melodies (sequential)",
-            unit="melody",
-            ncols=80,
-            mininterval=0.5,
-            maxinterval=2.0,
-            miniters=1,
-            smoothing=0.1,
-            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"
-        ) as pbar:
-            for i, args in enumerate(melody_args):
+            results_iter = pool.imap(
+                process_melody, melody_args, chunksize=chunk_size
+            )
+            for result in tqdm(
+                results_iter, desc="Processing melodies", **tqdm_kwargs
+            ):
                 try:
-                    result = process_melody(args)
                     melody_id, melody_features, timings = result
-
                     melody_num = None
                     for m in melody_data_list:
                         if str(m["ID"]) == str(melody_id):
                             melody_num = m.get("melody_num", None)
                             break
                     row = [melody_num, melody_id]
-
                     for header in headers[2:]:  # Skip melody_num and melody_id headers
                         if header.startswith("idyom_"):
                             prefix, feature_name = header.split(".", 1)
@@ -400,16 +345,59 @@ def _process_melodies_parallel(
                             row.append(value)
                     all_features.append(row)
 
-                    # Update timing statistics
                     for category, duration in timings.items():
                         timing_stats[category].append(duration)
 
-                    # Update progress bar
-                    pbar.update(1)
-
                 except Exception as e:
-                    logger.error(f"Error processing melody {i}: {str(e)}")
-                    pbar.update(1)  # Still update progress even on error
+                    logger = logging.getLogger("melody_features")
+                    logger.error(f"Error processing melody: {str(e)}")
                     continue
+
+    except Exception as e:
+        # Fall back to sequential processing if multiprocessing fails
+        logger = logging.getLogger("melody_features")
+        logger.warning(f"Parallel processing failed ({str(e)}), falling back to sequential processing")
+
+        for i, args in tqdm(
+            enumerate(melody_args),
+            desc="Processing melodies (sequential)",
+            **tqdm_kwargs,
+        ):
+            try:
+                result = process_melody(args)
+                melody_id, melody_features, timings = result
+
+                melody_num = None
+                for m in melody_data_list:
+                    if str(m["ID"]) == str(melody_id):
+                        melody_num = m.get("melody_num", None)
+                        break
+                row = [melody_num, melody_id]
+
+                for header in headers[2:]:  # Skip melody_num and melody_id headers
+                    if header.startswith("idyom_"):
+                        prefix, feature_name = header.split(".", 1)
+                        idyom_name = prefix[len("idyom_") : -len("_features")]
+                        # Use melody_num for IDyOM lookup since IDyOM results are indexed by melody number
+                        value = (
+                            idyom_results_dict.get(idyom_name, {})
+                            .get(str(melody_num), {})
+                            .get(feature_name, 0.0)
+                        )
+                        row.append(value)
+                    else:
+                        category, feature_name = header.split(".", 1)
+                        value = melody_features.get(category, {}).get(
+                            feature_name, 0.0
+                        )
+                        row.append(value)
+                all_features.append(row)
+
+                for category, duration in timings.items():
+                    timing_stats[category].append(duration)
+
+            except Exception as e:
+                logger.error(f"Error processing melody {i}: {str(e)}")
+                continue
 
     return all_features
