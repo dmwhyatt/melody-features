@@ -5,6 +5,7 @@ from MIDI sequence data.
 
 __author__ = "David Whyatt"
 import json
+from typing import Optional
 
 
 def build_midi_sequence_string(
@@ -107,7 +108,7 @@ class Melody:
         return pitches, starts, ends
 
     @staticmethod
-    def _read_note_field(note_fragment: str, field_name: str) -> str | None:
+    def _read_note_field(note_fragment: str, field_name: str) -> Optional[str]:
         """Return the raw text of one ``Note(...)`` field (e.g. pitch, start, end)."""
         marker = f"{field_name}="
         marker_at = note_fragment.find(marker)
