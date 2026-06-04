@@ -19,7 +19,7 @@ from typing import Dict, List, Tuple, Optional, Set, Union
 from natsort import natsorted
 from tqdm import tqdm
 
-from melody_features.io.midi import import_midi
+from melody_features.io.midi import import_midi, load_midi
 from melody_features.melody_tokenizer import FantasticTokenizer
 from melody_features.core.representations import Melody, read_midijson
 
@@ -232,16 +232,7 @@ def load_midi_melody(midi_path: str) -> Melody:
         Loaded melody object, or None if the file could not be loaded
     """
     suppress_common_melody_warnings()
-
-    logger = logging.getLogger("melody_features")
-    try:
-        melody_data = import_midi(midi_path)
-        if melody_data is None:
-            return None
-        return Melody(melody_data)
-    except Exception as e:
-        logger.warning(f"Error creating Melody object from {midi_path}: {str(e)}")
-        return None
+    return load_midi(midi_path)
 
 
 def _load_melody_index(args: Tuple[int, str]) -> Melody:

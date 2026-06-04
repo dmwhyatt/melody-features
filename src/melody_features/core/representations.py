@@ -140,6 +140,11 @@ class Melody:
         return note_fragment[value_begin:value_stop].rstrip(",)")
 
     @property
+    def midi_data(self) -> dict:
+        """Raw import dictionary backing this melody (e.g. from :func:`import_midi`)."""
+        return self._midi_data
+
+    @property
     def id(self) -> str:
         """Get the ID (file path) of the MIDI file.
 

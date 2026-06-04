@@ -4,9 +4,11 @@ import melody_features.features as features_module
 from melody_features.feature_decorators import FeatureType
 from melody_features.feature_dispatch import collect_feature_values, invoke_feature
 from melody_features.feature_registry import (
+    discover_atomic_features,
     get_features_by_domain_and_types,
     get_features_by_source,
     get_features_by_type,
+    list_available_features,
 )
 
 
@@ -61,6 +63,30 @@ def test_source_registry_preserves_aliases_and_legacy_source_metadata():
     assert jsymbolic_features["alias"] is canonical
     assert jsymbolic_features["source_class"] is _SourceFeature
     assert legacy_features == {"legacy": other}
+
+
+def test_list_available_features_excludes_aliases_and_aggregators():
+    names = list_available_features()
+
+    assert "pitch_range" in names
+    assert "ambitus" not in names
+    assert not any(name.startswith("get_") for name in names)
+
+
+def test_list_available_features_detailed_filter_by_source():
+    fantastic = list_available_features(detailed=True, source="fantastic")
+
+    assert fantastic
+    assert all("fantastic" in entry["sources"] for entry in fantastic)
+    assert any(entry["summary"] for entry in fantastic)
+
+
+def test_discover_atomic_features_includes_contour_descriptors():
+    entries = discover_atomic_features(features_module)
+    names = {entry.name for entry in entries}
+
+    assert "StepContour.global_variation" in names
+    assert "NGramCounter.yules_k" in names
 
 
 def test_features_module_facade_uses_registry_without_changing_discovery_surface():

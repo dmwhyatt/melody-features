@@ -22,6 +22,7 @@ from .feature_registry import (
 )
 from .feature_registry import get_features_by_source as _registry_get_features_by_source
 from .feature_registry import get_features_by_type as _registry_get_features_by_type
+from .feature_registry import list_available_features
 from .feature_definitions.absolute_pitch import (
     pitch_range,
     ambitus,

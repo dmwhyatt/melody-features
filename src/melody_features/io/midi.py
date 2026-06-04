@@ -1,12 +1,15 @@
 import logging
 import os
+from pathlib import Path
+from typing import List, Optional, Union
 
 import pretty_midi
 import mido
 from mido.midifiles.meta import KeySignatureError
+from natsort import natsorted
 
 from ..algorithms.meter_estimation import estimate_meter, meter_to_time_signature
-from ..core.representations import build_midi_sequence_string
+from ..core.representations import Melody, build_midi_sequence_string
 from ..utils.warnings import suppress_common_melody_warnings
 
 suppress_common_melody_warnings()
@@ -63,7 +66,6 @@ def import_midi(midi_file: str) -> dict:
         # Extract key signature information
         key_sig_info = extract_key_signatures_from_midi(midi_file)
 
-        import mido
         mid = mido.MidiFile(midi_file)
         total_duration = mid.length
 
@@ -86,6 +88,105 @@ def import_midi(midi_file: str) -> dict:
     except Exception as e:
         logger.warning(f"Unexpected error importing {midi_file}: {str(e)}")
         return None
+
+
+def load_midi(midi_file: Union[str, os.PathLike]) -> Optional[Melody]:
+    """Load a single MIDI file as a :class:`~melody_features.core.representations.Melody`.
+
+    Parameters
+    ----------
+    midi_file : str or os.PathLike
+        Path to the MIDI file
+
+    Returns
+    -------
+    Melody or None
+        Loaded melody, or None if import failed
+    """
+    melody_data = import_midi(str(midi_file))
+    if melody_data is None:
+        return None
+    try:
+        return Melody(melody_data)
+    except Exception as e:
+        logging.getLogger("melody_features").warning(
+            f"Error creating Melody from {midi_file}: {e}"
+        )
+        return None
+
+
+def list_midi_files(
+    directory: Union[str, os.PathLike],
+    *,
+    recursive: bool = False,
+) -> List[str]:
+    """Return sorted paths to ``.mid`` / ``.midi`` files in a directory.
+
+    Parameters
+    ----------
+    directory : str or os.PathLike
+        Folder to scan for MIDI files
+    recursive : bool, optional
+        If True, search subdirectories as well (default False)
+
+    Returns
+    -------
+    list[str]
+        Naturally sorted absolute paths to MIDI files
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``directory`` does not exist or contains no MIDI files
+    """
+    path = Path(directory)
+    if not path.is_dir():
+        raise FileNotFoundError(f"Directory not found: {directory}")
+
+    if recursive:
+        midi_paths = list(path.rglob("*.mid")) + list(path.rglob("*.midi"))
+    else:
+        midi_paths = list(path.glob("*.mid")) + list(path.glob("*.midi"))
+
+    if not midi_paths:
+        raise FileNotFoundError(f"No MIDI files found in {directory}")
+
+    return natsorted(str(p.resolve()) for p in midi_paths)
+
+
+def import_midi_from_directory(
+    directory: Union[str, os.PathLike],
+    *,
+    recursive: bool = False,
+) -> List[Melody]:
+    """Load all MIDI files in a directory as :class:`~melody_features.core.representations.Melody` objects.
+
+    Parameters
+    ----------
+    directory : str or os.PathLike
+        Folder containing MIDI files
+    recursive : bool, optional
+        If True, include MIDI files in subdirectories (default False)
+
+    Returns
+    -------
+    list[Melody]
+        Successfully loaded melodies, in natural sort order.
+        Files that fail to import are skipped (warnings are logged per file).
+    """
+    logger = logging.getLogger("melody_features")
+    midi_paths = list_midi_files(directory, recursive=recursive)
+    melodies: List[Melody] = []
+
+    for midi_path in midi_paths:
+        melody = load_midi(midi_path)
+        if melody is not None:
+            melodies.append(melody)
+        else:
+            logger.debug(f"Skipped failed import: {midi_path}")
+
+    logger.info(f"Loaded {len(melodies)} of {len(midi_paths)} MIDI files from {directory}")
+    return melodies
 
 
 def extract_time_signatures_from_midi(midi_data: pretty_midi.PrettyMIDI, starts: list[float] = None, 

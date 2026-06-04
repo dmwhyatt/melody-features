@@ -1,6 +1,5 @@
 """Input loading helpers for the feature extraction pipeline."""
 
-import glob
 import json
 import logging
 import os
@@ -8,7 +7,7 @@ from typing import List, Union
 
 from natsort import natsorted
 
-from ..io.midi import import_midi
+from ..io.midi import list_midi_files, load_midi
 from ..core.representations import Melody
 from ..utils.validation import _check_is_monophonic
 
@@ -56,16 +55,7 @@ def _load_melody_data(input: Union[os.PathLike, List[os.PathLike]]) -> List[dict
         midi_files = natsorted(midi_files)
 
     elif os.path.isdir(input):
-        midi_files = glob.glob(os.path.join(input, "*.mid"))
-        midi_files.extend(glob.glob(os.path.join(input, "*.midi")))
-
-        if not midi_files:
-            raise FileNotFoundError(
-                f"No MIDI files found in the specified directory: {input}"
-            )
-
-        # Sort MIDI files in natural order
-        midi_files = natsorted(midi_files)
+        midi_files = list_midi_files(input)
 
     elif isinstance(input, (str, os.PathLike)) and str(input).lower().endswith(('.mid', '.midi')):
         # Handle single MIDI file
@@ -104,13 +94,11 @@ def _load_melody_data(input: Union[os.PathLike, List[os.PathLike]]) -> List[dict
 
     for midi_file in midi_files:
         try:
-            midi_data = import_midi(midi_file)
-            if midi_data:
-                temp_mel = Melody(midi_data)
-                if _check_is_monophonic(temp_mel):
-                    melody_data_list.append(midi_data)
-                else:
-                    logger.warning(f"Skipping polyphonic file: {midi_file}")
+            melody = load_midi(midi_file)
+            if melody and _check_is_monophonic(melody):
+                melody_data_list.append(melody.midi_data)
+            elif melody:
+                logger.warning(f"Skipping polyphonic file: {midi_file}")
         except Exception as e:
             logger.error(f"Error importing {midi_file}: {str(e)}")
             continue

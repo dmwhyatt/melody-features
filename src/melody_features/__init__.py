@@ -40,6 +40,7 @@ from .features import (
     FantasticConfig,
     IDyOMConfig,  # noqa: F401
     get_all_features,
+    list_available_features,
 )
 
 __all__ = [
@@ -51,6 +52,7 @@ __all__ = [
     "FantasticConfig",
     "IDyOMConfig",
     "get_all_features",
+    "list_available_features",
     "load_melodies_from_directory",
     *_absolute_pitch_all,
     *_pitch_class_all,
