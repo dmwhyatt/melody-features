@@ -3,6 +3,7 @@ Comprehensive test suite to verify package installation and importability.
 """
 
 import importlib
+import importlib.util
 import sys
 import tempfile
 from pathlib import Path
@@ -235,21 +236,17 @@ def test_refactored_package_paths_and_top_level_exports():
     assert features_module.IDyOMConfig is pipeline_config.IDyOMConfig
 
 
-def test_internal_support_modules_are_not_root_import_paths():
-    """Internal support modules live under core, algorithms, or utils packages."""
-    removed_modules = [
-        "melody_features.representations",
-        "melody_features.distributional",
-        "melody_features.stats",
-        "melody_features.narmour",
-        "melody_features.pitch_spelling",
-        "melody_features.tonal_tension",
-        "melody_features.meter_estimation",
-    ]
-
-    for module_name in removed_modules:
-        assert importlib.util.find_spec(module_name) is None
+def test_internal_support_modules_use_legacy_shims_without_shadowing_features():
+    """Legacy paths resolve via sys.modules; root feature names stay as callables."""
+    import inspect
 
     import melody_features
+    from melody_features.legacy_shims import LEGACY_SHIM_TARGETS
 
+    for old_module in LEGACY_SHIM_TARGETS:
+        assert old_module in sys.modules
+
+    assert importlib.util.find_spec("melody_features.stats") is None
+    assert inspect.isfunction(melody_features.pitch_spelling)
+    assert inspect.isfunction(melody_features.tonal_tension)
     assert not hasattr(melody_features, "Melody")

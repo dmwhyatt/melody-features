@@ -69,3 +69,7 @@ __all__ = [
 ]
 
 del _absolute_pitch_all, _pitch_class_all, _pitch_interval_all, _contour_all, _timing_all, _inter_onset_interval_all, _tonality_all, _expectation_all, _metre_all, _corpus_all, _complexity_all, _lexical_diversity_all
+
+from .legacy_shims import install_legacy_shims
+
+install_legacy_shims()
