@@ -171,6 +171,7 @@ from .feature_definitions.corpus import (
     get_corpus_features,
 )
 from .feature_utils import _get_durations
+from .utils.warnings import suppress_common_melody_warnings
 from .feature_definitions.contour import (
     get_step_contour_features,
     get_interpolation_contour_features,
@@ -220,8 +221,6 @@ from .feature_definitions.timing import (
     _compute_beat_histogram_tables,
     _count_strong_pulses,
     _is_factor_or_multiple,
-    _is_beat_histogram_function,
-    _precompute_beat_histogram_data,
     durdist1,
     initial_tempo,
     mean_tempo,
@@ -387,12 +386,7 @@ from .pipeline.timing import TIMING_STAT_CATEGORIES, _init_timing_stats
 from .utils.logging import _setup_logger
 from .utils.validation import _check_is_monophonic
 
-warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
-warnings.filterwarnings("ignore", category=RuntimeWarning, module="pretty_midi")
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
-warnings.filterwarnings(
-    "ignore", category=UserWarning, message=".*pkg_resources is deprecated.*"
-)
+suppress_common_melody_warnings()
 
 import csv
 import inspect
@@ -685,43 +679,18 @@ def temperley_likelihood(pitches: list[int]) -> float:
 def get_complexity_features(
     melody: Melody, phrase_gap: float = 1.5, max_ngram_order: int = DEFAULT_MAX_NGRAM_ORDER
 ) -> Dict:
-    """Dynamically collect all complexity features for a melody.
-
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-    phrase_gap : float, optional
-        Phrase gap for mtype features (default: 1.5)
-    max_ngram_order : int, optional
-        Maximum inclusive n-gram length for m-type features (default: 5)
-
-    Returns
-    -------
-    Dict
-        Dictionary of complexity feature values
-    """
-    features = {}
+    """Dynamically collect all complexity features for a melody."""
     complexity_functions = _get_features_by_type(FeatureType.COMPLEXITY)
-
-    for name, func in complexity_functions.items():
-        try:
-            if name in ('InverseEntropyWeighting', 'get_mtype_features'):
-                continue
-
-            result = _invoke_feature(
-                func,
-                melody,
-                phrase_gap=phrase_gap,
-                max_ngram_order=max_ngram_order,
-            )
-            features[name] = result
-
-        except Exception as e:
-            print(f"Warning: Could not compute {name}: {e}")
-            features[name] = None
-
-    return features
+    skip = frozenset({"InverseEntropyWeighting", "get_mtype_features"})
+    filtered = {
+        name: func for name, func in complexity_functions.items() if name not in skip
+    }
+    return _collect_feature_values(
+        filtered,
+        melody,
+        phrase_gap=phrase_gap,
+        max_ngram_order=max_ngram_order,
+    )
 
 def get_complexity_feature_bundle(
     melody: Melody,
@@ -781,45 +750,8 @@ def get_metric_accent_features(melody: Melody) -> Dict:
 
 def _collect_rhythm_domain_features(melody: Melody, allowed_types: list[str]) -> Dict:
     """Collect @rhythm-domain features whose types intersect ``allowed_types``."""
-    features: Dict[str, Any] = {}
     rhythm_functions = _get_features_by_domain_and_types("rhythm", allowed_types)
-
-    beat_histogram_functions = []
-    regular_functions = []
-
-    for name, func in rhythm_functions.items():
-        if _is_beat_histogram_function(func):
-            beat_histogram_functions.append((name, func))
-        else:
-            regular_functions.append((name, func))
-
-    for name, func in regular_functions:
-        try:
-            result = _invoke_feature(func, melody)
-            if isinstance(result, tuple) and len(result) == 2:
-                features[f"{name}_mean"] = result[0]
-                features[f"{name}_std"] = result[1]
-            else:
-                features[name] = result
-        except Exception as e:
-            print(f"Warning: Could not compute {name}: {e}")
-            features[name] = None
-
-    if beat_histogram_functions:
-        beat_histogram_data = _precompute_beat_histogram_data(melody)
-        for name, func in beat_histogram_functions:
-            try:
-                result = _invoke_feature(func, melody)
-                if isinstance(result, tuple) and len(result) == 2:
-                    features[f"{name}_mean"] = result[0]
-                    features[f"{name}_std"] = result[1]
-                else:
-                    features[name] = result
-            except Exception as e:
-                print(f"Warning: Could not compute {name}: {e}")
-                features[name] = None
-
-    return features
+    return _collect_feature_values(rhythm_functions, melody, tuple_suffix="std")
 
 def get_timing_features(melody: Melody) -> Dict:
     """Collect @rhythm-domain features decorated with @timing."""
@@ -841,94 +773,52 @@ def get_rhythm_features(melody: Melody) -> Dict:
     features.update(get_metric_accent_features(melody))
     return features
 
-def get_expectation_features(melody: Melody) -> Dict:
-    """Dynamically collect all expectation features for a melody.
 
-    Collects features decorated with FeatureType.EXPECTATION regardless of domain.
+def collect_rhythm_for_pipeline(melody: Melody) -> tuple[Dict[str, Any], Dict[str, float]]:
+    """Collect rhythm features and per-subcategory timings for pipeline workers.
+
+    ``timing`` and ``inter_onset_interval`` are timed separately so pipeline
+    statistics keep them as discrete taxonomy categories.
     """
-    features: Dict[str, Any] = {}
+    rhythm_timings: Dict[str, float] = {}
+
+    start = time.time()
+    timing_features = get_timing_features(melody)
+    rhythm_timings["timing"] = time.time() - start
+
+    start = time.time()
+    ioi_features = get_inter_onset_interval_features(melody)
+    rhythm_timings["inter_onset_interval"] = time.time() - start
+
+    metric_accent_features = get_metric_accent_features(melody)
+    rhythm_features = {
+        **timing_features,
+        **ioi_features,
+        **metric_accent_features,
+    }
+    return rhythm_features, rhythm_timings
+
+def get_expectation_features(melody: Melody) -> Dict:
+    """Dynamically collect all expectation features for a melody."""
     expectation_functions = _get_features_by_type(FeatureType.EXPECTATION)
-
-    for name, func in expectation_functions.items():
-        # IDyOM mean-IC features are computed in batch via get_idyom_results / _run_idyom_analysis
-        if name in _IDYOM_MEAN_INFORMATION_CONTENT_EXPORTS:
-            continue
-        try:
-            result = _invoke_feature(func, melody)
-
-            # Allow tuple returns to be expanded into mean/std when applicable
-            if isinstance(result, tuple) and len(result) == 2 and all(isinstance(x, (int, float)) for x in result):
-                features[f"{name}_mean"] = result[0]
-                features[f"{name}_std"] = result[1]
-            else:
-                features[name] = result
-
-        except Exception as e:
-            print(f"Warning: Could not compute {name}: {e}")
-            features[name] = None
-
-    return features
+    filtered = {
+        name: func
+        for name, func in expectation_functions.items()
+        if name not in _IDYOM_MEAN_INFORMATION_CONTENT_EXPORTS
+    }
+    return _collect_feature_values(
+        filtered, melody, tuple_suffix="std", numeric_tuple_only=True
+    )
 
 def get_metre_features(melody: Melody) -> Dict:
-    """Dynamically collect all metre features for a melody.
-
-    Collects features decorated with @metre type.
-
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-
-    Returns
-    -------
-    Dict
-        Dictionary of metre feature values
-    """
-    features = {}
+    """Dynamically collect all metre features for a melody."""
     metre_functions = _get_features_by_type(FeatureType.METRE)
+    return _collect_feature_values(metre_functions, melody)
 
-    for name, func in metre_functions.items():
-        try:
-            result = _invoke_feature(func, melody)
-            features[name] = result
-
-        except Exception as e:
-            print(f"Warning: Could not compute {name}: {e}")
-            features[name] = None
-
-    return features
 
 def _get_features_by_source(source: str) -> Dict[str, callable]:
-    """Get all functions/classes decorated with a specific source.
-
-    Parameters
-    ----------
-    source : str
-        The source label to filter by (e.g., 'fantastic', 'jsymbolic')
-
-    Returns
-    -------
-    Dict[str, callable]
-        Dictionary mapping function names to their callable objects
-    """
-    import inspect
-    import melody_features.features as features_module
-
-    source_features = {}
-
-    for name, obj in inspect.getmembers(features_module):
-        # Check if it's a function or class with the specified source
-        if (inspect.isfunction(obj) or
-            (inspect.isclass(obj) or (hasattr(obj, "__call__") and hasattr(obj, "__name__")))):
-
-            # Check for multiple sources (new approach)
-            if hasattr(obj, "_feature_sources") and source in obj._feature_sources:
-                source_features[name] = obj
-            # Fallback to single source (backward compatibility)
-            elif hasattr(obj, "_feature_source") and obj._feature_source == source:
-                source_features[name] = obj
-
-    return source_features
+    """Get all functions/classes decorated with a specific source."""
+    return _registry_get_features_by_source(sys.modules[__name__], source)
 
 def get_fantastic_features(
     melody: Melody,
@@ -1133,16 +1023,7 @@ def get_all_features(
         You can save this to CSV using df.to_csv('filename.csv') if needed.
 
     """
-    # Suppress warnings at the system level
-    import warnings
-
-    warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
-    warnings.filterwarnings(
-        "ignore", category=DeprecationWarning, module="pkg_resources"
-    )
-    warnings.filterwarnings(
-        "ignore", category=UserWarning, message=".*pkg_resources is deprecated.*"
-    )
+    suppress_common_melody_warnings()
 
     # Set up logger
     logger = _setup_logger(log_level)

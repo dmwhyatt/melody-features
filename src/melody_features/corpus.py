@@ -1,11 +1,6 @@
-# Suppress warnings from external libraries BEFORE any imports
-import warnings
+from melody_features.utils.warnings import suppress_common_melody_warnings
 
-warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
-warnings.filterwarnings(
-    "ignore", category=UserWarning, message=".*pkg_resources is deprecated.*"
-)
+suppress_common_melody_warnings()
 
 """
 Module for computing corpus-based features from melodic n-grams, similar to FANTASTIC's
@@ -52,16 +47,7 @@ def process_melody_ngrams(args) -> set:
     set
         Set of unique n-grams found in the melody
     """
-    # Suppress warnings in worker processes
-    import warnings
-
-    warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
-    warnings.filterwarnings(
-        "ignore", category=DeprecationWarning, module="pkg_resources"
-    )
-    warnings.filterwarnings(
-        "ignore", category=UserWarning, message=".*pkg_resources is deprecated.*"
-    )
+    suppress_common_melody_warnings()
 
     if len(args) == 3:
         melody, n_range, phrase_gap = args
@@ -117,16 +103,7 @@ def compute_corpus_ngrams(
     Dict
         Dictionary containing corpus-wide n-gram statistics
     """
-    # Suppress warnings at the system level
-    import warnings
-
-    warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
-    warnings.filterwarnings(
-        "ignore", category=DeprecationWarning, module="pkg_resources"
-    )
-    warnings.filterwarnings(
-        "ignore", category=UserWarning, message=".*pkg_resources is deprecated.*"
-    )
+    suppress_common_melody_warnings()
 
     # Determine number of processes
     if njobs in (None, 0, -1):
@@ -254,16 +231,7 @@ def load_midi_melody(midi_path: str) -> Melody:
     Melody or None
         Loaded melody object, or None if the file could not be loaded
     """
-    # Suppress warnings in worker processes
-    import warnings
-
-    warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
-    warnings.filterwarnings(
-        "ignore", category=DeprecationWarning, module="pkg_resources"
-    )
-    warnings.filterwarnings(
-        "ignore", category=UserWarning, message=".*pkg_resources is deprecated.*"
-    )
+    suppress_common_melody_warnings()
 
     logger = logging.getLogger("melody_features")
     try:

@@ -15,6 +15,7 @@ from ..algorithms.narmour import (
     registral_return,
 )
 from ..core.representations import Melody
+from ..feature_utils import mean_and_std
 
 
 __all__ = [
@@ -395,10 +396,8 @@ def mean_mobility(pitches: list[int]) -> float:
     float
         Mean mobility value
     """
-    mob_values = mobility(pitches)
-    if not mob_values:
-        return 0.0
-    return float(np.mean(mob_values))
+    mean, _ = mean_and_std(mobility(pitches))
+    return mean
 
 @midi_toolbox
 @pitch
@@ -417,10 +416,8 @@ def mobility_std(pitches: list[int]) -> float:
     float
         Standard deviation of mobility values
     """
-    mob_values = mobility(pitches)
-    if len(mob_values) < 2:
-        return 0.0
-    return float(np.std(mob_values, ddof=1))
+    _, std = mean_and_std(mobility(pitches))
+    return std
 
 def _stability_distance(weight1: float, weight2: float, proximity: float) -> float:
     """Calculate stability distance for melodic attraction.
@@ -596,10 +593,8 @@ def mean_melodic_attraction(pitches: list[int]) -> float:
     --------
     Lerdahl (1996)
     """
-    attraction_values = melodic_attraction(pitches)
-    if not attraction_values:
-        return 0.0
-    return float(np.mean(attraction_values))
+    mean, _ = mean_and_std(melodic_attraction(pitches))
+    return mean
 
 @midi_toolbox
 @pitch
@@ -625,10 +620,8 @@ def melodic_attraction_std(pitches: list[int]) -> float:
     --------
     Lerdahl (1996)
     """
-    attraction_values = melodic_attraction(pitches)
-    if len(attraction_values) < 2:
-        return 0.0
-    return float(np.std(attraction_values, ddof=1))
+    _, std = mean_and_std(melodic_attraction(pitches))
+    return std
 
 @midi_toolbox
 @pitch
@@ -682,10 +675,8 @@ def mean_melodic_accent(pitches: list[int]) -> float:
     --------
     Thomassen (1982)
     """
-    accents = melodic_accent(pitches)
-    if not accents:
-        return 0.0
-    return float(np.mean(accents))
+    mean, _ = mean_and_std(melodic_accent(pitches))
+    return mean
 
 @midi_toolbox
 @pitch
@@ -711,10 +702,8 @@ def melodic_accent_std(pitches: list[int]) -> float:
     --------
     Thomassen (1982)
     """
-    accents = melodic_accent(pitches)
-    if not accents:
-        return 0.0
-    return float(np.std(accents, ddof=1))
+    _, std = mean_and_std(melodic_accent(pitches))
+    return std
 
 def _get_simonton_transition_matrix() -> np.ndarray:
     """Get Simonton's pitch class transition probabilities from 15,618 classical themes.

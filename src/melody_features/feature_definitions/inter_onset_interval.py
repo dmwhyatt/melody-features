@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from ..feature_utils import ioi_from_starts
 from ..utils.distributional import histogram_bins
 from ..feature_decorators import idyom, interval, jsymbolic, novel, rhythm
 
@@ -43,10 +44,7 @@ def ioi(starts: list[float]) -> list[float]:
     list[float]
         List of time intervals between consecutive onsets
     """
-    intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
-    if not intervals:
-        return []
-    return intervals
+    return ioi_from_starts(starts)
 
 @idyom
 @jsymbolic
@@ -70,7 +68,7 @@ def ioi_mean(starts: list[float]) -> float:
     ----
     This is called `average_time_between_attacks` in jSymbolic.
     """
-    intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
+    intervals = ioi_from_starts(starts)
     if not intervals:
         return 0.0
     return float(np.mean(intervals))
@@ -99,7 +97,7 @@ def ioi_standard_deviation(starts: list[float]) -> float:
     ----
     This is called `variability_of_time_between_attacks` in jSymbolic.
     """
-    intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
+    intervals = ioi_from_starts(starts)
     if not intervals:
         return 0.0
     return float(np.std(intervals, ddof=1))
@@ -127,10 +125,7 @@ def ioi_ratio(starts: list[float]) -> list[float]:
     list[float]
         Sequence of IOI ratios
     """
-    if len(starts) < 3:
-        return []
-
-    intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
+    intervals = ioi_from_starts(starts)
     if len(intervals) < 2:
         return []
 
@@ -204,9 +199,9 @@ def ioi_range(starts: list[float]) -> float:
     float
         Range of inter-onset intervals (0.0 if fewer than two onsets)
     """
-    if len(starts) < 2:
+    intervals = ioi_from_starts(starts)
+    if not intervals:
         return 0.0
-    intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
     return max(intervals) - min(intervals)
 
 @novel
@@ -230,10 +225,7 @@ def ioi_contour(starts: list[float]) -> list[int]:
     This contour is computed from ratios of consecutive IOIs, so it requires at
     least three onsets.
     """
-    if len(starts) < 3:
-        return []
-
-    intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
+    intervals = ioi_from_starts(starts)
     if len(intervals) < 2:
         return []
 
@@ -307,6 +299,6 @@ def ioi_histogram(starts: list[float]) -> dict:
     dict
         Histogram of inter-onset intervals
     """
-    intervals = [starts[i] - starts[i - 1] for i in range(1, len(starts))]
+    intervals = ioi_from_starts(starts)
     num_intervals = len(set(intervals))
     return histogram_bins(intervals, num_intervals)

@@ -11,6 +11,7 @@ from ..feature_decorators import absolute, fantastic, jsymbolic, midi_toolbox, p
 from ..feature_histogram import PitchHistogram
 from ..algorithms.pitch_spelling import estimate_spelling_from_melody as _estimate_spelling_from_melody
 from ..core.representations import Melody
+from ..feature_utils import mean_and_std, prevalence_of_mode, relative_prevalence_top_two
 from ..utils.stats import get_mode, range_func
 
 
@@ -380,10 +381,8 @@ def mean_tessitura(pitches: list[int]) -> float:
     float
         Mean tessitura value
     """
-    tess_values = tessitura(pitches)
-    if not tess_values:
-        return 0.0
-    return float(np.mean(tess_values))
+    mean, _ = mean_and_std(tessitura(pitches))
+    return mean
 
 @midi_toolbox
 @absolute
@@ -402,10 +401,8 @@ def tessitura_std(pitches: list[int]) -> float:
     float
         Standard deviation of tessitura values
     """
-    tess_values = tessitura(pitches)
-    if len(tess_values) < 2:
-        return 0.0
-    return float(np.std(tess_values, ddof=1))
+    _, std = mean_and_std(tessitura(pitches))
+    return std
 
 @jsymbolic
 @absolute
@@ -424,9 +421,7 @@ def prevalence_of_most_common_pitch(pitches: list[int]) -> float:
     float
         Proportion of most common pitch (0.0 if there are no pitches)
     """
-    if not pitches:
-        return 0.0
-    return float(pitches.count(most_common_pitch(pitches)) / len(pitches))
+    return prevalence_of_mode(pitches)
 
 @jsymbolic
 @absolute
@@ -444,21 +439,7 @@ def relative_prevalence_of_top_pitches(pitches: list[int]) -> float:
     float
         Ratio of second most common pitch frequency to most common pitch frequency
     """
-    if len(pitches) < 2:
-        return 0.0
-
-    pitch_counts = {}
-    for pitch in pitches:
-        pitch_counts[pitch] = pitch_counts.get(pitch, 0) + 1
-
-    if len(pitch_counts) < 2:
-        return 0.0
-
-    sorted_pitches = sorted(pitch_counts.items(), key=lambda x: x[1], reverse=True)
-    most_common_freq = sorted_pitches[0][1] / len(pitches)
-    second_most_freq = sorted_pitches[1][1] / len(pitches)
-
-    return float(second_most_freq / most_common_freq)
+    return relative_prevalence_top_two(pitches)
 
 @jsymbolic
 @absolute

@@ -4,7 +4,7 @@ import numpy as np
 
 from ..algorithms import compute_tonality_vector
 from ..feature_decorators import both, complexity, fantastic, midi_toolbox, novel, pitch, rhythm
-from ..feature_utils import _get_durations
+from ..feature_utils import _get_durations, mean_and_std
 from ..algorithms.meter_estimation import duration_accent as _duration_accent
 from .metre import _meter_accent_mean
 from .pitch_class import _pcdist1_vector
@@ -205,9 +205,8 @@ def mean_duration_accent(starts: list[float], ends: list[float], tau: float = 0.
     Parncutt (1994)
     """
     accents = duration_accent(starts, ends, tau, accent_index)
-    if not accents:
-        return 0.0
-    return float(np.mean(accents))
+    mean, _ = mean_and_std(accents)
+    return mean
 
 @midi_toolbox
 @rhythm
@@ -237,9 +236,8 @@ def duration_accent_std(starts: list[float], ends: list[float], tau: float = 0.5
     Parncutt (1994)
     """
     accents = duration_accent(starts, ends, tau, accent_index)
-    if not accents:
-        return 0.0
-    return float(np.std(accents, ddof=1))
+    _, std = mean_and_std(accents)
+    return std
 
 @novel
 @complexity

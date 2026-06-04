@@ -6,6 +6,7 @@ from ..algorithms import circle_of_fifths, n_percent_significant_values
 from ..feature_decorators import jsymbolic, midi_toolbox, pitch, pitch_class
 from ..feature_histogram import PitchClassHistogram
 from ..algorithms.meter_estimation import duration_accent
+from ..feature_utils import prevalence_of_mode, relative_prevalence_top_two
 from ..utils.stats import get_mode
 
 
@@ -344,7 +345,7 @@ def prevalence_of_most_common_pitch_class(pitches: list[int]) -> float:
     if not pitches:
         return 0.0
     pcs = [pitch % 12 for pitch in pitches]
-    return float(pcs.count(most_common_pitch_class(pcs)) / len(pcs))
+    return prevalence_of_mode(pcs)
 
 @jsymbolic
 @pitch_class
@@ -362,25 +363,8 @@ def relative_prevalence_of_top_pitch_classes(pitches: list[int]) -> float:
     float
         Ratio of second most common pitch class frequency to most common pitch class frequency
     """
-    if len(pitches) < 2:
-        return 0.0
-
     pcs = [pitch % 12 for pitch in pitches]
-    if len(pcs) < 2:
-        return 0.0
-
-    pc_counts = {}
-    for pc in pcs:
-        pc_counts[pc] = pc_counts.get(pc, 0) + 1
-
-    if len(pc_counts) < 2:
-        return 0.0
-
-    sorted_pcs = sorted(pc_counts.items(), key=lambda x: x[1], reverse=True)
-    most_common_freq = sorted_pcs[0][1] / len(pcs)
-    second_most_freq = sorted_pcs[1][1] / len(pcs)
-
-    return float(second_most_freq / most_common_freq)
+    return relative_prevalence_top_two(pcs)
 
 @jsymbolic
 @pitch_class

@@ -10,6 +10,7 @@ from ..algorithms import (
     chromatic_motion_proportion,
     n_percent_significant_values,
 )
+from ..feature_utils import prevalence_of_mode, relative_prevalence_top_two
 from ..utils.distributional import distribution_proportions
 from ..feature_decorators import fantastic, interval, jsymbolic, midi_toolbox, novel, pitch, simile
 from ..feature_histogram import create_melodic_interval_histogram
@@ -843,16 +844,8 @@ def prevalence_of_most_common_melodic_interval(pitches: list[int]) -> float:
     float
         Proportion of intervals that are the most common interval, or 0 if no intervals
     """
-    intervals = pitch_interval(pitches)
-    absolute_intervals = [abs(iv) for iv in intervals]
-    if not absolute_intervals:
-        return 0
-
-    interval_counts = {}
-    for interval in absolute_intervals:
-        interval_counts[interval] = interval_counts.get(interval, 0) + 1
-
-    return float(max(interval_counts.values()) / len(absolute_intervals))
+    absolute_intervals = [abs(iv) for iv in pitch_interval(pitches)]
+    return prevalence_of_mode(absolute_intervals)
 
 @jsymbolic
 @interval
@@ -871,24 +864,8 @@ def relative_prevalence_of_most_common_melodic_intervals(pitches: list[int]) -> 
         Ratio of second most common interval frequency to most common interval frequency.
         Returns 0.0 if fewer than 2 intervals or only one unique interval.
     """
-    intervals = pitch_interval(pitches)
-    absolute_intervals = [abs(iv) for iv in intervals]
-    
-    if len(absolute_intervals) < 2:
-        return 0.0
-        
-    interval_counts = {}
-    for interval in absolute_intervals:
-        interval_counts[interval] = interval_counts.get(interval, 0) + 1
-        
-    if len(interval_counts) < 2:
-        return 0.0
-        
-    sorted_intervals = sorted(interval_counts.items(), key=lambda x: x[1], reverse=True)
-    most_common_freq = sorted_intervals[0][1] / len(absolute_intervals)
-    second_most_freq = sorted_intervals[1][1] / len(absolute_intervals)
-    
-    return float(second_most_freq / most_common_freq)
+    absolute_intervals = [abs(iv) for iv in pitch_interval(pitches)]
+    return relative_prevalence_top_two(absolute_intervals)
 
 @jsymbolic
 @pitch

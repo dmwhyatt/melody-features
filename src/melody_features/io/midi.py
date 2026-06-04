@@ -1,19 +1,15 @@
 import logging
 import os
-import warnings
 
 import pretty_midi
 import mido
 from mido.midifiles.meta import KeySignatureError
 
 from ..algorithms.meter_estimation import estimate_meter, meter_to_time_signature
+from ..core.representations import build_midi_sequence_string
+from ..utils.warnings import suppress_common_melody_warnings
 
-# Suppress warnings from external libraries
-warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
-warnings.filterwarnings(
-    "ignore", category=UserWarning, message=".*pkg_resources is deprecated.*"
-)
+suppress_common_melody_warnings()
 
 
 def import_midi(midi_file: str) -> dict:
@@ -57,13 +53,7 @@ def import_midi(midi_file: str) -> dict:
         starts = [note.start for note in melody_track.notes]
         ends = [note.end for note in melody_track.notes]
 
-        # Create MIDI sequence string
-        midi_sequence = "Note(" + "Note(".join(
-            [
-                f"pitch={p}, start={s}, end={e})"
-                for p, s, e in zip(pitches, starts, ends)
-            ]
-        )
+        midi_sequence = build_midi_sequence_string(pitches, starts, ends)
 
         tempo = extract_tempo_from_midi(midi_data)
         tempo_changes = extract_tempo_changes_from_midi(midi_data)

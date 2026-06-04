@@ -1,7 +1,10 @@
 """Invocation helpers for decorated melodic feature callables."""
 
 import inspect
+import logging
 from typing import Any, Callable, Dict, Optional
+
+logger = logging.getLogger("melody_features")
 
 
 def invoke_feature(
@@ -45,6 +48,7 @@ def collect_feature_values(
     *,
     default_max_ngram_order: int,
     tuple_suffix: Optional[str] = None,
+    numeric_tuple_only: bool = False,
     **extra: Any,
 ) -> Dict[str, Any]:
     """Compute feature functions with shared melody argument dispatch."""
@@ -59,12 +63,17 @@ def collect_feature_values(
                 **extra,
             )
             if tuple_suffix and isinstance(result, tuple) and len(result) == 2:
-                features[f"{name}_mean"] = result[0]
-                features[f"{name}_{tuple_suffix}"] = result[1]
+                if numeric_tuple_only and not all(
+                    isinstance(x, (int, float)) for x in result
+                ):
+                    features[name] = result
+                else:
+                    features[f"{name}_mean"] = result[0]
+                    features[f"{name}_{tuple_suffix}"] = result[1]
             else:
                 features[name] = result
         except Exception as e:
-            print(f"Warning: Could not compute {name}: {e}")
+            logger.warning("Could not compute %s: %s", name, e)
             features[name] = None
 
     return features
