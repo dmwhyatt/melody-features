@@ -13,7 +13,6 @@ FROM python:3.12.11-bookworm
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt
-RUN pip install jupyter
 
 COPY . .
 RUN pip install -e .
