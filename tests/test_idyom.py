@@ -522,7 +522,7 @@ class TestKeyEstimationStrategies:
         """Test always_infer strategy estimates key even when file has key signature."""
         from melody_features.features import create_temp_midi_with_key_signature
         from melody_features.import_mid import import_midi
-        from melody_features.representations import Melody
+        from melody_features.core.representations import Melody
         from melody_features.algorithms import compute_tonality_vector
         from mido import MidiFile
 

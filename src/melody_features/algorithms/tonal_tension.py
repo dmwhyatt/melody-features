@@ -44,8 +44,8 @@ from .pitch_spelling import (
     get_time_units_from_note_array,
     estimate_spelling,
 )
-from .algorithms import compute_tonality_vector
-from .representations import Melody
+from .common import compute_tonality_vector
+from ..core.representations import Melody
 
 __all__ = ["estimate_tonaltension"]
 
@@ -166,7 +166,7 @@ def extract_key_signature_from_midi(midi_path):
         (fifths, mode) where mode is 1 for major, -1 for minor, or None if no key signature found
     """
     # Use the more comprehensive function from import_mid
-    from .import_mid import extract_key_signatures_from_midi
+    from ..io.midi import extract_key_signatures_from_midi
     
     key_sig_info = extract_key_signatures_from_midi(midi_path)
     

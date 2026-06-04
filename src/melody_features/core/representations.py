@@ -5,19 +5,28 @@ from MIDI sequence data.
 
 __author__ = "David Whyatt"
 import json
+from typing import Optional
+
+
+def build_midi_sequence_string(
+    pitches: list[int],
+    starts: list[float],
+    ends: list[float],
+) -> str:
+    """Build the legacy ``MIDI Sequence`` string from parallel note lists."""
+    return "Note(" + "Note(".join(
+        f"pitch={p}, start={s}, end={e})"
+        for p, s, e in zip(pitches, starts, ends)
+    )
 
 
 class Melody:
-    """Class to represent a melody from a MIDI sequence. This class is used to extract
-    information from a json file containing MIDI sequence data, formatted accordingly:
-    A note is represented as a string in the format:
-    'Note(start=0.0, end=0.25, pitch=60, velocity=100)'
-    We don't need the velocity, so we can ignore it here.
+    """Melody representation backed by parallel note lists.
 
-    Attributes:
-        pitches (list[int]): List of MIDI note pitches in order of appearance
-        starts (list[float]): List of note start times in order of appearance
-        ends (list[float]): List of note end times in order of appearance
+    Preferred input is a ``midi_data`` dict with ``pitches``, ``starts``, and
+    ``ends`` (as produced by :func:`melody_features.io.midi.import_midi`).
+    Legacy dicts that only provide ``MIDI Sequence`` are still supported via
+    string parsing.
     """
 
     def __init__(self, midi_data: dict, tempo: float = None):
@@ -28,19 +37,113 @@ class Melody:
             tempo (float, optional): Tempo in BPM. If None, uses tempo from midi_data if available.
         """
         self._midi_data = midi_data
-        # Split on 'Note(' and remove the first empty string
-        self._midi_sequence = midi_data["MIDI Sequence"].split("Note(")[1:]
+        midi_sequence = midi_data.get("MIDI Sequence", "")
+        self._midi_sequence = (
+            midi_sequence.split("Note(")[1:] if midi_sequence else []
+        )
 
-        # Use tempo from midi_data if available, otherwise use provided tempo or default
         if tempo is not None:
             self._tempo = tempo
         elif "tempo" in midi_data:
             self._tempo = midi_data["tempo"]
         else:
-            self._tempo = 100.00  # Default fallback tempo
-            
-        # Store tempo changes if available
+            self._tempo = 100.00
+
         self._tempo_changes = midi_data.get("tempo_changes", [(0.0, self._tempo)])
+
+        self._pitches, self._starts, self._ends = self._load_note_lists(midi_data)
+
+    @staticmethod
+    def _has_structured_note_lists(midi_data: dict) -> bool:
+        """Return whether ``midi_data`` has aligned pitches/starts/ends lists."""
+        for key in ("pitches", "starts", "ends"):
+            values = midi_data.get(key)
+            if not isinstance(values, list):
+                return False
+        note_count = len(midi_data["pitches"])
+        return (
+            len(midi_data["starts"]) == note_count
+            and len(midi_data["ends"]) == note_count
+        )
+
+    @classmethod
+    def _load_note_lists(
+        cls, midi_data: dict
+    ) -> tuple[list[int], list[float], list[float]]:
+        """Load note lists from structured fields or legacy MIDI Sequence text."""
+        if cls._has_structured_note_lists(midi_data):
+            return (
+                [int(p) for p in midi_data["pitches"]],
+                [float(s) for s in midi_data["starts"]],
+                [float(e) for e in midi_data["ends"]],
+            )
+
+        midi_sequence = midi_data.get("MIDI Sequence", "")
+        if not midi_sequence:
+            return [], [], []
+
+        fragments = midi_sequence.split("Note(")[1:]
+        return cls._parse_midi_sequence(fragments)
+
+    @staticmethod
+    def _parse_midi_sequence(
+        midi_sequence: list[str],
+    ) -> tuple[list[int], list[float], list[float]]:
+        """Parse pitch, start, and end times from note string fragments."""
+        pitches: list[int] = []
+        starts: list[float] = []
+        ends: list[float] = []
+        for note_fragment in midi_sequence:
+            pitch_text = Melody._read_note_field(note_fragment, "pitch")
+            if pitch_text is not None:
+                pitches.append(int(pitch_text))
+
+            start_text = Melody._read_note_field(note_fragment, "start")
+            if start_text is not None:
+                starts.append(float(start_text))
+
+            end_text = Melody._read_note_field(note_fragment, "end")
+            if end_text is not None:
+                ends.append(float(end_text))
+        return pitches, starts, ends
+
+    @staticmethod
+    def _read_note_field(note_fragment: str, field_name: str) -> Optional[str]:
+        """Return the raw text of one ``Note(...)`` field (e.g. pitch, start, end)."""
+        marker = f"{field_name}="
+        marker_at = note_fragment.find(marker)
+        if marker_at == -1:
+            return None
+
+        value_begin = marker_at + len(marker)
+        comma_at = note_fragment.find(",", value_begin)
+        paren_at = note_fragment.find(")", value_begin)
+
+        if field_name == "start":
+            if comma_at == -1:
+                return None
+            value_stop = comma_at
+        elif field_name == "pitch":
+            if comma_at == -1:
+                value_stop = paren_at
+            elif (
+                comma_at + 1 < len(note_fragment)
+                and note_fragment[comma_at + 1] == ")"
+            ):
+                value_stop = paren_at
+            else:
+                value_stop = comma_at
+        else:
+            value_stop = comma_at if comma_at != -1 else paren_at
+
+        if value_stop == -1:
+            return None
+        return note_fragment[value_begin:value_stop].rstrip(",)")
+
+    @property
+    def midi_data(self) -> dict:
+        """Raw import dictionary backing this melody (e.g. from :func:`import_midi`)."""
+        return self._midi_data
 
     @property
     def id(self) -> str:
@@ -53,64 +156,18 @@ class Melody:
     
     @property
     def pitches(self) -> list[int]:
-        """Extract pitch values from MIDI sequence.
-
-        Returns:
-            list[int]: List of MIDI pitch values in order of appearance
-        """
-        pitches = []
-        for note in self._midi_sequence:
-            # Find pitch value between 'pitch=' and the next comma or closing parenthesis
-            pitch_start = note.find("pitch=") + 6
-            # Look for comma after pitch, but not the comma that ends the note
-            pitch_end = note.find(",", pitch_start)
-            if pitch_end == -1:  # Handle the last note which ends with ')'
-                pitch_end = note.find(")", pitch_start)
-            elif note[pitch_end + 1:pitch_end + 2] == ")":  # If comma is followed by ), it's the end of note
-                pitch_end = note.find(")", pitch_start)
-            if pitch_end != -1:  # Only process if we found a valid pitch
-                pitch_str = note[pitch_start:pitch_end]
-                # Clean up any trailing characters
-                pitch_str = pitch_str.rstrip(",)")
-                pitch = int(pitch_str)
-                pitches.append(pitch)
-        return pitches
+        """List of MIDI note pitches in order of appearance."""
+        return self._pitches
 
     @property
     def starts(self) -> list[float]:
-        """Extract start times from MIDI sequence.
-
-        Returns:
-            list[float]: List of MIDI note start times in order of appearance
-        """
-        starts = []
-        for note in self._midi_sequence:
-            # Find start time between 'start=' and the next comma
-            start_start = note.find("start=") + 6
-            start_end = note.find(",", start_start)
-            if start_end != -1:  # Only process if we found a valid start time
-                start = float(note[start_start:start_end])
-                starts.append(start)
-        return starts
+        """List of MIDI note start times in order of appearance."""
+        return self._starts
 
     @property
     def ends(self) -> list[float]:
-        """Extract end times from MIDI sequence.
-
-        Returns:
-            list[float]: List of MIDI note end times in order of appearance
-        """
-        ends = []
-        for note in self._midi_sequence:
-            # Find end time between 'end=' and the next comma or closing parenthesis
-            end_start = note.find("end=") + 4
-            end_end = note.find(",", end_start)
-            if end_end == -1:  # Handle the last note which ends with ')'
-                end_end = note.find(")", end_start)
-            if end_end != -1:  # Only process if we found a valid end time
-                end = float(note[end_start:end_end])
-                ends.append(end)
-        return ends
+        """List of MIDI note end times in order of appearance."""
+        return self._ends
 
     @property
     def tempo(self) -> float:

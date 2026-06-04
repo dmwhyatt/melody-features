@@ -32,7 +32,7 @@ of New Music Research, 35(2):121.
 import numpy as np
 from collections import namedtuple
 from typing import List
-from .representations import Melody
+from ..core.representations import Melody
 
 # from partitura.musicanalysis.utils import prepare_notearray
 
@@ -48,6 +48,16 @@ UND_CHROMA = np.array([0, 2, 3, 5, 7, 8, 10], dtype=int)
 ALTER = np.array(["n", "#", "b"])
 
 
+def _is_melody_like(note_info) -> bool:
+    """Return whether ``note_info`` exposes the Melody note-list interface."""
+    return (
+        hasattr(note_info, "pitches")
+        and hasattr(note_info, "starts")
+        and hasattr(note_info, "ends")
+        and not isinstance(note_info, np.ndarray)
+    )
+
+
 def ensure_notearray(note_info):
     """Return a structured note array with required fields.
 
@@ -56,8 +66,8 @@ def ensure_notearray(note_info):
     Raises ValueError/TypeError if the input is not supported or missing
     required fields.
     """
-    # Convert Melody directly
-    if isinstance(note_info, Melody):
+    # Convert Melody directly (duck-type so reload-safe across compat shims)
+    if isinstance(note_info, Melody) or _is_melody_like(note_info):
         return melody_to_note_array(note_info)
 
     # Pass through structured numpy arrays that have the needed fields

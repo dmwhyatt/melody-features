@@ -3,7 +3,7 @@ __author__ = "David Whyatt"
 # I didn't implement this before, but Mark has a good implementation in
 # AMADS, see https://github.com/music-computing/amads
 
-from melody_features.representations import Melody
+from melody_features.core.representations import Melody
 
 
 class HuronContour:

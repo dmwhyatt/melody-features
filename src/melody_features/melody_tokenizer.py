@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Tuple
 
 from melody_features.ngram_counter import NGramCounter
-from melody_features.representations import Melody
+from melody_features.core.representations import Melody
 
 
 class MType:
@@ -342,18 +342,19 @@ class FantasticTokenizer(MelodyTokenizer):
                 adjusted_starts = [s - start_time for s in current_phrase_starts]
                 adjusted_ends = [e - start_time for e in current_phrase_ends]
 
-                # Create MIDI sequence string
-                midi_seq = ", ".join(
-                    f"Note(start={s:.6f}, end={e:.6f}, pitch={p}, velocity=90)"
-                    for p, s, e in zip(
-                        current_phrase_pitches.copy(), adjusted_starts, adjusted_ends
-                    )
-                )
+                phrase_pitches = current_phrase_pitches.copy()
+                midi_data = {
+                    "pitches": phrase_pitches,
+                    "starts": adjusted_starts,
+                    "ends": adjusted_ends,
+                    "MIDI Sequence": ", ".join(
+                        f"Note(start={s:.6f}, end={e:.6f}, pitch={p}, velocity=90)"
+                        for p, s, e in zip(
+                            phrase_pitches, adjusted_starts, adjusted_ends
+                        )
+                    ),
+                }
 
-                # Create dictionary with MIDI sequence
-                midi_data = {"MIDI Sequence": midi_seq}
-
-                # Create new Melody object
                 phrases.append(Melody(midi_data, tempo=melody.tempo))
 
                 # Reset current phrase
@@ -372,18 +373,18 @@ class FantasticTokenizer(MelodyTokenizer):
             adjusted_starts = [s - start_time for s in current_phrase_starts]
             adjusted_ends = [e - start_time for e in current_phrase_ends]
 
-            # Create MIDI sequence string
-            midi_seq = ", ".join(
-                f"Note(start={s:.6f}, end={e:.6f}, pitch={p}, velocity=90)"
-                for p, s, e in zip(
-                    current_phrase_pitches, adjusted_starts, adjusted_ends
-                )
-            )
+            midi_data = {
+                "pitches": current_phrase_pitches,
+                "starts": adjusted_starts,
+                "ends": adjusted_ends,
+                "MIDI Sequence": ", ".join(
+                    f"Note(start={s:.6f}, end={e:.6f}, pitch={p}, velocity=90)"
+                    for p, s, e in zip(
+                        current_phrase_pitches, adjusted_starts, adjusted_ends
+                    )
+                ),
+            }
 
-            # Create dictionary with MIDI sequence
-            midi_data = {"MIDI Sequence": midi_seq}
-
-            # Create new Melody object
             phrases.append(Melody(midi_data, tempo=melody.tempo))
 
         return phrases

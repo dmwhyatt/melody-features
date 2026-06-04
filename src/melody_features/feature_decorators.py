@@ -43,6 +43,7 @@ class FeatureType:
     ABSOLUTE = "absolute"
     TIMING = "timing"
     LEXICAL_DIVERSITY = "lexical_diversity"
+    CORPUS = "corpus"
     EXPECTATION = "expectation"
     COMPLEXITY = "complexity"
 
@@ -235,6 +236,7 @@ metre = feature_type(FeatureType.METRE)
 absolute = feature_type(FeatureType.ABSOLUTE)
 timing = feature_type(FeatureType.TIMING)
 lexical_diversity = feature_type(FeatureType.LEXICAL_DIVERSITY)
+corpus = feature_type(FeatureType.CORPUS)
 expectation = feature_type(FeatureType.EXPECTATION)
 complexity = feature_type(FeatureType.COMPLEXITY)
 

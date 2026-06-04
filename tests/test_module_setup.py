@@ -3,6 +3,7 @@ Comprehensive test suite to verify package installation and importability.
 """
 
 import importlib
+import importlib.util
 import sys
 import tempfile
 from pathlib import Path
@@ -44,16 +45,40 @@ def test_core_imports():
         "melody_features.features",
         "melody_features.corpus",
         "melody_features.algorithms",
-        "melody_features.distributional",
+        "melody_features.algorithms.common",
+        "melody_features.algorithms.meter_estimation",
+        "melody_features.algorithms.narmour",
+        "melody_features.algorithms.pitch_spelling",
+        "melody_features.algorithms.tonal_tension",
+        "melody_features.core.representations",
+        "melody_features.utils.distributional",
+        "melody_features.utils.stats",
+        "melody_features.feature_definitions.absolute_pitch",
+        "melody_features.feature_definitions.pitch_class",
+        "melody_features.feature_definitions.pitch_interval",
+        "melody_features.feature_definitions.contour",
+        "melody_features.feature_definitions.timing",
+        "melody_features.feature_definitions.inter_onset_interval",
+        "melody_features.feature_definitions.tonality",
+        "melody_features.feature_definitions.expectation",
+        "melody_features.feature_definitions.metre",
+        "melody_features.feature_definitions.corpus",
+        "melody_features.feature_definitions.complexity",
+        "melody_features.feature_definitions.lexical_diversity",
+        "melody_features.io.midi",
+        "melody_features.idyom.config",
+        "melody_features.idyom.interface",
+        "melody_features.idyom.runners",
+        "melody_features.pipeline.config",
+        "melody_features.pipeline.loading",
+        "melody_features.pipeline.processing",
+        "melody_features.pipeline.output",
+        "melody_features.pipeline.timing",
         "melody_features.idyom_interface",
         "melody_features.import_mid",
-        "melody_features.interpolation_contour",
+        "melody_features.contour",
         "melody_features.melody_tokenizer",
         "melody_features.ngram_counter",
-        "melody_features.narmour",
-        "melody_features.representations",
-        "melody_features.stats",
-        "melody_features.step_contour",
         "melody_features.melsim_wrapper.melsim",
     ]
 
@@ -195,3 +220,33 @@ def test_environment_consistency():
     assert (
         essen_from_function == essen_from_corpus
     ), "get_corpus_path inconsistent with direct import"
+
+
+def test_refactored_package_paths_and_top_level_exports():
+    """Test new package paths and package-root feature exports."""
+    import melody_features
+    import melody_features.feature_definitions.absolute_pitch as absolute_pitch_definitions
+    import melody_features.features as features_module
+    import melody_features.pipeline.config as pipeline_config
+
+    assert melody_features.pitch_range is absolute_pitch_definitions.pitch_range
+    assert "pitch_range" in melody_features.__all__
+    assert features_module.Config is pipeline_config.Config
+    assert features_module.FantasticConfig is pipeline_config.FantasticConfig
+    assert features_module.IDyOMConfig is pipeline_config.IDyOMConfig
+
+
+def test_internal_support_modules_use_legacy_shims_without_shadowing_features():
+    """Legacy paths resolve via sys.modules; root feature names stay as callables."""
+    import inspect
+
+    import melody_features
+    from melody_features.legacy_shims import LEGACY_SHIM_TARGETS
+
+    for old_module in LEGACY_SHIM_TARGETS:
+        assert old_module in sys.modules
+
+    assert importlib.util.find_spec("melody_features.stats") is None
+    assert inspect.isfunction(melody_features.pitch_spelling)
+    assert inspect.isfunction(melody_features.tonal_tension)
+    assert not hasattr(melody_features, "Melody")

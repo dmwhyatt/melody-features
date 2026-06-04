@@ -6,7 +6,8 @@ from melody_features.features import (
     syncopicity,
     tempo_variability,
 )
-from melody_features.representations import Melody
+from melody_features.core.representations import Melody
+from tests.helpers.melody import make_melody
 
 
 def _build_melody(
@@ -18,19 +19,15 @@ def _build_melody(
     tempo_changes: Optional[list[tuple[float, float]]] = None,
     all_time_signatures: Optional[list[tuple[float, int, int]]] = None,
 ) -> Melody:
-    notes = []
-    for start, end, pitch in zip(starts, ends, pitches):
-        notes.append(f"Note(start={start}, end={end}, pitch={pitch}, velocity=100)")
-
-    midi_data: dict = {
-        "MIDI Sequence": "".join(notes),
-        "tempo": tempo,
-    }
+    midi_data = make_melody(pitches, starts, ends, tempo=tempo)
     if tempo_changes is not None:
         midi_data["tempo_changes"] = tempo_changes
     if all_time_signatures is not None:
         midi_data["time_signature_info"] = {
-            "first_time_signature": (all_time_signatures[0][1], all_time_signatures[0][2]),
+            "first_time_signature": (
+                all_time_signatures[0][1],
+                all_time_signatures[0][2],
+            ),
             "all_time_signatures": all_time_signatures,
         }
     return Melody(midi_data)

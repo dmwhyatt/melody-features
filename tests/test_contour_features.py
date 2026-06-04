@@ -5,9 +5,9 @@ from melody_features.features import (
     get_polynomial_contour_features,
     get_step_contour_features,
 )
-from melody_features.interpolation_contour import InterpolationContour
-from melody_features.representations import Melody
-from melody_features.step_contour import StepContour
+from melody_features.contour import InterpolationContour, StepContour
+from melody_features.core.representations import Melody
+from tests.helpers.melody import make_melody
 
 
 def test_interpolation_contour_defaults_to_amads_method():
@@ -55,11 +55,8 @@ def test_get_step_contour_features_returns_three_values():
 
 
 def _build_melody(starts: list[float], pitches: list[int]) -> Melody:
-    notes = []
-    for s, p in zip(starts, pitches):
-        e = s + 1.0
-        notes.append(f"Note(start={s}, end={e}, pitch={p}, velocity=100)")
-    return Melody({"MIDI Sequence": "".join(notes), "tempo": 120.0})
+    ends = [s + 1.0 for s in starts]
+    return Melody(make_melody(pitches, starts, ends))
 
 
 def test_polynomial_contour_coefficients_match_fantastic_reference_examples():

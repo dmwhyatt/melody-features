@@ -76,6 +76,22 @@ By default, this function will produce a Pandas DataFrame containing the tabulat
 
 This function can be customised in a number of ways, please see `notebooks/example.ipynb` for a detailed breakdown.
 
+## Loading melodies and computing individual features
+
+Besides the batch pipeline, you can load a `Melody` and call feature functions from the package root. Use `list_available_features()` to browse the full catalogue.
+
+```python
+from melody_features import pitch_range
+from melody_features.corpus import get_corpus_files
+from melody_features.io.midi import load_midi
+
+midi_path = get_corpus_files("essen", max_files=1)[0]
+melody = load_midi(str(midi_path))
+print(pitch_range(melody.pitches))
+```
+
+Some features (FANTASTIC corpus statistics, IDyOM) need extra configuration or reference corpora; it is easiest to use `get_all_features` with `Config` when you need those.
+
 ## Melsim
 
 Melsim is an R package for computing the similarity between two or more melodies. It is currently under development by Seb Silas and Klaus Frieler (https://github.com/sebsilas/melsim)

@@ -11,7 +11,7 @@ using various synthetic and real MIDI examples.
 
 import pytest
 
-from melody_features.meter_estimation import (
+from melody_features.algorithms.meter_estimation import (
     estimate_meter,
     estimate_meter_simple,
     estimate_meter_optimal,

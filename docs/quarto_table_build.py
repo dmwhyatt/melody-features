@@ -35,10 +35,12 @@ src_dir = script_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 from melody_features import features as features_module
-from melody_features.step_contour import StepContour
-from melody_features.interpolation_contour import InterpolationContour
-from melody_features.polynomial_contour import PolynomialContour
-from melody_features.huron_contour import HuronContour
+from melody_features.contour import (
+    HuronContour,
+    InterpolationContour,
+    PolynomialContour,
+    StepContour,
+)
 from melody_features.ngram_counter import NGramCounter
 
 
@@ -618,6 +620,7 @@ def _get_feature_category(obj, domain: str = None, feature_name: str = None) -> 
         'metre': 'Metre',
         'expectation': 'Expectation',
         'lexical_diversity': 'Lexical Diversity',
+        'corpus': 'Corpus',
         'mtype': 'Lexical Diversity',
         'pitch_class': 'Pitch Class',  
         'absolute': 'Absolute Pitch',

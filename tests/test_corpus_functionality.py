@@ -22,42 +22,8 @@ from melody_features.corpus import (
     get_corpus_files,
     list_available_corpora
 )
-from melody_features.representations import Melody
-
-
-def create_test_midi_file(pitches, starts, ends, tempo=120, filepath=None):
-    """Create a temporary MIDI file for testing."""
-    import mido
-
-    # Create a new MIDI file
-    mid = mido.MidiFile()
-    track = mido.MidiTrack()
-    mid.tracks.append(track)
-
-    track.append(mido.MetaMessage('set_tempo', tempo=mido.bpm2tempo(tempo)))
-
-    track.append(mido.MetaMessage('time_signature', numerator=4, denominator=4))
-
-    ticks_per_second = 480 * (tempo / 60)
-
-    current_time = 0
-    for i, (pitch, start, end) in enumerate(zip(pitches, starts, ends)):
-        # Calculate delta time to note start
-        start_ticks = int(start * ticks_per_second)
-        delta_time = start_ticks - current_time
-
-        track.append(mido.Message('note_on', channel=0, note=pitch, velocity=64, time=delta_time))
-
-        duration_ticks = int((end - start) * ticks_per_second)
-        track.append(mido.Message('note_off', channel=0, note=pitch, velocity=64, time=duration_ticks))
-
-        current_time = start_ticks + duration_ticks
-
-    if filepath:
-        mid.save(filepath)
-        return filepath
-    else:
-        return mid
+from melody_features.core.representations import Melody
+from tests.helpers.midi import create_test_midi_file
 
 
 class TestNgramProcessing:
