@@ -645,9 +645,9 @@ def rhythm_abruptness(melody: Melody) -> float:
 def asym_total(melody: Melody) -> float:
     """The total vertical mirror asymmetry of a melody.
 
-    Samples the sustained pitch at 0.0001 beat intervals, compares each time point
-    to its temporally mirrored counterpart, and returns the mean absolute pitch
-    difference across the stimulus.
+    Mirrors the MUST ``asymTotal`` implementation: build a sustained-pitch time
+    series, compare each sample to its temporally reversed counterpart, and
+    return the mean absolute pitch difference.
 
     Parameters
     ----------
@@ -658,6 +658,17 @@ def asym_total(melody: Melody) -> float:
     -------
     float
         Total asymmetry in semitones (time-averaged)
+
+    Note
+    ----
+    In the MUST/MIDI Toolbox notematrix, onset (column 1) and duration
+    (column 2) are in beats. The reference MATLAB code samples with
+    ``for t = 0:0.0001:T`` using that same unit. There is no separate
+    millisecond grid.
+
+    This implementation converts ``Melody`` timing to beats and uses the
+    same 0.0001 beat step. The real-time length of one step depends on tempo 
+    (e.g. 0.1 ms only at 60 BPM, 0.05 ms at 120 BPM).
     """
     return must_algorithms.asym_total(melody)
 
@@ -668,8 +679,8 @@ def asym_total(melody: Melody) -> float:
 def asym_index(melody: Melody) -> float:
     """The vertical mirror asymmetry index of a melody.
 
-    The proportion of sampled time points (0.0001 beat intervals) at which the
-    pitch differs from its temporally mirrored counterpart.
+    Mirrors the MUST ``asymIndex`` implementation: the proportion of sampled
+    time points at which pitch differs from its temporally mirrored counterpart.
 
     Parameters
     ----------
@@ -680,6 +691,17 @@ def asym_index(melody: Melody) -> float:
     -------
     float
         Asymmetry index in the range [0, 1]
+
+    Note
+    ----
+    In the MUST/MIDI Toolbox notematrix, onset (column 1) and duration
+    (column 2) are in beats. The reference MATLAB code samples with
+    ``for t = 0:0.0001:T`` using that same unit. There is no separate
+    millisecond grid.
+
+    This implementation converts ``Melody`` timing to beats and uses the
+    same 0.0001 beat step. The real-time length of one step depends on tempo 
+    (e.g. 0.1 ms only at 60 BPM, 0.05 ms at 120 BPM).
     """
     return must_algorithms.asym_index(melody)
 
