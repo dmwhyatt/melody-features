@@ -20,14 +20,82 @@ def build_midi_sequence_string(
     )
 
 
+def build_midi_data(
+    pitches: list[int],
+    starts: list[float],
+    ends: list[float],
+    *,
+    melody_id: str = "",
+    tempo: float = 100.0,
+    time_signature: str = "4/4",
+    tempo_changes: Optional[list[tuple[float, float]]] = None,
+) -> dict:
+    """Build a ``midi_data`` dict from parallel note lists.
+
+    This is the structured input expected by :class:`Melody` and matches the
+    shape returned by :func:`melody_features.io.midi.import_midi`.
+    """
+    pitch_list = [int(p) for p in pitches]
+    start_list = [float(s) for s in starts]
+    end_list = [float(e) for e in ends]
+    note_count = len(pitch_list)
+    if len(start_list) != note_count or len(end_list) != note_count:
+        raise ValueError(
+            "pitches, starts, and ends must have the same length "
+            f"(got {note_count}, {len(start_list)}, {len(end_list)})"
+        )
+
+    if tempo_changes is None:
+        tempo_changes = [(0.0, tempo)]
+
+    return {
+        "ID": melody_id,
+        "pitches": pitch_list,
+        "starts": start_list,
+        "ends": end_list,
+        "MIDI Sequence": build_midi_sequence_string(
+            pitch_list, start_list, end_list
+        ),
+        "tempo": tempo,
+        "tempo_changes": tempo_changes,
+        "time_signature": time_signature,
+        "total_duration": max(end_list) if end_list else 0.0,
+    }
+
+
 class Melody:
     """Melody representation backed by parallel note lists.
 
-    Preferred input is a ``midi_data`` dict with ``pitches``, ``starts``, and
-    ``ends`` (as produced by :func:`melody_features.io.midi.import_midi`).
-    Legacy dicts that only provide ``MIDI Sequence`` are still supported via
-    string parsing.
+    Construct directly with :meth:`from_notes`, or pass a ``midi_data`` dict
+    with ``pitches``, ``starts``, and ``ends`` (as produced by
+    :func:`melody_features.io.midi.import_midi`). Legacy dicts that only
+    provide ``MIDI Sequence`` are still supported via string parsing.
     """
+
+    @classmethod
+    def from_notes(
+        cls,
+        pitches: list[int],
+        starts: list[float],
+        ends: list[float],
+        *,
+        tempo: float = 100.0,
+        melody_id: str = "",
+        time_signature: str = "4/4",
+        tempo_changes: Optional[list[tuple[float, float]]] = None,
+    ) -> "Melody":
+        """Construct a melody from parallel note lists without reading MIDI."""
+        return cls(
+            build_midi_data(
+                pitches,
+                starts,
+                ends,
+                melody_id=melody_id,
+                tempo=tempo,
+                time_signature=time_signature,
+                tempo_changes=tempo_changes,
+            )
+        )
 
     def __init__(self, midi_data: dict, tempo: float = None):
         """Initialize a Melody object from MIDI sequence data.

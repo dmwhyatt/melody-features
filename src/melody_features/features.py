@@ -372,7 +372,7 @@ from .pipeline.config import (
     _setup_default_config,
     _validate_config,
 )
-from .pipeline.loading import _load_melody_data
+from .pipeline.loading import FeatureInput, _load_melody_data
 from .pipeline.output import (
     _get_category_display_name,
     log_timing_statistics,
@@ -983,7 +983,7 @@ def _compute_features_by_source(
     return computed_features
 
 def get_all_features(
-    input: Union[os.PathLike, List[os.PathLike]],
+    input: FeatureInput,
     config: Optional[Config] = None,
     log_level: int = logging.INFO,
     skip_idyom: bool = False,
@@ -995,6 +995,7 @@ def get_all_features(
     - A directory path containing MIDI files
     - A list of MIDI file paths
     - A single MIDI file path
+    - A list of :class:`~melody_features.core.representations.Melody` objects
 
     If a path to a corpus of MIDI files is provided in the Config,
     corpus statistics will be computed following FANTASTIC's n-gram document frequency
@@ -1005,8 +1006,10 @@ def get_all_features(
 
     Parameters
     ----------
-    input : Union[os.PathLike, List[os.PathLike]]
-        Path to input MIDI directory, list of MIDI file paths, or single MIDI file path
+    input : FeatureInput
+        Path to input MIDI directory, list of MIDI file paths, single MIDI file
+        path, or list of in-memory :class:`~melody_features.core.representations.Melody`
+        objects
     config : Config
         Configuration object containing corpus path, IDyOM configurations (as a dict), and FANTASTIC configuration.
         If idyom.corpus or fantastic.corpus is set, those take precedence over config.corpus for their respective methods.

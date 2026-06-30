@@ -464,6 +464,57 @@ class TestMelodyDataLoading:
                 assert "ID" in melody_data, "Should have ID"
                 assert "melody_num" in melody_data, "Should have melody_num"
 
+    def test_load_melody_data_melody_list(self):
+        """Test _load_melody_data with a list of Melody objects."""
+        melodies = [
+            Melody.from_notes([60, 62, 64], [0.0, 0.5, 1.0], [0.4, 0.9, 1.4], melody_id="a"),
+            Melody.from_notes([67, 69, 71], [0.0, 0.5, 1.0], [0.4, 0.9, 1.4], melody_id="b"),
+        ]
+
+        melody_data_list = _load_melody_data(melodies)
+
+        assert len(melody_data_list) == 2
+        assert melody_data_list[0]["ID"] == "a"
+        assert melody_data_list[1]["ID"] == "b"
+        assert melody_data_list[0]["melody_num"] == 1
+        assert melody_data_list[1]["melody_num"] == 2
+
+    def test_load_melody_data_rejects_mixed_input_list(self):
+        with tempfile.NamedTemporaryFile(suffix=".mid", delete=False) as temp_file:
+            create_test_midi_file([60], [0.0], [0.5], filepath=temp_file.name)
+            temp_path = temp_file.name
+
+        try:
+            with pytest.raises(ValueError, match="not a mix"):
+                _load_melody_data([Melody.from_notes([60], [0.0], [0.5]), temp_path])
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
+    def test_get_all_features_from_melody_list(self):
+        """Test get_all_features with in-memory Melody objects."""
+        melodies = [
+            Melody.from_notes([60, 62, 64, 65], [0.0, 0.5, 1.0, 1.5], [0.4, 0.9, 1.4, 1.9]),
+            Melody.from_notes([67, 69, 71, 72], [0.0, 0.5, 1.0, 1.5], [0.4, 0.9, 1.4, 1.9]),
+        ]
+        config = Config(
+            idyom={
+                "test": IDyOMConfig(
+                    target_viewpoints=["cpitch"],
+                    source_viewpoints=["cpint"],
+                    ppm_order=1,
+                    models=":stm",
+                )
+            },
+            fantastic=FantasticConfig(max_ngram_order=2, phrase_gap=1.5),
+        )
+
+        df = get_all_features(melodies, config=config, skip_idyom=True)
+
+        assert len(df) == 2
+        assert "melody_num" in df.columns
+        assert "melody_id" in df.columns
+
 
 class TestCorpusStatisticsIntegration:
     """Test integration of corpus statistics with feature extraction."""

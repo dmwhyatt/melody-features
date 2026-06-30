@@ -11,14 +11,38 @@ from ..io.midi import list_midi_files, load_midi
 from ..core.representations import Melody
 from ..utils.validation import _check_is_monophonic
 
+FeatureInput = Union[os.PathLike, List[os.PathLike], List[Melody]]
 
-def _load_melody_data(input: Union[os.PathLike, List[os.PathLike]]) -> List[dict]:
-    """Load and validate melody data from MIDI files or JSON.
+
+def _is_melody_list(input: object) -> bool:
+    """Return whether ``input`` is a non-empty list of :class:`Melody` objects."""
+    return isinstance(input, list) and bool(input) and all(
+        isinstance(item, Melody) for item in input
+    )
+
+
+def _finalize_melody_data_list(melody_data_list: List[dict], logger: logging.Logger) -> List[dict]:
+    """Assign ``melody_num`` and return the finalized melody data list."""
+    melody_data_list = [m for m in melody_data_list if m is not None]
+    logger.info("Processing %s melodies", len(melody_data_list))
+
+    if not melody_data_list:
+        return []
+
+    for idx, melody_data in enumerate(melody_data_list, 1):
+        melody_data["melody_num"] = idx
+
+    return melody_data_list
+
+
+def _load_melody_data(input: FeatureInput) -> List[dict]:
+    """Load and validate melody data from MIDI files, JSON, or Melody objects.
 
     Parameters
     ----------
-    input : Union[os.PathLike, List[os.PathLike]]
-        Path to input directory, JSON file, list of MIDI file paths, or single MIDI file path
+    input : FeatureInput
+        Path to input directory, JSON file, single MIDI file path, list of MIDI
+        file paths, or list of :class:`Melody` objects
 
     Returns
     -------
@@ -33,11 +57,32 @@ def _load_melody_data(input: Union[os.PathLike, List[os.PathLike]]) -> List[dict
         If input is not a valid type
     """
     logger = logging.getLogger("melody_features")
-    from multiprocessing import Pool, cpu_count
 
-    melody_data_list = []
+    melody_data_list: List[dict] = []
+
+    if _is_melody_list(input):
+        for melody in input:
+            melody_id = melody.id or "Unknown"
+            if not _check_is_monophonic(melody):
+                logger.warning("Skipping detected polyphonic melody: %s", melody_id)
+                continue
+            melody_data_list.append(dict(melody.midi_data))
+
+        if not melody_data_list:
+            return []
+
+        for idx, melody_data in enumerate(melody_data_list, 1):
+            if not melody_data.get("ID"):
+                melody_data["ID"] = f"melody_{idx}"
+
+        return _finalize_melody_data_list(melody_data_list, logger)
 
     if isinstance(input, list):
+        if any(isinstance(item, Melody) for item in input):
+            raise ValueError(
+                "Input list must contain only Melody objects or only file paths, not a mix"
+            )
+
         midi_files = []
         for file_path in input:
             if isinstance(file_path, (str, os.PathLike)):
@@ -76,20 +121,13 @@ def _load_melody_data(input: Union[os.PathLike, List[os.PathLike]]) -> List[dict
                         f"Skipping polyphonic melody from JSON: {melody_data.get('ID', 'Unknown ID')}"
                     )
 
-        melody_data_list = [m for m in melody_data_list if m is not None]
-        logger.info(f"Processing {len(melody_data_list)} melodies from JSON")
-
-        if not melody_data_list:
-            return []
-
-        for idx, melody_data in enumerate(melody_data_list, 1):
-            melody_data["melody_num"] = idx
-
-        return melody_data_list
+        return _finalize_melody_data_list(melody_data_list, logger)
 
     else:
         raise ValueError(
-            f"Input must be a directory containing MIDI files, a JSON file, a list of MIDI file paths, or a single MIDI file path. Got: {input}"
+            "Input must be a directory containing MIDI files, a JSON file, a list "
+            "of MIDI file paths, a list of Melody objects, or a single MIDI file path. "
+            f"Got: {input}"
         )
 
     for midi_file in midi_files:
@@ -103,14 +141,4 @@ def _load_melody_data(input: Union[os.PathLike, List[os.PathLike]]) -> List[dict
             logger.error(f"Error importing {midi_file}: {str(e)}")
             continue
 
-    melody_data_list = [m for m in melody_data_list if m is not None]
-    logger.info(f"Processing {len(melody_data_list)} melodies")
-
-    if not melody_data_list:
-        return []
-
-    # Assign unique melody_num to each melody (in sorted order)
-    for idx, melody_data in enumerate(melody_data_list, 1):
-        melody_data["melody_num"] = idx
-
-    return melody_data_list
+    return _finalize_melody_data_list(melody_data_list, logger)

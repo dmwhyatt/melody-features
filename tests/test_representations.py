@@ -1,6 +1,12 @@
 """Tests for Melody note loading (structured lists vs legacy strings)."""
 
-from melody_features.core.representations import Melody, build_midi_sequence_string
+import pytest
+
+from melody_features.core.representations import (
+    Melody,
+    build_midi_data,
+    build_midi_sequence_string,
+)
 from tests.helpers.melody import make_melody
 
 
@@ -25,3 +31,24 @@ def test_structured_lists_ignore_mismatched_legacy_string():
     data["MIDI Sequence"] = build_midi_sequence_string([99], [2.0], [3.0])
     melody = Melody(data)
     assert melody.pitches == [60]
+
+
+def test_from_notes_builds_melody_without_midi_file():
+    melody = Melody.from_notes(
+        pitches=[60, 62, 64],
+        starts=[0.0, 0.5, 1.0],
+        ends=[0.5, 1.0, 1.5],
+        tempo=120.0,
+        melody_id="example",
+    )
+    assert melody.pitches == [60, 62, 64]
+    assert melody.starts == [0.0, 0.5, 1.0]
+    assert melody.ends == [0.5, 1.0, 1.5]
+    assert melody.tempo == 120.0
+    assert melody.id == "example"
+    assert melody.total_duration == 1.5
+
+
+def test_build_midi_data_rejects_mismatched_lengths():
+    with pytest.raises(ValueError, match="same length"):
+        build_midi_data([60, 62], [0.0], [1.0, 2.0])

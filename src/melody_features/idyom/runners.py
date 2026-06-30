@@ -16,12 +16,25 @@ from ..feature_definitions.tonality import infer_key_from_pitches
 from ..io.midi import import_midi
 from ..core.representations import Melody
 from .config import _DEFAULT_IDYOM_CONFIGS, _resolve_idyom_corpus
+from ..pipeline.loading import FeatureInput, _is_melody_list
+
+
+def _write_melody_to_midi(melody: Melody, dest_path: str) -> None:
+    """Write one melody to a MIDI file."""
+    import pretty_midi
+
+    pm = pretty_midi.PrettyMIDI(initial_tempo=melody.tempo)
+    instrument = pretty_midi.Instrument(program=0)
+    for pitch, start, end in zip(melody.pitches, melody.starts, melody.ends):
+        instrument.notes.append(
+            pretty_midi.Note(velocity=80, pitch=pitch, start=start, end=end)
+        )
+    pm.instruments.append(instrument)
+    pm.write(dest_path)
 
 
 def _melody_idyom_input_directory(melody: Melody) -> tuple[str, list[str]]:
     """Build a one-melody MIDI directory for IDyOM. Returns (directory, paths to remove)."""
-    import pretty_midi
-
     cleanup_paths: list[str] = []
     melody_path = melody.id
     if (
@@ -38,14 +51,7 @@ def _melody_idyom_input_directory(melody: Melody) -> tuple[str, list[str]]:
     temp_dir = tempfile.mkdtemp(prefix="idyom_melody_")
     cleanup_paths.append(temp_dir)
     temp_midi = os.path.join(temp_dir, "melody.mid")
-    pm = pretty_midi.PrettyMIDI(initial_tempo=melody.tempo)
-    instrument = pretty_midi.Instrument(program=0)
-    for pitch, start, end in zip(melody.pitches, melody.starts, melody.ends):
-        instrument.notes.append(
-            pretty_midi.Note(velocity=80, pitch=pitch, start=start, end=end)
-        )
-    pm.instruments.append(instrument)
-    pm.write(temp_midi)
+    _write_melody_to_midi(melody, temp_midi)
     return temp_dir, cleanup_paths
 
 def _idyom_mean_information_content(
@@ -416,14 +422,15 @@ def create_temp_midi_with_key_signature(
     return temp_dir
 
 def _run_idyom_analysis(
-    input: Union[os.PathLike, List[os.PathLike]], config: Config
+    input: FeatureInput, config: Config
 ) -> Dict[str, dict]:
     """Run IDyOM analysis for all configurations.
 
     Parameters
     ----------
-    input : Union[os.PathLike, List[os.PathLike]]
-        Path to input directory, list of MIDI file paths, or single MIDI file path
+    input : FeatureInput
+        Path to input directory, list of MIDI file paths, list of Melody
+        objects, or single MIDI file path
     config : Config
         Configuration object containing IDyOM settings
 
@@ -436,7 +443,18 @@ def _run_idyom_analysis(
     idyom_results_dict = {}
     from melody_features import features as features_module
 
-    if isinstance(input, list):
+    temp_dir = None
+    if _is_melody_list(input):
+        temp_dir = tempfile.mkdtemp(prefix="idyom_input_")
+        try:
+            for i, melody in enumerate(input):
+                temp_file_path = os.path.join(temp_dir, f"file_{i+1:04d}.mid")
+                _write_melody_to_midi(melody, temp_file_path)
+            idyom_input_path = temp_dir
+        except Exception as e:
+            logger.error(f"Error creating temporary directory for IDyOM: {e}")
+            return {}
+    elif isinstance(input, list):
         temp_dir = tempfile.mkdtemp(prefix="idyom_input_")
         try:
             for i, file_path in enumerate(input):
@@ -490,7 +508,7 @@ def _run_idyom_analysis(
             idyom_results_dict[idyom_name] = {}
 
     # Clean up temporary directory if it was created
-    if isinstance(input, list) or (isinstance(input, (str, os.PathLike)) and str(input).lower().endswith(('.mid', '.midi'))):
+    if temp_dir is not None:
         try:
             shutil.rmtree(temp_dir)
         except Exception as e:
