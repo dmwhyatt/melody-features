@@ -13,6 +13,13 @@ if TYPE_CHECKING:
     from ..core.representations import Melody
 
 
+def _zero_for_empty_melody(melody: Melody) -> float | None:
+    """Return 0.0 for empty melodies, matching package convention."""
+    if len(melody.pitches) == 0:
+        return 0.0
+    return None
+
+
 def must_shannon_entropy(distribution: np.ndarray) -> float:
     """Shannon entropy using natural log, matching MUST ``shentropy.m``."""
     weights = np.asarray(distribution, dtype=float).ravel()
@@ -52,7 +59,6 @@ def _order_sign(a: int, b: int, c: int) -> int:
         if b == c:
             return 12
         return 13
-    return 1
 
 
 def _duration_accent(durations: np.ndarray, tau: float = 0.5, accent_index: float = 2.0) -> np.ndarray:
@@ -85,6 +91,8 @@ def _durations_beats(melody: Melody) -> np.ndarray:
 
 
 def _pitch_distribution(pitches: np.ndarray) -> np.ndarray:
+    if pitches.size == 0:
+        return np.array([0.0])
     _, counts = np.unique(pitches.astype(int), return_counts=True)
     return counts.astype(float) / counts.sum()
 
@@ -178,6 +186,8 @@ def _local_unbalance(
     onsets = _onsets_beats(melody)
     durations = _durations_beats(melody)
     note_count = len(onsets)
+    if note_count == 0:
+        return np.array([1.0]), np.array([0.0])
     total_time = onsets[-1] + durations[-1] - onsets[0]
     if note_count <= 1 or total_time <= 0:
         return np.array([1.0]), np.array([0.0])
@@ -211,6 +221,8 @@ def _onset_window_indices(onsets_sec: np.ndarray, min_time: float, max_time: flo
 
 
 def bisect_unbalance(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     onsets = _onsets_beats(melody)
     durations = _durations_beats(melody)
     note_count = len(onsets)
@@ -221,6 +233,8 @@ def bisect_unbalance(melody: Melody) -> float:
 
 
 def center_mass_offset(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     onsets = _onsets_beats(melody)
     durations = _durations_beats(melody)
     total_time = onsets[-1] + durations[-1] - onsets[0]
@@ -235,6 +249,8 @@ def event_heterogeneity(
     notes_per_window: int = 2,
     step_fraction: float = 0.5,
 ) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     densities, center_weights = _local_unbalance(
         melody,
         notes_per_window=notes_per_window,
@@ -247,6 +263,8 @@ def event_heterogeneity(
 
 
 def av_abs_interval(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     pitches = _pitches(melody)
     if len(pitches) < 2:
         return 0.0
@@ -255,6 +273,8 @@ def av_abs_interval(melody: Melody) -> float:
 
 
 def mel_abruptness(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     pitches = _pitches(melody)
     onsets = _onsets_sec(melody)
     durations = _durations_sec(melody)
@@ -274,6 +294,8 @@ def mel_abruptness(melody: Melody) -> float:
 
 
 def dur_abruptness(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     pitches = _pitches(melody)
     durations = _durations_sec(melody)
     if len(pitches) < 3:
@@ -289,6 +311,8 @@ def dur_abruptness(melody: Melody) -> float:
 
 
 def rhythm_abruptness(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     accented = _duration_accent(_durations_beats(melody))
     ratios: list[float] = []
     for index in range(len(accented) - 1):
@@ -300,6 +324,8 @@ def rhythm_abruptness(melody: Melody) -> float:
 
 
 def _mirror_pitch_series(melody: Melody) -> np.ndarray:
+    if len(melody.pitches) == 0:
+        return np.array([], dtype=float)
     pitches = _pitches(melody)
     onsets = _onsets_beats(melody) - _onsets_beats(melody)[0]
     durations = _durations_beats(melody)
@@ -317,6 +343,8 @@ def _mirror_pitch_series(melody: Melody) -> np.ndarray:
 
 
 def asym_total(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     series = _mirror_pitch_series(melody)
     if series.size == 0:
         return 0.0
@@ -325,6 +353,8 @@ def asym_total(melody: Melody) -> float:
 
 
 def asym_index(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     series = _mirror_pitch_series(melody)
     if series.size == 0:
         return 0.0
@@ -333,6 +363,8 @@ def asym_index(melody: Melody) -> float:
 
 
 def event_density(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     onsets = _onsets_sec(melody)
     durations = _durations_sec(melody)
     note_count = len(melody.pitches)
@@ -346,6 +378,8 @@ def av_local_p1_entropy(
     window_length: float = 1.0,
     window_step: float = 0.25,
 ) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     pitches = _pitches(melody)
     onsets = _onsets_sec(melody)
     durations = _durations_sec(melody)
@@ -361,38 +395,56 @@ def av_local_p1_entropy(
 
 
 def p1_entropy(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     return must_shannon_entropy(_pitch_distribution(_pitches(melody)))
 
 
 def p2_entropy(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     return must_shannon_entropy(_pitch2_distribution(_pitches(melody)))
 
 
 def p3_entropy(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     return must_shannon_entropy(_pitch3_distribution(_pitches(melody)))
 
 
 def i1_entropy(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     return must_shannon_entropy(_interval_distribution(_pitches(melody)))
 
 
 def i2_entropy(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     return must_shannon_entropy(_interval2_distribution(_pitches(melody)))
 
 
 def d1_entropy(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     return must_shannon_entropy(_duration_distribution(melody))
 
 
 def d2_entropy(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     return must_shannon_entropy(_duration2_distribution(melody))
 
 
 def d3_entropy(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     return must_shannon_entropy(_duration3_distribution(melody))
 
 
 def wp_entropy(melody: Melody) -> float:
+    if (empty := _zero_for_empty_melody(melody)) is not None:
+        return empty
     pitches = _pitches(melody).astype(int)
     if len(pitches) < 3:
         return 0.0

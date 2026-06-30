@@ -1,13 +1,15 @@
 """Validate MUST feature implementations against reference values."""
 
 import csv
+from pathlib import Path
 
 import pytest
 
 from melody_features.core.representations import Melody
 from melody_features.features import get_must_features
-from melody_features.import_mid import import_midi
+from melody_features.io.midi import import_midi
 
+REFERENCE_CSV = Path(__file__).parent / "must_reference_values.csv"
 
 MUST_FEATURE_MAPPING = {
     "bisectUnbalance": "bisect_unbalance",
@@ -36,7 +38,7 @@ MUST_FEATURE_MAPPING = {
 def load_reference_values() -> dict[str, dict[str, float]]:
     """Load reference MUST values from CSV."""
     reference_data: dict[str, dict[str, float]] = {}
-    with open("tests/must_reference_values.csv", encoding="utf-8") as handle:
+    with open(REFERENCE_CSV, encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         for row in reader:
             midi_path = row["midi_path"]
@@ -58,6 +60,12 @@ def reference_data():
     return load_reference_values()
 
 
+def test_reference_csv_columns_match_mapping():
+    with open(REFERENCE_CSV, encoding="utf-8") as handle:
+        fieldnames = set(csv.DictReader(handle).fieldnames or [])
+    assert set(MUST_FEATURE_MAPPING.keys()).issubset(fieldnames)
+
+
 def test_all_must_features_are_mapped():
     """Every CSV feature column has a corresponding implementation."""
     assert set(MUST_FEATURE_MAPPING.values())
@@ -70,6 +78,9 @@ def test_must_features_match_reference(midi_path: str, reference_data):
     melody = create_melody_from_file(midi_path)
     computed = get_must_features(melody)
     expected_row = reference_data[midi_path]
+
+    assert set(computed.keys()) == set(MUST_FEATURE_MAPPING.values())
+    assert len(computed) == 20
 
     failures = []
     for csv_name, func_name in MUST_FEATURE_MAPPING.items():

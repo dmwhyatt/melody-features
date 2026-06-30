@@ -645,7 +645,7 @@ def rhythm_abruptness(melody: Melody) -> float:
 def asym_total(melody: Melody) -> float:
     """The total vertical mirror asymmetry of a melody.
 
-    Samples the sustained pitch at 0.1 ms resolution, compares each time point
+    Samples the sustained pitch at 0.0001 beat intervals, compares each time point
     to its temporally mirrored counterpart, and returns the mean absolute pitch
     difference across the stimulus.
 
@@ -668,7 +668,7 @@ def asym_total(melody: Melody) -> float:
 def asym_index(melody: Melody) -> float:
     """The vertical mirror asymmetry index of a melody.
 
-    The proportion of sampled time points (0.1 ms resolution) at which the
+    The proportion of sampled time points (0.0001 beat intervals) at which the
     pitch differs from its temporally mirrored counterpart.
 
     Parameters

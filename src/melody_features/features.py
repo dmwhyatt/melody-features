@@ -961,7 +961,7 @@ def get_novel_features(melody: Melody) -> Dict:
     Dict
         Dictionary containing all novel features
     """
-    return _compute_features_by_source(melody, "custom")
+    return _compute_features_by_source(melody, "novel")
 
 def _compute_features_by_source(
     melody: Melody,

@@ -103,6 +103,12 @@ def test_features_module_facade_uses_registry_without_changing_discovery_surface
     assert source_features["ambitus"] is features_module.pitch_range
 
 
+def test_get_novel_features_uses_novel_source_label():
+    novel_features = features_module._get_features_by_source("novel")
+    assert novel_features
+    assert all("novel" in func._feature_sources for func in novel_features.values())
+
+
 class _Melody:
     pitches = [60, 62]
     starts = [0.0, 1.0]
