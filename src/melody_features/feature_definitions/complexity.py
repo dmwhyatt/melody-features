@@ -3,7 +3,8 @@
 import numpy as np
 
 from ..algorithms import compute_tonality_vector
-from ..feature_decorators import both, complexity, fantastic, midi_toolbox, novel, pitch, rhythm
+from ..algorithms import must as must_algorithms
+from ..feature_decorators import both, complexity, fantastic, midi_toolbox, must, novel, pitch, rhythm
 from ..feature_utils import _get_durations, mean_and_std
 from ..algorithms.meter_estimation import duration_accent as _duration_accent
 from .metre import _meter_accent_mean
@@ -26,6 +27,26 @@ __all__ = [
     "complebm_pitch",
     "complebm_rhythm",
     "complebm_optimal",
+    "bisect_unbalance",
+    "center_mass_offset",
+    "event_heterogeneity",
+    "av_abs_interval",
+    "mel_abruptness",
+    "dur_abruptness",
+    "rhythm_abruptness",
+    "asym_total",
+    "asym_index",
+    "event_density",
+    "av_local_p1_entropy",
+    "p1_entropy",
+    "p2_entropy",
+    "p3_entropy",
+    "i1_entropy",
+    "i2_entropy",
+    "d1_entropy",
+    "d2_entropy",
+    "d3_entropy",
+    "wp_entropy",
 ]
 
 
@@ -445,3 +466,513 @@ def complebm_optimal(melody: Melody) -> float:
     Eerola & North (2000)
     """
     return _complebm(melody, "o")
+
+
+@must
+@complexity
+@rhythm
+def bisect_unbalance(melody: Melody) -> float:
+    """The bisect unbalance of a melody's temporal distribution of note onsets.
+
+    Measures equilibrium between the first and second halves of the stimulus.
+    Computed as ``1 - 4 * f1 * f2``, where ``f1`` and ``f2`` are the proportions
+    of note onsets falling before and after the temporal midpoint, respectively.
+    Values near 1 indicate balanced onset placement; lower values indicate
+    concentration of events in one half.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Bisect unbalance score
+    """
+    return must_algorithms.bisect_unbalance(melody)
+
+
+@must
+@complexity
+@rhythm
+def center_mass_offset(melody: Melody) -> float:
+    """The center of mass offset of a melody's note-onset distribution.
+
+    The absolute distance between the temporal center of mass (mean onset time,
+    expressed as a proportion of total stimulus duration) and the geometric
+    center (0.5). Values near 0 indicate a centrally concentrated onset
+    distribution.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Center of mass offset
+    """
+    return must_algorithms.center_mass_offset(melody)
+
+
+@must
+@complexity
+@rhythm
+def event_heterogeneity(melody: Melody) -> float:
+    """The event heterogeneity of a melody's temporal distribution of onsets.
+
+    First computes a local unbalance curve using sliding windows sized to
+    contain two note events (stepped at half the window length), then returns
+    the distance-weighted mean squared deviation of that curve from unity.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Event heterogeneity score
+    """
+    return must_algorithms.event_heterogeneity(melody)
+
+
+@must
+@complexity
+@pitch
+def av_abs_interval(melody: Melody) -> float:
+    """The mean log-transformed absolute melodic interval size.
+
+    Computed as the mean of ``log(abs(interval) + 1)`` over consecutive pitch
+    pairs, where intervals are measured in semitones.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Average log absolute interval
+    """
+    return must_algorithms.av_abs_interval(melody)
+
+
+@must
+@complexity
+@pitch
+def mel_abruptness(melody: Melody) -> float:
+    """The melodic abruptness of pitch-direction changes in a melody.
+
+    For each interior note where the pitch contour changes direction, accumulates
+    the natural logarithm of the mean absolute interval size at that turning
+    point, then normalizes by total stimulus duration in seconds.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Melodic abruptness score
+    """
+    return must_algorithms.mel_abruptness(melody)
+
+
+@must
+@complexity
+@rhythm
+def dur_abruptness(melody: Melody) -> float:
+    """The durational abruptness of pitch-direction changes in a melody.
+
+    The proportion of total note duration (in seconds) accounted for by notes
+    at which the pitch contour changes direction.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Durational abruptness score
+    """
+    return must_algorithms.dur_abruptness(melody)
+
+
+@must
+@complexity
+@rhythm
+def rhythm_abruptness(melody: Melody) -> float:
+    """The rhythmic abruptness of consecutive note durations.
+
+    The mean ratio of consecutive beat durations after applying Parncutt (1994)
+    duration accent, taking the larger-over-smaller ratio at each successive
+    pair of notes.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Rhythmic abruptness score
+
+    Note
+    -----
+    Duration accent follows the MIDI Toolbox ``duraccent`` defaults (``tau=0.5``,
+    ``accent_index=2.0``).
+
+    Citation
+    --------
+    Parncutt (1994)
+    """
+    return must_algorithms.rhythm_abruptness(melody)
+
+
+@must
+@complexity
+@both
+def asym_total(melody: Melody) -> float:
+    """The total vertical mirror asymmetry of a melody.
+
+    Samples the sustained pitch at 0.1 ms resolution, compares each time point
+    to its temporally mirrored counterpart, and returns the mean absolute pitch
+    difference across the stimulus.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Total asymmetry in semitones (time-averaged)
+    """
+    return must_algorithms.asym_total(melody)
+
+
+@must
+@complexity
+@both
+def asym_index(melody: Melody) -> float:
+    """The vertical mirror asymmetry index of a melody.
+
+    The proportion of sampled time points (0.1 ms resolution) at which the
+    pitch differs from its temporally mirrored counterpart.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Asymmetry index in the range [0, 1]
+    """
+    return must_algorithms.asym_index(melody)
+
+
+@must
+@complexity
+@rhythm
+def event_density(melody: Melody) -> float:
+    """The event density of a melody.
+
+    The number of note events divided by total stimulus duration in seconds.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Event density in notes per second
+    """
+    return must_algorithms.event_density(melody)
+
+
+@must
+@complexity
+@pitch
+def av_local_p1_entropy(melody: Melody) -> float:
+    """The average local zeroth-order pitch entropy across a melody.
+
+    Computes Shannon entropy of the pitch distribution within sliding one-second
+    windows advanced in 0.25-second steps, using an inclusive upper onset bound,
+    then returns the mean entropy across windows.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Average local pitch entropy
+
+    Note
+    -----
+    Entropy is computed with the natural logarithm, consistent with the MUST
+    Toolbox ``shentropy`` implementation.
+    """
+    return must_algorithms.av_local_p1_entropy(melody)
+
+
+@must
+@complexity
+@pitch
+def p1_entropy(melody: Melody) -> float:
+    """The zeroth-order pitch entropy of a melody.
+
+    Shannon entropy of the marginal pitch distribution.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Pitch entropy
+
+    Note
+    -----
+    Entropy is computed with the natural logarithm, consistent with the MUST
+    Toolbox ``shentropy`` implementation.
+    """
+    return must_algorithms.p1_entropy(melody)
+
+
+@must
+@complexity
+@pitch
+def p2_entropy(melody: Melody) -> float:
+    """The first-order (2-tuple) pitch entropy of a melody.
+
+    Shannon entropy of the distribution of consecutive pitch pairs.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        2-tuple pitch entropy
+
+    Note
+    -----
+    Entropy is computed with the natural logarithm, consistent with the MUST
+    Toolbox ``shentropy`` implementation.
+    """
+    return must_algorithms.p2_entropy(melody)
+
+
+@must
+@complexity
+@pitch
+def p3_entropy(melody: Melody) -> float:
+    """The second-order (3-tuple) pitch entropy of a melody.
+
+    Shannon entropy of the distribution of consecutive pitch triples.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        3-tuple pitch entropy
+
+    Note
+    -----
+    Entropy is computed with the natural logarithm, consistent with the MUST
+    Toolbox ``shentropy`` implementation.
+    """
+    return must_algorithms.p3_entropy(melody)
+
+
+@must
+@complexity
+@pitch
+def i1_entropy(melody: Melody) -> float:
+    """The zeroth-order interval entropy of a melody.
+
+    Shannon entropy of the distribution of consecutive melodic intervals,
+    weighted by the underlying 2-tuple pitch distribution.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Interval entropy
+
+    Note
+    -----
+    Entropy is computed with the natural logarithm, consistent with the MUST
+    Toolbox ``shentropy`` implementation.
+    """
+    return must_algorithms.i1_entropy(melody)
+
+
+@must
+@complexity
+@pitch
+def i2_entropy(melody: Melody) -> float:
+    """The first-order (2-tuple) interval entropy of a melody.
+
+    Shannon entropy of the distribution of consecutive interval pairs, weighted
+    by the underlying 3-tuple pitch distribution.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        2-tuple interval entropy
+
+    Note
+    -----
+    Entropy is computed with the natural logarithm, consistent with the MUST
+    Toolbox ``shentropy`` implementation.
+    """
+    return must_algorithms.i2_entropy(melody)
+
+
+@must
+@complexity
+@rhythm
+def d1_entropy(melody: Melody) -> float:
+    """The zeroth-order duration entropy of a melody.
+
+    Shannon entropy of the distribution of note durations in quarter-note beats.
+    The final note duration is excluded, consistent with the MUST ``ddist1``
+    convention.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Duration entropy
+
+    Note
+    -----
+    Entropy is computed with the natural logarithm, consistent with the MUST
+    Toolbox ``shentropy`` implementation. Durations are rounded to two decimal
+    places before binning.
+    """
+    return must_algorithms.d1_entropy(melody)
+
+
+@must
+@complexity
+@rhythm
+def d2_entropy(melody: Melody) -> float:
+    """The first-order (2-tuple) duration entropy of a melody.
+
+    Shannon entropy of the distribution of consecutive duration pairs in
+    quarter-note beats. The final note duration is excluded.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        2-tuple duration entropy
+
+    Note
+    -----
+    Entropy is computed with the natural logarithm, consistent with the MUST
+    Toolbox ``shentropy`` implementation. Durations are rounded to two decimal
+    places before binning.
+    """
+    return must_algorithms.d2_entropy(melody)
+
+
+@must
+@complexity
+@rhythm
+def d3_entropy(melody: Melody) -> float:
+    """The second-order (3-tuple) duration entropy of a melody.
+
+    Shannon entropy of the distribution of consecutive duration triples in
+    quarter-note beats. The final note duration is excluded.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        3-tuple duration entropy
+
+    Note
+    -----
+    Entropy is computed with the natural logarithm, consistent with the MUST
+    Toolbox ``shentropy`` implementation. Durations are rounded to two decimal
+    places before binning.
+    """
+    return must_algorithms.d3_entropy(melody)
+
+
+@must
+@complexity
+@pitch
+def wp_entropy(melody: Melody) -> float:
+    """The weighted permutation entropy of a melody's pitch sequence.
+
+    Classifies each consecutive 3-note pitch window into one of 13 order
+    signatures, weights each class by the standard deviation of the three
+    pitches, and computes Shannon entropy over the resulting distribution.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to analyze
+
+    Returns
+    -------
+    float
+        Weighted permutation entropy
+
+    Note
+    -----
+    Entropy is computed with the natural logarithm, consistent with the MUST
+    Toolbox ``shentropy`` implementation.
+    """
+    return must_algorithms.wp_entropy(melody)

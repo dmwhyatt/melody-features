@@ -31,6 +31,7 @@ class FeatureSource:
     SIMILE = "simile"
     NOVEL = "novel"
     PARTITURA = "partitura"
+    MUST = "must"
 
 
 class FeatureType:
@@ -135,6 +136,13 @@ novel = _create_feature_decorator(
 partitura = _create_feature_decorator(
     FeatureSource.PARTITURA,
     "Cancino-Chacón, C. E., et al., (2022) Partitura: A Python package for symbolic music processing."
+)
+
+must = _create_feature_decorator(
+    FeatureSource.MUST,
+    "Clemente, A., Vila-Vidal, M., Pearce, M. T., Aguiló, G., Corradi, G., & Nadal, M. (2020). "
+    "A Set of 200 Musical Stimuli Varying in Balance, Contour, Symmetry, and Complexity: "
+    "Behavioral and Computational Assessments. Behavior Research Methods.",
 )
 
 
