@@ -148,3 +148,35 @@ def distribution_proportions(values: list[float]) -> dict[float, float]:
     # Calculate proportions
     proportions = counts * (1.0 / len(values_array))
     return {float(u): float(p) for u, p in zip(unique, proportions)}
+
+
+def transition_matrix_to_dict(
+    matrix,
+    row_labels,
+    col_labels=None,
+) -> dict:
+    """Convert a 2D transition probability matrix to a sparse dict.
+
+    Parameters
+    ----------
+    matrix : array-like
+        2D matrix of transition probabilities
+    row_labels : sequence
+        Label for each row (source state)
+    col_labels : sequence, optional
+        Label for each column (target state). Defaults to ``row_labels``.
+
+    Returns
+    -------
+    dict
+        Map from ``(from_label, to_label)`` to probability for non-zero entries
+    """
+    col_labels = row_labels if col_labels is None else col_labels
+    arr = np.asarray(matrix, dtype=float)
+    result = {}
+    for i, from_label in enumerate(row_labels):
+        for j, to_label in enumerate(col_labels):
+            weight = arr[i, j]
+            if weight > 0.0:
+                result[(from_label, to_label)] = float(weight)
+    return result

@@ -22,6 +22,16 @@ def mean_and_std(values: list[float]) -> tuple[float, float]:
     return mean, float(np.std(values, ddof=1))
 
 
+def population_mean_and_std(values: list[float]) -> tuple[float, float]:
+    """Population mean and standard deviation (MIDI Toolbox ``std(x,0)``)."""
+    if not values:
+        return 0.0, 0.0
+    mean = float(np.mean(values))
+    if len(values) < 2:
+        return mean, 0.0
+    return mean, float(np.std(values, ddof=0))
+
+
 def prevalence_of_mode(values: list) -> float:
     """Proportion of elements equal to the most common value."""
     if not values:

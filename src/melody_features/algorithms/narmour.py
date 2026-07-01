@@ -4,6 +4,8 @@ Implements features derived from Narmour (1990) concerning Gestalt principles fo
 
 __author__ = "David Whyatt"
 
+import numpy as np
+
 
 def proximity(values: list[float]) -> float:
     """Calculates the proximity score between consecutive notes.
@@ -330,3 +332,86 @@ def closure(values: list[float]) -> float:
         score += 1.0
 
     return score
+
+
+def narmour_vector(pitches: list[int], principle: str) -> list[float]:
+    """Full Narmour implication-realization vector (MIDI Toolbox ``narmour.m``)."""
+    if not pitches:
+        return []
+    pc = np.asarray(pitches, dtype=float)
+    n = len(pc)
+    principle = principle.lower()
+    out = np.zeros(n, dtype=float)
+
+    if principle == "rd":
+        for i in range(n - 2):
+            window = pc[i : i + 3]
+            interval = np.diff(window)
+            if interval[0] < 6:
+                out[i + 2] = 0.0
+            elif interval[0] > 6 and np.sign(interval[0]) != np.sign(interval[1]):
+                out[i + 2] = 1.0
+            elif interval[0] > 6 and np.sign(interval[0]) == np.sign(interval[1]):
+                out[i + 2] = -1.0
+    elif principle == "rr":
+        for i in range(n - 2):
+            window = pc[i : i + 3]
+            interval = np.diff(window)
+            rr0 = abs(np.sum(interval))
+            if window[1] == 0:
+                out[i + 2] = 0.0
+            elif rr0 <= 2:
+                out[i + 2] = 1.5
+    elif principle == "cl":
+        for i in range(n - 2):
+            interval = np.diff(pc[i : i + 3])
+            if np.sign(interval[0]) != np.sign(interval[1]) and (
+                abs(interval[0]) - abs(interval[1])
+            ) < 3:
+                out[i + 2] = 1.0
+            elif np.sign(interval[0]) != np.sign(interval[1]) and (
+                abs(interval[0]) - abs(interval[1])
+            ) > 2:
+                out[i + 2] = 2.0
+            elif np.sign(interval[0]) == np.sign(interval[1]) and (
+                abs(interval[0]) - abs(interval[1])
+            ) > 3:
+                out[i + 2] = 1.0
+            else:
+                out[i + 2] = 0.0
+    elif principle == "id":
+        for i in range(n - 2):
+            interval = np.diff(pc[i : i + 3])
+            if (
+                interval[0] < 6
+                and np.sign(interval[0]) != np.sign(interval[1])
+                and abs(abs(interval[0]) - abs(interval[1])) < 3
+            ):
+                out[i + 2] = 1.0
+            elif (
+                interval[0] < 6
+                and np.sign(interval[0]) == np.sign(interval[1])
+                and abs(abs(interval[0]) - abs(interval[1])) < 4
+            ):
+                out[i + 2] = 1.0
+            elif interval[0] > 6 and abs(abs(interval[0])) >= abs(interval[1]):
+                out[i + 2] = 1.0
+            else:
+                out[i + 2] = 0.0
+    elif principle == "pr":
+        intervals = np.abs(np.diff(pc))
+        out[0] = 0.0
+        if intervals.size:
+            out[1:] = intervals
+    else:
+        raise ValueError(f"Unknown Narmour principle: {principle!r}")
+
+    return [float(value) for value in out]
+
+
+def narmour_scalar(pitches: list[int], principle: str) -> float:
+    """Final-tone Narmour score used by MIDI Toolbox scalar exports."""
+    vector = narmour_vector(pitches, principle)
+    if not vector:
+        return 0.0
+    return float(vector[-1])

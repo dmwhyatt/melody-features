@@ -6,7 +6,7 @@ from ..algorithms import compute_tonality_vector
 from ..algorithms import must as must_algorithms
 from ..melody_tokenizer import MustTokenizer
 from ..feature_decorators import both, complexity, fantastic, midi_toolbox, must, novel, pitch, rhythm
-from ..feature_utils import _get_durations, mean_and_std
+from ..feature_utils import _get_durations, mean_and_std, population_mean_and_std
 from ..algorithms.meter_estimation import duration_accent as _duration_accent
 from .metre import _meter_accent_mean
 from .pitch_class import _pcdist1_vector
@@ -408,7 +408,7 @@ def _complebm(melody: Melody, method: str = 'o') -> float:
     noteden = _notedensity_seconds(starts)
     du_sec = [float(e) - float(s) for s, e in zip(starts, ends) if float(e) > float(s)]
     if len(du_sec) > 1:
-        rhyvar = float(np.std(np.log(du_sec), ddof=1))
+        rhyvar = float(np.std(np.log(du_sec), ddof=0))
     elif len(du_sec) == 1:
         rhyvar = 0.0
     else:

@@ -11,6 +11,12 @@ import numpy as np
 from scipy.signal import correlate
 
 
+def _matlab_round(values: np.ndarray | float) -> np.ndarray:
+    """Round like MATLAB ``round`` (half away from zero for positive values)."""
+    arr = np.asarray(values, dtype=float)
+    return np.floor(arr + 0.5).astype(int)
+
+
 def duration_accent(starts: list[float], ends: list[float], tau: float = 0.5, accent_index: float = 2.0) -> list[float]:
     """Calculate duration accent for each note based on Parncutt (1994).
     
@@ -138,6 +144,60 @@ def melodic_accent(pitches: list[int]) -> list[float]:
     return accent_values.tolist()
 
 
+def _beat_onsets_and_durations(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    tempo_changes: Optional[list[tuple[float, float]]] = None,
+) -> tuple[np.ndarray, np.ndarray, list[float]]:
+    """Onsets/durations in quarter-note beats (MIDI Toolbox ``onset`` / ``dur``)."""
+    from ..algorithms.pitch_spelling import _seconds_to_beats
+
+    if tempo_changes is None:
+        tempo_changes = [(0.0, tempo)]
+    onsets_beats = _seconds_to_beats(starts, tempo_changes)
+    beat_origin = float(onsets_beats[0]) if len(onsets_beats) else 0.0
+    onsets_beats = onsets_beats - beat_origin
+    end_beats = _seconds_to_beats(ends, tempo_changes) - beat_origin
+    durations_beats = end_beats - onsets_beats
+    durations_sec = [end - start for start, end in zip(starts, ends)]
+    return onsets_beats, durations_beats, durations_sec
+
+
+def _onset_function_grid(
+    onsets_beats: np.ndarray,
+    accent_values: list[float],
+    divisions_per_quarter: int = 4,
+    max_lag_quarters: int = 8,
+) -> np.ndarray:
+    """``onsetfunc.m``: delta grid weighted by accent values."""
+    if len(onsets_beats) == 0:
+        return np.zeros(1)
+
+    max_beat = float(np.max(onsets_beats))
+    grid_length = divisions_per_quarter * max(
+        2 * max_lag_quarters, int(np.ceil(max_beat)) + 1
+    )
+    onset_grid = np.zeros(grid_length)
+    for onset_beat, weight in zip(onsets_beats, accent_values):
+        grid_index = int(_matlab_round(onset_beat * divisions_per_quarter) % len(onset_grid))
+        onset_grid[grid_index] += weight
+    return onset_grid
+
+
+def _ofacorr(onset_grid: np.ndarray, max_lag_quarters: int = 8, divisions_per_quarter: int = 4) -> np.ndarray:
+    """``ofacorr.m``: subsampled onset-function autocorrelation for meter estimation."""
+    full_autocorr = correlate(onset_grid, onset_grid, mode="full")
+    center_index = len(full_autocorr) // 2
+    end_index = min(len(full_autocorr), center_index + max_lag_quarters * divisions_per_quarter)
+    autocorr = np.zeros(max_lag_quarters * divisions_per_quarter + 1)
+    segment = full_autocorr[center_index : end_index + 1]
+    autocorr[: len(segment)] = segment
+    if autocorr[0] > 0:
+        autocorr = autocorr / autocorr[0]
+    return autocorr[2::2]
+
+
 def compute_onset_autocorrelation(
     starts: list[float],
     ends: list[float],
@@ -146,17 +206,17 @@ def compute_onset_autocorrelation(
     divisions_per_quarter: int = 4,
     max_lag_quarters: int = 8,
     tempo: float = 120.0,
+    tempo_changes: Optional[list[tuple[float, float]]] = None,
 ) -> list[float]:
-    """Autocorrelation of onset times weighted by accents (MIDI Toolbox ``onsetacorr.m``).
-
-    Onsets are converted from seconds to quarter-note beats via ``tempo`` before
-    quantization; weights use Parncutt duration accent on note lengths in seconds.
-    """
+    """Autocorrelation of onset times weighted by accents (MIDI Toolbox ``onsetacorr.m``)."""
     expected_length = max_lag_quarters * divisions_per_quarter + 1
 
     if not starts or not ends or len(starts) != len(ends):
         return [0.0] * expected_length
 
+    onsets_beats, _durations_beats, durations_sec = _beat_onsets_and_durations(
+        starts, ends, tempo=tempo, tempo_changes=tempo_changes
+    )
     if accent_type == "melodic" and pitches and len(pitches) == len(starts):
         accent_values = melodic_accent(pitches)
     else:
@@ -165,20 +225,19 @@ def compute_onset_autocorrelation(
     if not accent_values:
         return [0.0] * expected_length
 
-    onsets_beats = [float(s) * (tempo / 60.0) for s in starts]
-    max_beat = max(onsets_beats) if onsets_beats else 0.0
+    max_beat = float(np.max(onsets_beats)) if len(onsets_beats) else 0.0
     grid_length = divisions_per_quarter * max(
         2 * max_lag_quarters, int(np.ceil(max_beat)) + 1
     )
     onset_grid = np.zeros(grid_length)
-
     for onset_beat, weight in zip(onsets_beats, accent_values):
-        grid_index = int(np.round(onset_beat * divisions_per_quarter)) % len(onset_grid)
+        grid_index = int(_matlab_round(onset_beat * divisions_per_quarter) % len(onset_grid))
         onset_grid[grid_index] += weight
 
     full_autocorr = correlate(onset_grid, onset_grid, mode="full")
     center_index = len(full_autocorr) // 2
-    autocorr_result = full_autocorr[center_index : center_index + expected_length]
+    end_index = center_index + max_lag_quarters * divisions_per_quarter
+    autocorr_result = full_autocorr[center_index : end_index + 1]
 
     if autocorr_result[0] != 0:
         autocorr_result = autocorr_result / autocorr_result[0]
@@ -209,130 +268,87 @@ def onset_autocorrelation_with_accents(
     )
 
 
-def estimate_meter_simple(starts: list[float], ends: list[float], tempo: float = 120.0) -> int:
-    """Simple meter estimation using duration accents only.
-    
-    Parameters
-    ----------
-    starts : list[float]
-        List of note start times in seconds
-    ends : list[float]
-        List of note end times in seconds
-        
-    Returns
-    -------
-    int
-        Estimated meter: 2 for simple duple, 3 for simple triple or compound
-    """
-    # Get autocorrelation of onset function weighted by duration accents
-    # Using max_lag_quarters=4 to get up to 16 divisions (4 quarter notes)
-    autocorr_values = onset_autocorrelation_with_accents(
-        starts,
-        ends,
-        [],
-        accent_type="duration",
-        divisions_per_quarter=4,
-        max_lag_quarters=4,
-        tempo=tempo,
-    )
-    
-    if len(autocorr_values) < 7:  # Need at least indices 0-6
+def estimate_meter_simple(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    tempo_changes: Optional[list[tuple[float, float]]] = None,
+) -> int:
+    """Simple meter estimation using duration accents only (``meter.m`` default)."""
+    if not starts or not ends or len(starts) != len(ends):
         return 2
-    
-    # Compare autocorrelation at lag 4 (quarter note) vs lag 6 (dotted quarter)
-    # MATLAB uses 1-based indexing: ac(4) vs ac(6)
-    # Python uses 0-based indexing: ac[3] vs ac[5]
-    quarter_note_corr = autocorr_values[3] if len(autocorr_values) > 3 else 0.0
-    dotted_quarter_corr = autocorr_values[5] if len(autocorr_values) > 5 else 0.0
-    
-    if quarter_note_corr >= dotted_quarter_corr:
-        return 2  # Simple duple meter
-    else:
-        return 3  # Simple triple or compound meter
+
+    onsets_beats, _durations_beats, _durations_sec = _beat_onsets_and_durations(
+        starts, ends, tempo=tempo, tempo_changes=tempo_changes
+    )
+    accent_values = duration_accent(starts, ends)
+    onset_grid = _onset_function_grid(onsets_beats, accent_values)
+    autocorr_values = _ofacorr(onset_grid)
+
+    if len(autocorr_values) < 6:
+        return 2
+
+    quarter_note_corr = float(autocorr_values[3])
+    dotted_quarter_corr = float(autocorr_values[5])
+    return 2 if quarter_note_corr >= dotted_quarter_corr else 3
 
 
 def estimate_meter_optimal(
-    starts: list[float], ends: list[float], pitches: list[int], tempo: float = 120.0
+    starts: list[float],
+    ends: list[float],
+    pitches: list[int],
+    tempo: float = 120.0,
+    tempo_changes: Optional[list[tuple[float, float]]] = None,
 ) -> int:
-    """Optimal meter estimation using weighted duration and melodic accents.
-    
-    Uses discriminant function trained on 12,000 folk melodies from the MIDI toolbox.
-    Only works with monophonic melodies.
-    
-    Parameters
-    ----------
-    starts : list[float]
-        List of note start times in seconds
-    ends : list[float]
-        List of note end times in seconds
-    pitches : list[int]
-        List of MIDI pitch values
-        
-    Returns
-    -------
-    int
-        Estimated meter: 2 for simple duple, 3 for simple triple or compound
-    """
+    """Optimal meter estimation (``meter.m`` with ``'optimal'``)."""
     if not pitches or len(pitches) != len(starts):
-        # Fall back to simple method if no pitch data
-        return estimate_meter_simple(starts, ends, tempo=tempo)
+        return estimate_meter_simple(starts, ends, tempo=tempo, tempo_changes=tempo_changes)
 
-    duration_autocorr = onset_autocorrelation_with_accents(
-        starts,
-        ends,
-        pitches,
-        accent_type="duration",
-        divisions_per_quarter=4,
-        max_lag_quarters=4,
-        tempo=tempo,
+    onsets_beats, _durations_beats, _durations_sec = _beat_onsets_and_durations(
+        starts, ends, tempo=tempo, tempo_changes=tempo_changes
     )
-
-    melodic_autocorr = onset_autocorrelation_with_accents(
-        starts,
-        ends,
-        pitches,
-        accent_type="melodic",
-        divisions_per_quarter=4,
-        max_lag_quarters=4,
-        tempo=tempo,
+    duration_grid = _onset_function_grid(
+        onsets_beats, duration_accent(starts, ends)
     )
-    
-    # Ensure we have enough values for the discriminant function
-    if len(duration_autocorr) < 17 or len(melodic_autocorr) < 17:
-        return estimate_meter_simple(starts, ends, tempo=tempo)
+    melodic_grid = _onset_function_grid(
+        onsets_beats, melodic_accent(pitches)
+    )
+    duration_autocorr = _ofacorr(duration_grid)
+    melodic_autocorr = _ofacorr(melodic_grid)
 
-    # Extract specific autocorrelation values (converting from MATLAB 1-based to Python 0-based)
-    # MATLAB indices: ac1(3), ac1(4), ac1(6), ac1(8), ac1(12), ac1(16)
-    # Python indices: ac1[2], ac1[3], ac1[5], ac1[7], ac1[11], ac1[15]
-    
-    # Duration-based autocorrelation values
-    ac1_3 = duration_autocorr[2] if len(duration_autocorr) > 2 else 0.0
-    ac1_4 = duration_autocorr[3] if len(duration_autocorr) > 3 else 0.0
-    ac1_6 = duration_autocorr[5] if len(duration_autocorr) > 5 else 0.0
-    ac1_8 = duration_autocorr[7] if len(duration_autocorr) > 7 else 0.0
-    ac1_12 = duration_autocorr[11] if len(duration_autocorr) > 11 else 0.0
-    ac1_16 = duration_autocorr[15] if len(duration_autocorr) > 15 else 0.0
-    
-    # Melodic accent-based autocorrelation values
-    ac2_3 = melodic_autocorr[2] if len(melodic_autocorr) > 2 else 0.0
-    ac2_4 = melodic_autocorr[3] if len(melodic_autocorr) > 3 else 0.0
-    ac2_6 = melodic_autocorr[5] if len(melodic_autocorr) > 5 else 0.0
-    ac2_8 = melodic_autocorr[7] if len(melodic_autocorr) > 7 else 0.0
-    ac2_12 = melodic_autocorr[11] if len(melodic_autocorr) > 11 else 0.0
-    ac2_16 = melodic_autocorr[15] if len(melodic_autocorr) > 15 else 0.0
-    
-    # Discriminant function from MATLAB code
-    # df = -1.042+0.318*ac1(3)+5.240*ac1(4)-0.63*ac1(6)+0.745*ac1(8)-8.122*ac1(12)+4.160*ac1(16);
-    # df=df-0.978*ac2(3)+1.018*ac2(4)-1.657*ac2(6)+1.419*ac2(8)-2.205*ac2(12)+1.568*ac2(16);
-    discriminant = (-1.042 + 0.318*ac1_3 + 5.240*ac1_4 - 0.63*ac1_6 + 
-                   0.745*ac1_8 - 8.122*ac1_12 + 4.160*ac1_16 - 
-                   0.978*ac2_3 + 1.018*ac2_4 - 1.657*ac2_6 + 
-                   1.419*ac2_8 - 2.205*ac2_12 + 1.568*ac2_16)
-    
-    if discriminant >= 0:
-        return 2  # Simple duple meter
-    else:
-        return 3  # Simple triple or compound meter
+    if len(duration_autocorr) < 16 or len(melodic_autocorr) < 16:
+        return estimate_meter_simple(starts, ends, tempo=tempo, tempo_changes=tempo_changes)
+
+    ac1_3 = float(duration_autocorr[2])
+    ac1_4 = float(duration_autocorr[3])
+    ac1_6 = float(duration_autocorr[5])
+    ac1_8 = float(duration_autocorr[7])
+    ac1_12 = float(duration_autocorr[11])
+    ac1_16 = float(duration_autocorr[15])
+
+    ac2_3 = float(melodic_autocorr[2])
+    ac2_4 = float(melodic_autocorr[3])
+    ac2_6 = float(melodic_autocorr[5])
+    ac2_8 = float(melodic_autocorr[7])
+    ac2_12 = float(melodic_autocorr[11])
+    ac2_16 = float(melodic_autocorr[15])
+
+    discriminant = (
+        -1.042
+        + 0.318 * ac1_3
+        + 5.240 * ac1_4
+        - 0.63 * ac1_6
+        + 0.745 * ac1_8
+        - 8.122 * ac1_12
+        + 4.160 * ac1_16
+        - 0.978 * ac2_3
+        + 1.018 * ac2_4
+        - 1.657 * ac2_6
+        + 1.419 * ac2_8
+        - 2.205 * ac2_12
+        + 1.568 * ac2_16
+    )
+    return 2 if discriminant >= 0 else 3
 
 
 def estimate_meter(
@@ -341,6 +357,7 @@ def estimate_meter(
     pitches: list[int] = None,
     use_optimal: bool = False,
     tempo: float = 120.0,
+    tempo_changes: Optional[list[tuple[float, float]]] = None,
 ) -> int:
     """Estimate meter using autocorrelation-based method from MIDI toolbox.
     Implementation based on MIDI toolbox "meter.m"
@@ -377,143 +394,88 @@ def estimate_meter(
     
     if use_optimal and pitches and len(pitches) == len(starts):
         try:
-            return estimate_meter_optimal(starts, ends, pitches, tempo=tempo)
+            return estimate_meter_optimal(
+                starts, ends, pitches, tempo=tempo, tempo_changes=tempo_changes
+            )
         except Exception:
-            return estimate_meter_simple(starts, ends, tempo=tempo)
-    else:
-        return estimate_meter_simple(starts, ends, tempo=tempo)
+            return estimate_meter_simple(
+                starts, ends, tempo=tempo, tempo_changes=tempo_changes
+            )
+    return estimate_meter_simple(
+        starts, ends, tempo=tempo, tempo_changes=tempo_changes
+    )
 
 
-def _onset_mod_meter(starts: list[float], ends: list[float], 
-                   time_signature: tuple[int, int] = None, tempo: float = 120.0,
-                   pitches: list[int] = None) -> list[float]:
-    """Calculate onset times modulo meter.
-    
-    Implementation based on MIDI toolbox "onsetmodmeter.m"
-    Wraps onset times within a measure based on known or estimated meter.
-    
-    Parameters
-    ----------
-    starts : list[float]
-        List of note start times in seconds
-    ends : list[float]
-        List of note end times in seconds  
-    pitches : list[int], optional
-        List of MIDI pitch values, by default None
-    time_signature : tuple[int, int], optional
-        Known time signature as (numerator, denominator), by default None
-    tempo : float, optional
-        Tempo in BPM for calculating measure duration, by default 120.0
-        
-    Returns
-    -------
-    list[float]
-        Onset times modulo meter (wrapped within measure)
-    """
-    if not starts or len(starts) == 0:
+def _onset_mod_meter(
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    pitches: list[int] = None,
+    tempo_changes: Optional[list[tuple[float, float]]] = None,
+) -> list[float]:
+    """Onset times modulo estimated meter (``onsetmodmeter.m``)."""
+    if not starts:
         return []
-    
+
     if len(starts) != len(ends):
         raise ValueError("starts and ends must have the same length")
-    
-    if time_signature:
-        numerator, denominator = time_signature
-        quarter_note_duration = 60.0 / tempo
-        measure_duration = (numerator * 4.0 / denominator) * quarter_note_duration
-    else:
-        estimated_meter_val = estimate_meter(starts, ends, pitches, use_optimal=bool(pitches))
-        quarter_note_duration = 0.5
-        if estimated_meter_val == 2:
-            measure_duration = 2.0
-            meter_type = 2
-        else:
-            measure_duration = 1.5
-            meter_type = 3
-    
-    durations = [end - start for start, end in zip(starts, ends)]
-    
-    # Create onset grid based on quarter note subdivisions
-    subdivisions_per_quarter = 4
-    grid_size = int(subdivisions_per_quarter * measure_duration / quarter_note_duration)
-    onset_weights = [0.0] * max(grid_size, 1)
-    
-    # Weight each grid position by duration of notes starting there
-    for start_time, duration in zip(starts, durations):
-        # Wrap onset time within meter
-        onset_mod = start_time % measure_duration
-        # Quantize 
-        grid_pos = int(round(onset_mod / quarter_note_duration * subdivisions_per_quarter)) % len(onset_weights)
-        onset_weights[grid_pos] += duration
-    
-    # Find the grid position with maximum weight (strongest beat)
-    max_weight_pos = onset_weights.index(max(onset_weights)) if onset_weights else 0
-    
-    # Calculate beat offset
-    beat_offset = max_weight_pos * quarter_note_duration / subdivisions_per_quarter
-    
-    # Return onset times modulo meter, adjusted for beat alignment
-    return [(start - beat_offset) % measure_duration for start in starts]
+
+    onsets_beats, durations_beats, _durations_sec = _beat_onsets_and_durations(
+        starts, ends, tempo=tempo, tempo_changes=tempo_changes
+    )
+    meter_length = float(
+        estimate_meter(
+            starts,
+            ends,
+            pitches=pitches,
+            use_optimal=False,
+            tempo=tempo,
+            tempo_changes=tempo_changes,
+        )
+    )
+    onsets_mod = np.mod(onsets_beats, meter_length)
+    grid_size = int(4 * meter_length)
+    grid_weights = np.zeros(grid_size)
+    grid_indices = _matlab_round(onsets_mod * 4) % grid_size
+    for grid_index, duration in zip(grid_indices, durations_beats):
+        grid_weights[grid_index] += duration
+    strongest_beat = int(np.argmax(grid_weights))
+    beat_offset = strongest_beat * 0.25
+    wrapped = np.mod(onsets_beats - beat_offset, meter_length)
+    return wrapped.tolist()
 
 
-def metric_hierarchy(starts: list[float], ends: list[float],
-                    time_signature: tuple[int, int] = None, tempo: float = 120.0,
-                    pitches: list[int] = None) -> list[int]:
-    """Calculate metric hierarchy for each note.
-    
-    Implementation based on MIDI toolbox "metrichierarchy.m"
-    Returns a vector indicating the location of each note in the metric hierarchy.
-    
-    Parameters
-    ----------
-    starts : list[float]
-        List of note start times in seconds
-    ends : list[float]
-        List of note end times in seconds
-    pitches : list[int], optional
-        List of MIDI pitch values, by default None
-    time_signature : tuple[int, int], optional
-        Known time signature as (numerator, denominator), by default None
-    tempo : float, optional
-        Tempo in BPM for calculating beat positions, by default 120.0
-        
-    Returns
-    -------
-    list[int]
-        Metric hierarchy values for each note
-    """
-    if not starts or len(starts) == 0:
+def metric_hierarchy(
+    starts: list[float],
+    ends: list[float],
+    time_signature: tuple[int, int] = None,
+    tempo: float = 120.0,
+    pitches: list[int] = None,
+    tempo_changes: Optional[list[tuple[float, float]]] = None,
+) -> list[int]:
+    """Metric hierarchy per note (``metrichierarchy.m``)."""
+    del time_signature  # MIDI Toolbox always estimates meter from autocorrelation.
+
+    if not starts:
         return []
 
-    onset_mod = _onset_mod_meter(starts, ends, time_signature=time_signature, tempo=tempo, pitches=pitches)
-
-    if time_signature:
-        _numerator, denominator = time_signature
-        quarter_note_duration = 60.0 / tempo
-        beat_duration = 4.0 / denominator * quarter_note_duration
-    else:
-        beat_duration = 0.5
-
-    hierarchy = []
-
-    for onset_time in onset_mod:
-        level = 1
-        
-        tolerance = 1e-6
-        
-        if abs(onset_time) < tolerance:
-            level = 5
-        elif abs(onset_time % beat_duration) < tolerance:
-            level = 4
-        else:
-            for subdivision_level in range(1, 4):
-                subdivision_duration = beat_duration / (2 ** subdivision_level)
-                if abs(onset_time % subdivision_duration) < tolerance:
-                    level = max(level, 4 - subdivision_level)
-                    break
-
-        hierarchy.append(level)
-
-    return hierarchy
+    onset_mod = np.asarray(
+        _onset_mod_meter(
+            starts,
+            ends,
+            tempo=tempo,
+            pitches=pitches,
+            tempo_changes=tempo_changes,
+        ),
+        dtype=float,
+    )
+    hierarchy = (np.abs(onset_mod) < 1e-6).astype(int)
+    hierarchy = hierarchy + (np.abs(onset_mod - np.round(onset_mod)) < 1e-6).astype(int)
+    ob = onset_mod.copy()
+    for _ in range(3):
+        ob = ob * 2.0
+        hierarchy = hierarchy + (np.abs(ob - np.round(ob)) < 1e-6).astype(int)
+    return hierarchy.tolist()
 
 
 def meter_to_time_signature(estimated_meter: int) -> tuple[int, int]:

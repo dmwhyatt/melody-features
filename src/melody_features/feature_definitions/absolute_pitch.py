@@ -11,7 +11,7 @@ from ..feature_decorators import absolute, fantastic, jsymbolic, midi_toolbox, p
 from ..feature_histogram import PitchHistogram
 from ..algorithms.pitch_spelling import estimate_spelling_from_melody as _estimate_spelling_from_melody
 from ..core.representations import Melody
-from ..feature_utils import mean_and_std, prevalence_of_mode, relative_prevalence_top_two
+from ..feature_utils import mean_and_std, population_mean_and_std, prevalence_of_mode, relative_prevalence_top_two
 from ..utils.stats import get_mode, range_func
 
 
@@ -342,27 +342,24 @@ def tessitura(pitches: list[int]) -> list[float]:
     """
     if len(pitches) < 2:
         return [0.0] if len(pitches) == 1 else []
-    
-    tessitura_values = [0.0]
-    
-    for i in range(2, len(pitches) + 1):
-        median_prev = np.median(pitches[:i-1])
-        
-        if i == 2:
-            tessitura_values.append(0.0)
-            continue
-            
-        std_prev = np.std(pitches[:i-1], ddof=1)
-        
-        if std_prev == 0:
-            tessitura_values.append(0.0)
+
+    pc = np.asarray(pitches, dtype=float)
+    n = len(pc)
+    inner = np.zeros(n - 1, dtype=float)
+    for i in range(2, n + 1):
+        m_val = float(pc[i - 2])
+        history = pc[: i - 1]
+        if history.size == 1:
+            deviation = 0.0
         else:
-            current_pitch = pitches[i-1]
-            tessitura_val = (current_pitch - median_prev) / std_prev
-            tessitura_values.append(abs(tessitura_val))
-    
-    tessitura_values = [float(val) for val in tessitura_values]
-    return tessitura_values
+            deviation = float(np.std(history, ddof=1))
+        if deviation == 0.0:
+            inner[i - 2] = float("inf")
+        else:
+            inner[i - 2] = (pc[i - 1] - m_val) / deviation
+        inner[0] = 0.0
+
+    return [float(value) for value in np.abs(np.concatenate([[0.0], inner]))]
 
 @midi_toolbox
 @absolute

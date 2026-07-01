@@ -10,12 +10,15 @@ from ..algorithms.meter_estimation import melodic_accent as _melodic_accent
 from ..algorithms.narmour import (
     closure,
     intervallic_difference,
+    narmour_scalar,
     proximity,
     registral_direction,
     registral_return,
 )
 from ..core.representations import Melody
-from ..feature_utils import mean_and_std
+from ..feature_utils import mean_and_std, population_mean_and_std
+from ..algorithms.melodic_attraction import melodic_attraction_vector
+from ..algorithms.mobility import mobility_vector
 
 
 __all__ = [
@@ -115,7 +118,7 @@ def narmour_registral_direction(pitches: list[int]) -> int:
     --------
     Narmour (1990)
     """
-    return int(registral_direction(pitches))
+    return float(narmour_scalar(pitches, "rd"))
 
 @idyom
 @midi_toolbox
@@ -144,7 +147,7 @@ def narmour_proximity(pitches: list[int]) -> int:
     --------
     Narmour (1990)
     """
-    return int(proximity(pitches))
+    return float(narmour_scalar(pitches, "pr"))
 
 @idyom
 @midi_toolbox
@@ -172,7 +175,7 @@ def narmour_closure(pitches: list[int]) -> int:
     --------
     Narmour (1990)
     """
-    return int(closure(pitches))
+    return float(narmour_scalar(pitches, "cl"))
 
 @idyom
 @midi_toolbox
@@ -201,7 +204,7 @@ def narmour_registral_return(pitches: list[int]) -> int:
     --------
     Narmour (1990)
     """
-    return int(registral_return(pitches))
+    return float(narmour_scalar(pitches, "rr"))
 
 @idyom
 @midi_toolbox
@@ -232,7 +235,7 @@ def narmour_intervallic_difference(pitches: list[int]) -> int:
     --------
     Narmour (1990)
     """
-    return int(intervallic_difference(pitches))
+    return float(narmour_scalar(pitches, "id"))
 
 def get_narmour_features(melody: Melody) -> Dict:
     """Calculate Narmour's implication-realization features.
@@ -337,47 +340,7 @@ def mobility(pitches: list[int]) -> list[float]:
     --------
     von Hippel (2000)
     """
-    if not pitches:
-        return []
-    if len(pitches) == 1:
-        return [0.0]
-
-    p = np.asarray(pitches, dtype=float)
-    n = len(p)
-
-    # 1-based MATLAB arrays; index 0 unused
-    p_hist = np.zeros(n + 1)
-    p2 = np.zeros(n + 1)
-    mob = np.zeros(n + 1)
-    y = np.zeros(n - 1)
-
-    for i in range(2, n + 1):
-        m_im1 = float(np.mean(p[: i - 1]))
-        p_hist[i - 1] = p[i - 2] - m_im1
-        p2[i] = p[i - 2] - m_im1
-
-        z = np.concatenate([p_hist[1:i], [p_hist[i - 1]]])
-        len_z = len(z)
-        p2_row = p2[1 : len_z + 1]
-        p3 = np.column_stack([p2_row, z])
-
-        if p3.shape[0] >= 2 and np.std(p3[:, 0]) > 0 and np.std(p3[:, 1]) > 0:
-            corr = np.corrcoef(p3, rowvar=False)
-            mob[i] = float(corr[0, 1]) if not np.isnan(corr[0, 1]) else 0.0
-        else:
-            mob[i] = 0.0
-
-        y[i - 2] = mob[i - 1] * (p[i - 1] - m_im1)
-
-    if len(y) >= 2:
-        y[1] = 0.0
-    elif len(y) == 1:
-        y = np.array([y[0], 0.0])
-
-    y = np.abs(np.concatenate([[0.0], y]))
-    if len(y) > n:
-        y = y[:n]
-    return [float(v) for v in y]
+    return mobility_vector(pitches)
 
 @midi_toolbox
 @pitch
@@ -396,7 +359,10 @@ def mean_mobility(pitches: list[int]) -> float:
     float
         Mean mobility value
     """
-    mean, _ = mean_and_std(mobility(pitches))
+    values = mobility(pitches)
+    if not values:
+        return float("nan")
+    mean, _ = mean_and_std(values)
     return mean
 
 @midi_toolbox
@@ -416,7 +382,10 @@ def mobility_std(pitches: list[int]) -> float:
     float
         Standard deviation of mobility values
     """
-    _, std = mean_and_std(mobility(pitches))
+    values = mobility(pitches)
+    if not values:
+        return float("nan")
+    _, std = mean_and_std(values)
     return std
 
 def _stability_distance(weight1: float, weight2: float, proximity: float) -> float:
@@ -446,181 +415,32 @@ def _stability_distance(weight1: float, weight2: float, proximity: float) -> flo
 @midi_toolbox
 @pitch
 @expectation
-def melodic_attraction(pitches: list[int]) -> list[float]:
-    """Melodic attraction values following Lerdahl's tonal-attraction model.
-
-    The melody's key is estimated from its pitch-class content, then each pitch
-    class is assigned a tonal anchoring weight in that key. For each adjacent
-    pitch pair, attraction depends on tonal stability, pitch proximity, and whether
-    the melodic motion continues or changes direction. Values are scaled to the
-    interval ``[0, 1]``.
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-
-    Citation
-    --------
-    Lerdahl (1996)
-        
-    Returns
-    -------
-    list[float]
-        Melodic attraction values for each note (0-1 scale, higher = more attraction)
-
-    Notes
-    -----
-    Uses anchoring weights, directed motion, and scaled output. We
-    currently validate it via structural and range tests rather than a full
-    one-to-one parity fixture set from MIDI Toolbox example corpora.
-    """
+def melodic_attraction(
+    pitches: list[int], starts: list[float], ends: list[float]
+) -> list[float]:
+    """Melodic attraction values following Lerdahl's tonal-attraction model."""
     if len(pitches) < 2:
         return [0.0] if len(pitches) == 1 else []
-
-    pitch_classes = [pitch % 12 for pitch in pitches]
-    correlations = compute_tonality_vector(pitch_classes)
-
-    if not correlations:
-        return [0.0] * len(pitches)
-
-    key_name = correlations[0][0].split()[0]
-    is_major = "major" in correlations[0][0]
-
-    # Get tonic pitch class for transposition to C
-    key_distances = _get_key_distances()
-    tonic_pc = key_distances[key_name]
-
-    transposed_pcs = [(pc - tonic_pc) % 12 for pc in pitch_classes]
-    
-    # Anchoring weights for each pitch class (C=0, C#=1, ..., B=11)
-    if is_major:
-        anchor_weights = [4, 1, 2, 1, 3, 2, 1, 3, 1, 2, 1, 2]  # MAJOR
-    else:
-        anchor_weights = [4, 1, 2, 3, 1, 2, 1, 3, 2, 2, 1, 2]  # MINOR
-    
-    pc_weights = [anchor_weights[pc] for pc in transposed_pcs]
-    
-    # Calculate directed motion index
-    # (change of direction = -1, repetition = 0, continuation = 1)
-    pitch_diffs = [pitches[i+1] - pitches[i] for i in range(len(pitches)-1)]
-    directions = [1 if diff > 0 else -1 if diff < 0 else 0 for diff in pitch_diffs]
-    
-    motion = [0]
-    for i in range(1, len(directions)):
-        if directions[i] == 0:
-            motion.append(0)
-        elif directions[i-1] == 0:  # After a repetition, treat as continuation onset
-            motion.append(1)
-        elif directions[i] == directions[i-1]:  # Continuation
-            motion.append(1)
-        else:  # Direction change
-            motion.append(-1)
-    
-    attraction_values = [0.0]
-    
-    for i in range(len(pitches) - 1):
-        current_weight = pc_weights[i]
-        next_weight = pc_weights[i + 1]
-        proximity = abs(pitches[i + 1] - pitches[i])
-        
-        # Primary attraction (sd1)
-        if current_weight >= next_weight:
-            sd1 = 0.0
-        else:
-            sd1 = _stability_distance(current_weight, next_weight, proximity)
-        
-        # Alternative attraction (sd2) - attraction to other stable tones
-        current_pc = transposed_pcs[i]
-        
-        # Check other pitch classes for stronger alternatives
-        sd2_values = []
-        for candidate_pc in range(12):
-            candidate_weight = anchor_weights[candidate_pc]
-            
-            # Only consider stable candidates
-            if candidate_weight > current_weight and candidate_pc != transposed_pcs[i + 1]:
-                candidate_distance = min(abs(candidate_pc - current_pc), 12 - abs(candidate_pc - current_pc))
-                sd2_candidate = _stability_distance(current_weight, candidate_weight, candidate_distance)
-                sd2_values.append(sd2_candidate)
-        
-        # Calculate total alternative attraction
-        if len(sd2_values) > 1:
-            # Take max + half of others
-            max_sd2 = max(sd2_values)
-            other_sd2 = sum(val * 0.5 for val in sd2_values if val != max_sd2)
-            sd2 = max_sd2 + other_sd2
-        elif len(sd2_values) == 1:
-            sd2 = sd2_values[0]
-        else:
-            sd2 = 0.0
-        
-        # Combine with directed motion
-        anchoring = sd1 - sd2
-        attraction = motion[i] + anchoring
-        
-        attraction_values.append(attraction)
-
-    # Scale results between 0 and 1
-    scaled_attraction = [(val + 1) / 5 for val in attraction_values]
-
-    # Clamp to [0, 1]
-    scaled_attraction = [max(0.0, min(1.0, val)) for val in scaled_attraction]
-
-    return scaled_attraction
+    return melodic_attraction_vector(pitches, starts, ends)
 
 @midi_toolbox
 @pitch
 @expectation
-def mean_melodic_attraction(pitches: list[int]) -> float:
-    """The arithmetic mean of Lerdahl melodic-attraction values.
-
-    Melodic attraction estimates how strongly each note is drawn toward the next
-    note, based on tonal anchoring weights, pitch proximity, and directed motion.
-    This feature averages those per-note attraction values across the melody.
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-        
-    Returns
-    -------
-    float
-        Mean melodic attraction value
-
-    Citation
-    --------
-    Lerdahl (1996)
-    """
-    mean, _ = mean_and_std(melodic_attraction(pitches))
+def mean_melodic_attraction(
+    pitches: list[int], starts: list[float], ends: list[float]
+) -> float:
+    """The arithmetic mean of Lerdahl melodic-attraction values."""
+    mean, _ = mean_and_std(melodic_attraction(pitches, starts, ends))
     return mean
 
 @midi_toolbox
 @pitch
 @expectation
-def melodic_attraction_std(pitches: list[int]) -> float:
-    """The sample standard deviation of Lerdahl melodic-attraction values.
-
-    Melodic attraction estimates note-to-note tonal pull from anchoring weights,
-    pitch proximity, and directed motion. This feature summarizes how much those
-    attraction values vary across the melody.
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-        
-    Returns
-    -------
-    float
-        Standard deviation of melodic attraction values
-
-    Citation
-    --------
-    Lerdahl (1996)
-    """
-    _, std = mean_and_std(melodic_attraction(pitches))
+def melodic_attraction_std(
+    pitches: list[int], starts: list[float], ends: list[float]
+) -> float:
+    """The population standard deviation of Lerdahl melodic-attraction values."""
+    _, std = mean_and_std(melodic_attraction(pitches, starts, ends))
     return std
 
 @midi_toolbox
@@ -717,15 +537,12 @@ def _get_simonton_transition_matrix() -> np.ndarray:
         12x12 matrix of transition probabilities
     """
     transition_matrix = np.zeros((12, 12))
-    
-    transition_matrix[4, :] = 0.005  
-    transition_matrix[9, :] = 0.005  
-    transition_matrix[11, :] = 0.005  
-    transition_matrix[:, 4] = 0.005  
-    transition_matrix[:, 9] = 0.005  
-    transition_matrix[:, 11] = 0.005  
-    transition_matrix[7, 8] = 0.005  
-    transition_matrix[8, 7] = 0.005  
+
+    for matlab_row in (4, 9, 11):
+        transition_matrix[matlab_row - 1, :] = 0.005
+        transition_matrix[:, matlab_row - 1] = 0.005
+    transition_matrix[6, 7] = 0.005
+    transition_matrix[7, 6] = 0.005
     
     common_transitions = [
         (8, 8, 0.067),  

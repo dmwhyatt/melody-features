@@ -142,6 +142,10 @@ NAN_ALLOWED_FEATURES = {
     'inter_onset_interval.ioi_standard_deviation',
     'pitch_interval.minor_major_third_ratio',
     'timing.variability_of_time_between_attacks',
+    'absolute_pitch.mean_tessitura',
+    'absolute_pitch.tessitura_std',
+    'expectation.mean_mobility',
+    'expectation.mobility_std',
 }
 
 PROPORTION_FEATURES = {

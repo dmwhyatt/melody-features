@@ -1,7 +1,7 @@
 """Pitch interval feature definitions."""
 
 import math
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 
@@ -11,7 +11,7 @@ from ..algorithms import (
     n_percent_significant_values,
 )
 from ..feature_utils import prevalence_of_mode, relative_prevalence_top_two
-from ..utils.distributional import distribution_proportions
+from ..utils.distributional import distribution_proportions, transition_matrix_to_dict
 from ..feature_decorators import fantastic, interval, jsymbolic, midi_toolbox, novel, pitch, simile
 from ..feature_histogram import create_melodic_interval_histogram
 from ..algorithms.meter_estimation import duration_accent
@@ -27,6 +27,7 @@ __all__ = [
     "modal_interval",
     "most_common_interval",
     "ivdist1",
+    "ivdist2",
     "ivdirdist1",
     "ivsizedist1",
     "interval_direction",
@@ -55,15 +56,95 @@ __all__ = [
 ]
 
 
-def _ivdist1_vector(pitches: list[int], starts: list[float], ends: list[float]) -> np.ndarray:
+def _ivdist1_vector(
+    pitches: list[int],
+    starts: list[float],
+    ends: list[float],
+    channels: Optional[list[int]] = None,
+) -> np.ndarray:
     ivd = np.zeros(25, dtype=float)
     if len(pitches) < 2 or not starts or not ends:
         return ivd
+
+    if channels is None:
+        channels = [1] * len(pitches)
+    active_channels = sorted({channel for channel in channels if 1 <= channel <= 16})
+    if not active_channels:
+        return ivd
+
     accents = duration_accent(starts, ends)
-    intervals = np.diff(np.asarray(pitches, dtype=float))
-    for m, iv in enumerate(intervals.astype(int)):
-        if abs(iv) <= 12 and m + 1 < len(accents):
-            ivd[iv + 12] += accents[m] + accents[m + 1]
+    pitch_arr = np.asarray(pitches, dtype=int)
+    channel_arr = np.asarray(channels, dtype=int)
+    for channel in active_channels:
+        mask = channel_arr == channel
+        note_indices = np.where(mask)[0]
+        channel_pitches = pitch_arr[mask]
+        if channel_pitches.size < 2:
+            continue
+        intervals = np.diff(channel_pitches.astype(float))
+        for local_m, iv in enumerate(intervals.astype(int)):
+            global_m = int(note_indices[local_m])
+            if abs(iv) <= 12 and global_m + 1 < len(accents):
+                ivd[iv + 12] += accents[global_m] + accents[global_m + 1]
+    return ivd / (ivd.sum() + 1e-12)
+
+
+def _ivdirdist1_from_vector(ivd: np.ndarray) -> dict[int, float]:
+    """Directional interval bias from ``ivdist1`` (MIDI Toolbox ``ivdirdist1.m``).
+
+    Reference CSV export (``mtbVecToJson``) only serializes strictly positive values.
+    """
+    result: dict[int, float] = {}
+    for interval_size in range(1, 13):
+        upward = ivd[interval_size + 12]
+        downward = ivd[12 - interval_size]
+        total = upward + downward
+        if total > 0.0:
+            bias = float((upward - downward) / total)
+            if bias > 0.0:
+                result[interval_size] = bias
+    return result
+
+
+def _ivsizedist1_from_vector(ivd: np.ndarray) -> dict[int, float]:
+    """Interval-size distribution from ``ivdist1`` (MIDI Toolbox ``ivsizedist1.m``)."""
+    size_index = list(range(12, -1, -1)) + list(range(1, 13))
+    aggregated = np.zeros(13, dtype=float)
+    for index, size in enumerate(size_index):
+        aggregated[size] += ivd[index]
+    total = aggregated.sum()
+    if total <= 0.0:
+        return {}
+    aggregated /= total
+    return {size: float(aggregated[size]) for size in range(13) if aggregated[size] > 0.0}
+
+
+def _ivdist2_categories(pitches: list[int]) -> np.ndarray:
+    """Per-note interval classes for ``ivdist2`` (MIDI Toolbox ``ivdist2.m``)."""
+    pitches_arr = np.asarray(pitches, dtype=int)
+    if pitches_arr.size == 0:
+        return np.array([], dtype=int)
+    pcdiff = np.diff(pitches_arr)
+    steps = np.concatenate([[0], pcdiff])
+    abs_steps = np.abs(steps)
+    sign_steps = np.sign(steps).astype(int)
+    return (abs_steps % 12) * sign_steps
+
+
+def _ivdist2_matrix(
+    pitches: list[int], starts: list[float], ends: list[float]
+) -> np.ndarray:
+    """Second-order interval transition matrix (MIDI Toolbox ``ivdist2.m``)."""
+    ivd = np.zeros((25, 25), dtype=float)
+    if len(pitches) < 2 or not starts or not ends:
+        return ivd
+    accents = duration_accent(starts, ends)
+    categories = _ivdist2_categories(pitches)
+    indices = categories + 12
+    n = min(len(indices), len(accents))
+    for k in range(1, n):
+        weight = accents[k - 1] + accents[k]
+        ivd[indices[k - 1], indices[k]] += weight
     return ivd / (ivd.sum() + 1e-12)
 
 @simile
@@ -171,7 +252,13 @@ most_common_interval = modal_interval
 @midi_toolbox
 @interval
 @pitch
-def ivdist1(pitches: list[int], starts: list[float], ends: list[float], tempo: float = 120.0) -> dict:
+def ivdist1(
+    pitches: list[int],
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    channels: Optional[list[int]] = None,
+) -> dict:
     """Interval distribution weighted by duration accent.
 
     Parameters
@@ -193,98 +280,82 @@ def ivdist1(pitches: list[int], starts: list[float], ends: list[float], tempo: f
     del tempo
     if not pitches or not starts or not ends or len(pitches) < 2:
         return {}
-    vec = _ivdist1_vector(pitches, starts, ends)
+    vec = _ivdist1_vector(pitches, starts, ends, channels)
     return {i - 12: float(vec[i]) for i in range(25) if vec[i] > 0}
 
 @midi_toolbox
 @interval
 @pitch
-def ivdirdist1(pitches: list[int]) -> dict[int, float]:
-    """Directional interval bias for each interval size (1-12 semitones).
+def ivdist2(pitches: list[int], starts: list[float], ends: list[float], tempo: float = 120.0) -> dict:
+    """Second-order interval transition distribution (MIDI Toolbox ``ivdist2.m``).
 
-    For each absolute interval size n, this computes:
-    ``(p(+n) - p(-n)) / (p(+n) + p(-n))``.
-    
+    Each note is assigned an interval class (incoming interval modulo octave, with
+    0 for the first note). Transition weights use the sum of Parncutt duration
+    accents of the two notes. Keys are ``(from_interval, to_interval)`` in
+    semitones (approximately -11 to 11).
+
     Parameters
     ----------
     pitches : list[int]
         List of MIDI pitch values
-        
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+    tempo : float
+        Unused; kept for API consistency with other distribution features
+
     Returns
     -------
-    dict[int, float]
-        Dictionary mapping interval sizes (1-12 semitones) to directional bias values.
-        Each value ranges from -1.0 (all downward) to 1.0 (all upward), with 0.0 being equal.
-        Keys: 1=minor second, 2=major second, ..., 12=octave
+    dict
+        Map from interval-class transition to proportion
     """
-    if not pitches or len(pitches) < 2:
-        return {interval_size: 0.0 for interval_size in range(1, 13)}
-    
-    intervals = pitch_interval(pitches)
-    if not intervals:
-        return {interval_size: 0.0 for interval_size in range(1, 13)}
-    
-    interval_distribution = distribution_proportions(intervals)
-    
-    interval_direction_distribution = {}
-    
-    for interval_size in range(1, 13):
-        upward_proportion = interval_distribution.get(float(interval_size), 0.0)
-        downward_proportion = interval_distribution.get(float(-interval_size), 0.0)
-        
-        total_proportion = upward_proportion + downward_proportion
-        
-        if total_proportion > 0:
-            directional_bias = (upward_proportion - downward_proportion) / total_proportion
-            interval_direction_distribution[interval_size] = directional_bias
-        else:
-            interval_direction_distribution[interval_size] = 0.0
-    
-    return interval_direction_distribution
+    del tempo
+    if not pitches or not starts or not ends or len(pitches) < 2:
+        return {}
+    matrix = _ivdist2_matrix(pitches, starts, ends)
+    labels = list(range(-12, 13))
+    return transition_matrix_to_dict(matrix, labels)
 
 @midi_toolbox
 @interval
 @pitch
-def ivsizedist1(pitches: list[int]) -> dict[int, float]:
-    """The distribution of interval sizes (0-12 semitones). Returns the distribution 
-    of interval sizes by combining upward and downward intervals of the 
-    same absolute size. The first component represents a unison (0)
-    and the last component represents an octave (12).
-    
-    Parameters
-    ----------
-    pitches : list[int]
-        List of MIDI pitch values
-        
-    Returns
-    -------
-    dict[int, float]
-        Dictionary mapping interval sizes (0-12 semitones) to their proportions.
-        Keys: 0=unison, 1=minor second, 2=major second, ..., 12=octave
+def ivdirdist1(
+    pitches: list[int],
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    channels: Optional[list[int]] = None,
+) -> dict[int, float]:
+    """Directional interval bias for each interval size (1-12 semitones).
+
+    Derived from duration-accent-weighted ``ivdist1`` (MIDI Toolbox ``ivdirdist1.m``).
     """
-    if not pitches or len(pitches) < 2:
-        return {interval_size: 0.0 for interval_size in range(13)}
-    
-    intervals = pitch_interval(pitches)
-    if not intervals:
-        return {interval_size: 0.0 for interval_size in range(13)}
-    
-    interval_distribution = distribution_proportions(intervals)
-    
-    interval_size_distribution = {}
-    
-    for interval_size in range(13):
-        if interval_size == 0:
-            size_proportion = interval_distribution.get(0.0, 0.0)
-        else:
-            # Combine upward and downward intervals of same absolute size
-            upward_proportion = interval_distribution.get(float(interval_size), 0.0)
-            downward_proportion = interval_distribution.get(float(-interval_size), 0.0)
-            size_proportion = upward_proportion + downward_proportion
-        
-        interval_size_distribution[interval_size] = size_proportion
-    
-    return interval_size_distribution
+    del tempo
+    if not pitches or not starts or not ends or len(pitches) < 2:
+        return {}
+    ivd = _ivdist1_vector(pitches, starts, ends, channels)
+    return _ivdirdist1_from_vector(ivd)
+
+@midi_toolbox
+@interval
+@pitch
+def ivsizedist1(
+    pitches: list[int],
+    starts: list[float],
+    ends: list[float],
+    tempo: float = 120.0,
+    channels: Optional[list[int]] = None,
+) -> dict[int, float]:
+    """Interval-size distribution (0-12 semitones) from ``ivdist1``.
+
+    Derived from duration-accent-weighted ``ivdist1`` (MIDI Toolbox ``ivsizedist1.m``).
+    """
+    del tempo
+    if not pitches or not starts or not ends or len(pitches) < 2:
+        return {}
+    ivd = _ivdist1_vector(pitches, starts, ends, channels)
+    return _ivsizedist1_from_vector(ivd)
 
 @simile
 @interval
