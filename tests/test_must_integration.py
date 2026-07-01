@@ -48,7 +48,8 @@ def appenzel_melody() -> Melody:
 
 def test_must_features_registered_by_source():
     must_features = get_features_by_source(features_module, "must")
-    assert set(must_features.keys()) == MUST_FEATURE_NAMES
+    assert MUST_FEATURE_NAMES.issubset(set(must_features.keys()))
+    assert len(must_features) == 28
     for func in must_features.values():
         assert "must" in func._feature_sources
 

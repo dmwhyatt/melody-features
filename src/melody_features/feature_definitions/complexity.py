@@ -4,6 +4,7 @@ import numpy as np
 
 from ..algorithms import compute_tonality_vector
 from ..algorithms import must as must_algorithms
+from ..melody_tokenizer import MustTokenizer
 from ..feature_decorators import both, complexity, fantastic, midi_toolbox, must, novel, pitch, rhythm
 from ..feature_utils import _get_durations, mean_and_std
 from ..algorithms.meter_estimation import duration_accent as _duration_accent
@@ -14,6 +15,8 @@ from ..core.representations import Melody
 from ..utils.stats import distribution_entropy, midi_toolbox_entropy, shannon_entropy
 from .timing import _durdist1_vector
 
+
+_MUST_TOKENIZER = MustTokenizer()
 
 __all__ = [
     "pitch_entropy",
@@ -47,6 +50,14 @@ __all__ = [
     "d2_entropy",
     "d3_entropy",
     "wp_entropy",
+    "pdist1",
+    "pdist2",
+    "pdist3",
+    "idist1",
+    "idist2",
+    "ddist1",
+    "ddist2",
+    "ddist3",
 ]
 
 
@@ -637,6 +648,99 @@ def rhythm_abruptness(melody: Melody) -> float:
     Parncutt (1994)
     """
     return must_algorithms.rhythm_abruptness(melody)
+
+
+@must
+@complexity
+@pitch
+def pdist1(melody: Melody) -> dict:
+    """Pitch distribution (MUST ``pdist1.m``).
+
+    Returns normalized weights keyed by MIDI pitch.
+    """
+    if not melody.pitches:
+        return {}
+    return _MUST_TOKENIZER.pdist1(melody).as_dict()
+
+
+@must
+@complexity
+@pitch
+def pdist2(melody: Melody) -> dict:
+    """2-tuple pitch distribution (MUST ``pdist2.m``).
+
+    Returns normalized weights keyed by consecutive pitch pairs.
+    """
+    if not melody.pitches:
+        return {}
+    return _MUST_TOKENIZER.pdist2(melody).as_dict()
+
+
+@must
+@complexity
+@pitch
+def pdist3(melody: Melody) -> dict:
+    """3-tuple pitch distribution (MUST ``pdist3.m``).
+
+    Returns normalized weights keyed by consecutive pitch triples.
+    """
+    if not melody.pitches:
+        return {}
+    return _MUST_TOKENIZER.pdist3(melody).as_dict()
+
+
+@must
+@complexity
+@pitch
+def idist1(melody: Melody) -> dict:
+    """Interval distribution marginalized from ``pdist2`` (MUST ``idist1.m``)."""
+    if not melody.pitches:
+        return {}
+    return _MUST_TOKENIZER.idist1(melody).as_dict()
+
+
+@must
+@complexity
+@pitch
+def idist2(melody: Melody) -> dict:
+    """2-interval distribution marginalized from ``pdist3`` (MUST ``idist2.m``)."""
+    if not melody.pitches:
+        return {}
+    return _MUST_TOKENIZER.idist2(melody).as_dict()
+
+
+@must
+@complexity
+@rhythm
+def ddist1(melody: Melody) -> dict:
+    """Duration distribution in beats (MUST ``ddist1.m``).
+
+    The final note duration is excluded, consistent with the MUST ``ddist*``
+    convention. Durations are rounded to two decimal places in beats.
+    """
+    if not melody.pitches:
+        return {}
+    return _MUST_TOKENIZER.ddist1(melody).as_dict()
+
+
+@must
+@complexity
+@rhythm
+def ddist2(melody: Melody) -> dict:
+    """2-tuple duration distribution in beats (MUST ``ddist2.m``)."""
+    if not melody.pitches:
+        return {}
+    return _MUST_TOKENIZER.ddist2(melody).as_dict()
+
+
+@must
+@complexity
+@rhythm
+def ddist3(melody: Melody) -> dict:
+    """3-tuple duration distribution in beats (MUST ``ddist3.m``)."""
+    if not melody.pitches:
+        return {}
+    return _MUST_TOKENIZER.ddist3(melody).as_dict()
 
 
 @must

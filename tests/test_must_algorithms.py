@@ -8,9 +8,10 @@ import pytest
 from melody_features.algorithms import must as must_algorithms
 from melody_features.core.representations import Melody
 from melody_features.features import get_must_features
+from melody_features.melody_tokenizer import MustTokenizer
 from tests.helpers.melody import make_melody
 
-MUST_FEATURE_NAMES = {
+MUST_SCALAR_FEATURE_NAMES = {
     "bisect_unbalance",
     "center_mass_offset",
     "event_heterogeneity",
@@ -32,6 +33,19 @@ MUST_FEATURE_NAMES = {
     "d3_entropy",
     "wp_entropy",
 }
+
+MUST_DISTRIBUTION_FEATURE_NAMES = {
+    "pdist1",
+    "pdist2",
+    "pdist3",
+    "idist1",
+    "idist2",
+    "ddist1",
+    "ddist2",
+    "ddist3",
+}
+
+MUST_FEATURE_NAMES = MUST_SCALAR_FEATURE_NAMES | MUST_DISTRIBUTION_FEATURE_NAMES
 
 
 def _melody(pitches, starts, ends, tempo=120.0) -> Melody:
@@ -55,6 +69,9 @@ def test_get_must_features_returns_twenty_finite_values(pitches, starts, ends):
 
     assert set(computed.keys()) == MUST_FEATURE_NAMES
     for name, value in computed.items():
+        if name in MUST_DISTRIBUTION_FEATURE_NAMES:
+            assert isinstance(value, dict), name
+            continue
         assert isinstance(value, (int, float)), name
         assert math.isfinite(float(value)), name
 
@@ -62,7 +79,10 @@ def test_get_must_features_returns_twenty_finite_values(pitches, starts, ends):
 def test_empty_melody_returns_zeros():
     melody = _melody([], [], [])
     computed = get_must_features(melody)
-    assert all(value == 0.0 for value in computed.values())
+    for name in MUST_SCALAR_FEATURE_NAMES:
+        assert computed[name] == 0.0
+    for name in MUST_DISTRIBUTION_FEATURE_NAMES:
+        assert computed[name] == {}
 
 
 @pytest.mark.parametrize(
@@ -93,8 +113,8 @@ def test_must_shannon_entropy_zero_distribution():
 
 def test_duration3_distribution_short_sequence():
     melody = _melody([60, 62], [0.0, 1.0], [1.0, 2.0])
-    distribution = must_algorithms._duration3_distribution(melody)
-    assert np.allclose(distribution, np.array([1.0]))
+    distribution = MustTokenizer().ddist3(melody)
+    assert np.allclose(distribution.weights, np.array([1.0]))
 
 
 def test_local_unbalance_single_note():
@@ -106,8 +126,9 @@ def test_local_unbalance_single_note():
 
 def test_internal_helpers_handle_empty_melody():
     melody = _melody([], [], [])
+    tokenizer = MustTokenizer()
     assert must_algorithms._onsets_beats(melody).size == 0
-    assert np.allclose(must_algorithms._pitch_distribution(np.array([])), np.array([0.0]))
+    assert tokenizer.pitch_distribution(np.array([])).entropy() == 0.0
     densities, center_weights = must_algorithms._local_unbalance(melody)
     assert np.allclose(densities, np.array([1.0]))
     assert np.allclose(center_weights, np.array([0.0]))

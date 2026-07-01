@@ -360,6 +360,14 @@ from .feature_definitions.complexity import (
     d2_entropy,
     d3_entropy,
     wp_entropy,
+    pdist1,
+    pdist2,
+    pdist3,
+    idist1,
+    idist2,
+    ddist1,
+    ddist2,
+    ddist3,
 )
 from .feature_definitions.lexical_diversity import (
     get_mtype_features,

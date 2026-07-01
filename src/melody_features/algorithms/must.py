@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
 from ..feature_utils import _get_durations
+from ..melody_tokenizer import MustTokenizer
 
 if TYPE_CHECKING:
     from ..core.representations import Melody
 
+_MUST_TOKENIZER = MustTokenizer()
 
-def _zero_for_empty_melody(melody: Melody) -> float | None:
+
+def _zero_for_empty_melody(melody: Melody) -> Optional[float]:
     """Return 0.0 for empty melodies, matching package convention."""
     if len(melody.pitches) == 0:
         return 0.0
@@ -88,92 +91,6 @@ def _onsets_beats(melody: Melody) -> np.ndarray:
 
 def _durations_beats(melody: Melody) -> np.ndarray:
     return np.asarray(_get_durations(melody.starts, melody.ends, melody.tempo), dtype=float)
-
-
-def _pitch_distribution(pitches: np.ndarray) -> np.ndarray:
-    if pitches.size == 0:
-        return np.array([0.0])
-    _, counts = np.unique(pitches.astype(int), return_counts=True)
-    return counts.astype(float) / counts.sum()
-
-
-def _pitch2_distribution(pitches: np.ndarray) -> np.ndarray:
-    pitch_ints = pitches.astype(int)
-    pairs = np.column_stack([pitch_ints[:-1], pitch_ints[1:]])
-    _, inverse = np.unique(pairs, axis=0, return_inverse=True)
-    counts = np.bincount(inverse)
-    return counts.astype(float) / counts.sum()
-
-
-def _pitch3_distribution(pitches: np.ndarray) -> np.ndarray:
-    pitch_ints = pitches.astype(int)
-    triples = np.column_stack([pitch_ints[:-2], pitch_ints[1:-1], pitch_ints[2:]])
-    _, inverse = np.unique(triples, axis=0, return_inverse=True)
-    counts = np.bincount(inverse)
-    return counts.astype(float) / counts.sum()
-
-
-def _interval_distribution(pitches: np.ndarray) -> np.ndarray:
-    pitch_ints = pitches.astype(int)
-    pitch_pairs = np.unique(np.column_stack([pitch_ints[:-1], pitch_ints[1:]]), axis=0)
-    pair_weights = _pitch2_distribution(pitches)
-    pairs2 = np.diff(pitch_pairs, axis=1)
-    unique_intervals = np.unique(pairs2, axis=0)
-    weights = []
-    for interval in unique_intervals:
-        mask = np.all(pairs2 == interval, axis=1)
-        weights.append(pair_weights[mask].sum())
-    return np.asarray(weights, dtype=float)
-
-
-def _interval2_distribution(pitches: np.ndarray) -> np.ndarray:
-    pitch_ints = pitches.astype(int)
-    pitch_triples = np.unique(
-        np.column_stack([pitch_ints[:-2], pitch_ints[1:-1], pitch_ints[2:]]),
-        axis=0,
-    )
-    triple_weights = _pitch3_distribution(pitches)
-    pairs3 = np.diff(pitch_triples, axis=1)
-    unique_pairs = np.unique(pairs3, axis=0)
-    weights = []
-    for pair in unique_pairs:
-        mask = np.all(pairs3 == pair, axis=1)
-        weights.append(triple_weights[mask].sum())
-    return np.asarray(weights, dtype=float)
-
-
-def _duration_values_beats(melody: Melody) -> np.ndarray:
-    """Beat durations for all notes except the last (MUST ``ddist*`` convention)."""
-    return np.round(_durations_beats(melody)[:-1], 2)
-
-
-def _duration_distribution(melody: Melody) -> np.ndarray:
-    durations = _duration_values_beats(melody)
-    _, counts = np.unique(durations, return_counts=True)
-    return counts.astype(float) / counts.sum()
-
-
-def _duration2_distribution(melody: Melody) -> np.ndarray:
-    durations = _duration_values_beats(melody)
-    pairs = np.column_stack([durations[:-1], durations[1:]])
-    _, inverse = np.unique(pairs, axis=0, return_inverse=True)
-    counts = np.bincount(inverse)
-    return counts.astype(float) / counts.sum()
-
-
-def _duration3_distribution(melody: Melody) -> np.ndarray:
-    """3-tuple duration distribution matching MUST ``ddist3.m`` (inclusive element counts)."""
-    durations = _duration_values_beats(melody)
-    if len(durations) < 3:
-        return np.array([1.0])
-    triples = np.column_stack([durations[:-2], durations[1:-1], durations[2:]])
-    unique_triples = np.unique(triples, axis=0)
-    weights = []
-    for triple in unique_triples:
-        # MUST uses all(..., 3) on a 2-D array, which counts matching elements.
-        weights.append(float(np.sum(triples == triple)))
-    weights_arr = np.asarray(weights, dtype=float)
-    return weights_arr / weights_arr.sum()
 
 
 def _local_unbalance(
@@ -389,7 +306,9 @@ def av_local_p1_entropy(
     while time <= total_time + 1e-12:
         indices = _onset_window_indices(onsets, time - window_length, time)
         if indices.size:
-            entropies.append(must_shannon_entropy(_pitch_distribution(pitches[indices])))
+            entropies.append(
+                _MUST_TOKENIZER.pitch_distribution(pitches[indices]).entropy()
+            )
         time += window_step
     return float(np.mean(entropies)) if entropies else 0.0
 
@@ -397,49 +316,49 @@ def av_local_p1_entropy(
 def p1_entropy(melody: Melody) -> float:
     if (empty := _zero_for_empty_melody(melody)) is not None:
         return empty
-    return must_shannon_entropy(_pitch_distribution(_pitches(melody)))
+    return _MUST_TOKENIZER.pdist1(melody).entropy()
 
 
 def p2_entropy(melody: Melody) -> float:
     if (empty := _zero_for_empty_melody(melody)) is not None:
         return empty
-    return must_shannon_entropy(_pitch2_distribution(_pitches(melody)))
+    return _MUST_TOKENIZER.pdist2(melody).entropy()
 
 
 def p3_entropy(melody: Melody) -> float:
     if (empty := _zero_for_empty_melody(melody)) is not None:
         return empty
-    return must_shannon_entropy(_pitch3_distribution(_pitches(melody)))
+    return _MUST_TOKENIZER.pdist3(melody).entropy()
 
 
 def i1_entropy(melody: Melody) -> float:
     if (empty := _zero_for_empty_melody(melody)) is not None:
         return empty
-    return must_shannon_entropy(_interval_distribution(_pitches(melody)))
+    return _MUST_TOKENIZER.idist1(melody).entropy()
 
 
 def i2_entropy(melody: Melody) -> float:
     if (empty := _zero_for_empty_melody(melody)) is not None:
         return empty
-    return must_shannon_entropy(_interval2_distribution(_pitches(melody)))
+    return _MUST_TOKENIZER.idist2(melody).entropy()
 
 
 def d1_entropy(melody: Melody) -> float:
     if (empty := _zero_for_empty_melody(melody)) is not None:
         return empty
-    return must_shannon_entropy(_duration_distribution(melody))
+    return _MUST_TOKENIZER.ddist1(melody).entropy()
 
 
 def d2_entropy(melody: Melody) -> float:
     if (empty := _zero_for_empty_melody(melody)) is not None:
         return empty
-    return must_shannon_entropy(_duration2_distribution(melody))
+    return _MUST_TOKENIZER.ddist2(melody).entropy()
 
 
 def d3_entropy(melody: Melody) -> float:
     if (empty := _zero_for_empty_melody(melody)) is not None:
         return empty
-    return must_shannon_entropy(_duration3_distribution(melody))
+    return _MUST_TOKENIZER.ddist3(melody).entropy()
 
 
 def wp_entropy(melody: Melody) -> float:
