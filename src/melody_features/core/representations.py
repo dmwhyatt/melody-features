@@ -120,6 +120,11 @@ class Melody:
         self._tempo_changes = midi_data.get("tempo_changes", [(0.0, self._tempo)])
 
         self._pitches, self._starts, self._ends = self._load_note_lists(midi_data)
+        channels = midi_data.get("channels")
+        if isinstance(channels, list) and len(channels) == len(self._pitches):
+            self._channels = [int(channel) for channel in channels]
+        else:
+            self._channels = [1] * len(self._pitches)
 
     @staticmethod
     def _has_structured_note_lists(midi_data: dict) -> bool:
@@ -236,6 +241,11 @@ class Melody:
     def ends(self) -> list[float]:
         """List of MIDI note end times in order of appearance."""
         return self._ends
+
+    @property
+    def channels(self) -> list[int]:
+        """MIDI channel numbers (MIDI Toolbox uses channels 1-16)."""
+        return self._channels
 
     @property
     def tempo(self) -> float:

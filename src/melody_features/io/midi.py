@@ -75,6 +75,7 @@ def import_midi(midi_file: str) -> dict:
             "pitches": pitches,
             "starts": starts,
             "ends": ends,
+            "channels": [1] * len(pitches),
             "tempo": tempo,
             "tempo_changes": tempo_changes,
             "time_signature_info": time_sig_info,

@@ -9,7 +9,7 @@ import warnings
 from importlib import resources
 
 from .feature_decorators import (
-    fantastic, idyom, midi_toolbox, melsim, jsymbolic, novel, simile, partitura,
+    fantastic, idyom, midi_toolbox, melsim, jsymbolic, novel, simile, partitura, must,
     FeatureType, feature_type, interval, pitch_class, contour, tonality, metre, absolute, timing,
     lexical_diversity, expectation, complexity,
     pitch, rhythm, both
@@ -57,6 +57,7 @@ from .feature_definitions.pitch_class import (
     pitch_class_variability,
     pitch_class_variability_after_folding,
     pcdist1,
+    pcdist2,
     first_pitch_class,
     last_pitch_class,
     dominant_spread,
@@ -85,6 +86,7 @@ from .feature_definitions.pitch_interval import (
     modal_interval,
     most_common_interval,
     ivdist1,
+    ivdist2,
     ivdirdist1,
     ivsizedist1,
     interval_direction,
@@ -223,6 +225,7 @@ from .feature_definitions.timing import (
     _count_strong_pulses,
     _is_factor_or_multiple,
     durdist1,
+    durdist2,
     initial_tempo,
     mean_tempo,
     tempo_variability,
@@ -340,6 +343,34 @@ from .feature_definitions.complexity import (
     complebm_pitch,
     complebm_rhythm,
     complebm_optimal,
+    bisect_unbalance,
+    center_mass_offset,
+    event_heterogeneity,
+    av_abs_interval,
+    mel_abruptness,
+    dur_abruptness,
+    rhythm_abruptness,
+    asym_total,
+    asym_index,
+    event_density,
+    av_local_p1_entropy,
+    p1_entropy,
+    p2_entropy,
+    p3_entropy,
+    i1_entropy,
+    i2_entropy,
+    d1_entropy,
+    d2_entropy,
+    d3_entropy,
+    wp_entropy,
+    pdist1,
+    pdist2,
+    pdist3,
+    idist1,
+    idist2,
+    ddist1,
+    ddist2,
+    ddist3,
 )
 from .feature_definitions.lexical_diversity import (
     get_mtype_features,
@@ -868,6 +899,21 @@ def get_jsymbolic_features(melody: Melody) -> Dict:
     """
     return _compute_features_by_source(melody, "jsymbolic")
 
+def get_must_features(melody: Melody) -> Dict:
+    """Get all MUST features for a melody.
+
+    Parameters
+    ----------
+    melody : Melody
+        The melody to extract features from
+
+    Returns
+    -------
+    Dict
+        Dictionary containing all MUST features
+    """
+    return _compute_features_by_source(melody, "must")
+
 def get_midi_toolbox_features(melody: Melody) -> Dict:
     """Get all MIDI Toolbox features for a melody.
 
@@ -926,7 +972,7 @@ def get_novel_features(melody: Melody) -> Dict:
     Dict
         Dictionary containing all novel features
     """
-    return _compute_features_by_source(melody, "custom")
+    return _compute_features_by_source(melody, "novel")
 
 def _compute_features_by_source(
     melody: Melody,

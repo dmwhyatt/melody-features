@@ -36,9 +36,9 @@ def metric_hierarchy(melody: Melody) -> list[int]:
     return _metric_hierarchy(
         melody.starts,
         melody.ends,
-        time_signature=melody.meter,
         tempo=melody.tempo,
         pitches=melody.pitches,
+        tempo_changes=melody.tempo_changes,
     )
 
 def _meter_accent_mean(melody: Melody) -> float:
@@ -62,14 +62,14 @@ def _meter_accent_mean(melody: Melody) -> float:
 @rhythm
 @metre
 @midi_toolbox
-def meter_accent(melody: Melody) -> int:
+def meter_accent(melody: Melody) -> float:
     """Phenomenal accent synchrony measure, calculated as the negative mean of
     the product of metric hierarchy, melodic accent, and durational accent
     for each note. Higher values indicate stronger accent synchrony.
 
     Implementation based on MIDI toolbox meteraccent.m.
     """
-    return int(round(_meter_accent_mean(melody)))
+    return _meter_accent_mean(melody)
 
 @jsymbolic
 @rhythm
@@ -180,11 +180,11 @@ def syncopation(melody: Melody) -> float:
         return 0.0
 
     hierarchy_values = _metric_hierarchy(
-        melody.starts, 
-        melody.ends, 
-        time_signature=melody.meter, 
-        tempo=melody.tempo, 
-        pitches=melody.pitches
+        melody.starts,
+        melody.ends,
+        tempo=melody.tempo,
+        pitches=melody.pitches,
+        tempo_changes=melody.tempo_changes,
     )
 
     if not hierarchy_values or len(hierarchy_values) != len(melody.starts):

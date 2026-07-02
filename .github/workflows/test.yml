@@ -36,8 +36,8 @@ jobs:
         python -m pip install --upgrade pip
         pip install setuptools
         pip install -e .
-        pip install pytest
+        pip install pytest pytest-cov
     
     - name: Run tests
       run: |
-        python -m pytest tests/ --doctest-modules
+        python -m pytest tests/ --doctest-modules -o addopts=

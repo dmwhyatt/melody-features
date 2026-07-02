@@ -28,6 +28,10 @@ def invoke_feature(
         kwargs["ends"] = melody.ends
     if "tempo" in sig.parameters:
         kwargs["tempo"] = melody.tempo
+    if "tempo_changes" in sig.parameters:
+        kwargs["tempo_changes"] = getattr(melody, "tempo_changes", [(0.0, melody.tempo)])
+    if "channels" in sig.parameters:
+        kwargs["channels"] = getattr(melody, "channels", [1] * len(melody.pitches))
     if "ppqn" in sig.parameters:
         kwargs["ppqn"] = extra.get("ppqn", 480)
     if "corpus_stats" in sig.parameters:

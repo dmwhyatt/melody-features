@@ -99,6 +99,7 @@ _IMPL_BADGE_CLASSES: dict[str, str] = {
     "jSymbolic": "impl-jsymbolic",
     "IDyOM": "impl-idyom",
     "MIDI Toolbox": "impl-midi-toolbox",
+    "MUST": "impl-must",
     "SIMILE": "impl-simile",
     "Melsim": "impl-melsim",
     "Novel": "impl-novel",
@@ -409,6 +410,7 @@ def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]
             "jsymbolic": "jSymbolic",
             "midi toolbox": "MIDI Toolbox",
             "midi_toolbox": "MIDI Toolbox",
+            "must": "MUST",
             "simile": "SIMILE",
             "idyom": "IDyOM",
         }
@@ -838,6 +840,8 @@ def main():
             f.write("            impl_tokens.add('SIMILE')\n")
             f.write("        elif token_low in ['idyom']:\n")
             f.write("            impl_tokens.add('IDyOM')\n")
+            f.write("        elif token_low in ['must']:\n")
+            f.write("            impl_tokens.add('MUST')\n")
             f.write("        else:\n")
             f.write("            impl_tokens.add(token)\n")
             f.write("implementation_options = '\\n'.join([f'        <option value=\"{opt}\">{opt}</option>' for opt in sorted(impl_tokens)])\n\n")
@@ -967,6 +971,7 @@ def main():
             f.write(".impl-jsymbolic { background: #e3f2fd; color: #0d47a1; border-color: #bbdefb; }\n")
             f.write(".impl-idyom { background: #f3e5f5; color: #4a148c; border-color: #e1bee7; }\n")
             f.write(".impl-midi-toolbox { background: #fff3e0; color: #e65100; border-color: #ffe0b2; }\n")
+            f.write(".impl-must { background: #e0f2f1; color: #004d40; border-color: #b2dfdb; }\n")
             f.write(".impl-simile { background: #fce4ec; color: #880e4f; border-color: #f8bbd0; }\n")
             f.write(".impl-default { background: #f1f3f5; color: #495057; border-color: #dee2e6; }\n")
             f.write("/* Type pills */\n")
@@ -1175,6 +1180,7 @@ def main():
             f.write("- **jSymbolic**: McKay, C., & Fujinaga, I. (2006). jSymbolic: A Feature Extractor for MIDI Files\n")
             f.write("- **IDyOM**: Pearce, M. T. (2005). The construction and evaluation of statistical models of melodic structure in music perception and composition\n")
             f.write("- **MIDI Toolbox**: Eerola, T., & Toiviainen, P. (2004). MIDI Toolbox: MATLAB Tools for Music Research\n")
+            f.write("- **MUST**: Clemente, A., Vila-Vidal, M., Pearce, M. T., et al. (2020). A Set of 200 Musical Stimuli Varying in Balance, Contour, Symmetry, and Complexity\n")
             f.write("- **Melsim**: Silas, S., & Frieler, K. (n.d.). Melsim: Framework for calculating tons of melodic similarities\n")
             f.write("- **Simile**: Müllensiefen, D., & Frieler, K. (2004). The Simile algorithms documentation 0.3\n")
             f.write("- **Novel**: Custom features introduced in this package\n\n")

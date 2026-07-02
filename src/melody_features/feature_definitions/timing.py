@@ -2,12 +2,12 @@
 
 import inspect
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
 from ..algorithms import get_duration_ratios
-from ..utils.distributional import histogram_bins
+from ..utils.distributional import histogram_bins, transition_matrix_to_dict
 from ..feature_decorators import fantastic, jsymbolic, midi_toolbox, novel, rhythm, timing
 from ..feature_histogram import create_beat_histogram, create_rhythmic_value_histogram
 from ..feature_utils import _get_durations
@@ -18,6 +18,7 @@ from ..utils.stats import get_mode, range_func
 
 __all__ = [
     "durdist1",
+    "durdist2",
     "initial_tempo",
     "mean_tempo",
     "tempo_variability",
@@ -103,25 +104,51 @@ __all__ = [
 ]
 
 
-def _durdist1_vector(
+def _durdist1_categories(
     starts: list[float], ends: list[float], tempo: float = 120.0
 ) -> np.ndarray:
+    """Return 1-indexed MIDI Toolbox duration bins (1..9) for positive beat durations."""
     if not starts or not ends:
-        return np.zeros(9, dtype=float)
+        return np.array([], dtype=int)
     beat_durs = [
         (float(end) - float(start)) * (tempo / 60.0)
         for start, end in zip(starts, ends)
         if float(end) > float(start)
     ]
     if not beat_durs:
-        return np.zeros(9, dtype=float)
+        return np.array([], dtype=int)
     du = np.round(2 * np.log2(np.asarray(beat_durs, dtype=float))).astype(int)
     du = du[np.abs(du) <= 4] + 5
+    return du
+
+
+def _durdist1_vector(
+    starts: list[float], ends: list[float], tempo: float = 120.0
+) -> np.ndarray:
+    du = _durdist1_categories(starts, ends, tempo)
+    if du.size == 0:
+        return np.zeros(9, dtype=float)
     hist = np.zeros(9, dtype=float)
-    for b in du:
-        if 1 <= b <= 9:
-            hist[b - 1] += 1.0
+    for bin_index in du:
+        if 1 <= bin_index <= 9:
+            hist[bin_index - 1] += 1.0
     return hist / (hist.sum() + 1e-12)
+
+
+def _durdist2_matrix(
+    starts: list[float], ends: list[float], tempo: float = 120.0
+) -> np.ndarray:
+    """Second-order duration transition matrix (MIDI Toolbox ``durdist2.m``)."""
+    durd = np.zeros((9, 9), dtype=float)
+    du = _durdist1_categories(starts, ends, tempo)
+    if du.size < 2:
+        return durd
+    for k in range(1, du.size):
+        from_bin = int(du[k - 1])
+        to_bin = int(du[k])
+        if 1 <= from_bin <= 9 and 1 <= to_bin <= 9:
+            durd[from_bin - 1, to_bin - 1] += 1.0
+    return durd / (durd.sum() + 1e-12)
 
 @midi_toolbox
 @rhythm
@@ -151,6 +178,37 @@ def durdist1(
         return {}
     vec = _durdist1_vector(starts, ends, tempo)
     return {i + 1: float(vec[i]) for i in range(9) if vec[i] > 0}
+
+@midi_toolbox
+@rhythm
+@timing
+def durdist2(
+    starts: list[float], ends: list[float], tempo: float = 120.0
+) -> dict:
+    """Second-order duration transition distribution (MIDI Toolbox ``durdist2.m``).
+
+    Returns a 9×9 matrix of transition probabilities between log-spaced duration
+    bins (same bin centres as ``durdist1``). Keys are ``(from_bin, to_bin)`` with
+    bin indices 1–9.
+
+    Parameters
+    ----------
+    starts : list[float]
+        Note onset times in seconds
+    ends : list[float]
+        Note offset times in seconds
+    tempo : float
+        Tempo in BPM (default 120)
+
+    Returns
+    -------
+    dict[tuple[int, int], float]
+        Map from duration-bin transition to proportion
+    """
+    if not starts or not ends:
+        return {}
+    matrix = _durdist2_matrix(starts, ends, tempo)
+    return transition_matrix_to_dict(matrix, list(range(1, 10)))
 
 @fantastic
 @jsymbolic
@@ -3279,6 +3337,7 @@ def onset_autocorrelation(
     divisions_per_quarter: int = 4,
     max_lag_quarters: int = 8,
     tempo: float = 120.0,
+    tempo_changes: Optional[list[tuple[float, float]]] = None,
 ) -> list[float]:
     """The autocorrelation function of onset times weighted by duration accents.
     This is calculated by weighting the onset times by the duration accents,
@@ -3315,6 +3374,7 @@ def onset_autocorrelation(
         divisions_per_quarter=divisions_per_quarter,
         max_lag_quarters=max_lag_quarters,
         tempo=tempo,
+        tempo_changes=tempo_changes,
     )
 
 @midi_toolbox
@@ -3326,10 +3386,16 @@ def onset_autocorr_peak(
     divisions_per_quarter: int = 4,
     max_lag_quarters: int = 8,
     tempo: float = 120.0,
+    tempo_changes: Optional[list[tuple[float, float]]] = None,
 ) -> float:
     """Maximum onset autocorrelation excluding lag 0."""
     autocorr_values = onset_autocorrelation(
-        starts, ends, divisions_per_quarter, max_lag_quarters, tempo
+        starts,
+        ends,
+        divisions_per_quarter,
+        max_lag_quarters,
+        tempo,
+        tempo_changes,
     )
     if len(autocorr_values) <= 1:
         return 0.0

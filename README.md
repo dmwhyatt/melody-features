@@ -27,6 +27,7 @@ Included in the package are contributions from:
 - **jSymbolic2** (McKay & Fujinaga, 2006)
 - **IDyOM** (Pearce, 2005)
 - **MIDI Toolbox** (Eerola & Toiviainen, 2004)
+- **MUST** (Clemente et al., 2020)
 - **Partitura** (Cancino-Chacón, 2022)
 
 ## Melody Features Summary

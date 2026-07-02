@@ -29,9 +29,11 @@ def test_melodic_octaves_returns_float_proportion():
 def test_ivdirdist1_reports_directional_bias():
     # Intervals: +2, -2, +2 => bias for size 2 is (2/3 - 1/3) / 1 = 1/3
     pitches = [60, 62, 60, 62]
-    dist = ivdirdist1(pitches)
+    starts = [0.0, 1.0, 2.0, 3.0]
+    ends = [1.0, 2.0, 3.0, 4.0]
+    dist = ivdirdist1(pitches, starts, ends)
     assert math.isclose(dist[2], 1.0 / 3.0, rel_tol=1e-9)
-    assert dist[1] == 0.0
+    assert dist.get(1, 0.0) == 0.0
 
 
 def test_interval_entropy_uses_signed_intervals():

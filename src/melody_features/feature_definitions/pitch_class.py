@@ -7,6 +7,7 @@ from ..feature_decorators import jsymbolic, midi_toolbox, pitch, pitch_class
 from ..feature_histogram import PitchClassHistogram
 from ..algorithms.meter_estimation import duration_accent
 from ..feature_utils import prevalence_of_mode, relative_prevalence_top_two
+from ..utils.distributional import transition_matrix_to_dict
 from ..utils.stats import get_mode
 
 
@@ -14,6 +15,7 @@ __all__ = [
     "pitch_class_variability",
     "pitch_class_variability_after_folding",
     "pcdist1",
+    "pcdist2",
     "first_pitch_class",
     "last_pitch_class",
     "dominant_spread",
@@ -91,6 +93,20 @@ def _pcdist1_vector(pitches: list[int], starts: list[float], ends: list[float]) 
         pcd[int(pitch) % 12] += acc
     return pcd / (pcd.sum() + 1e-12)
 
+
+def _pcdist2_matrix(pitches: list[int], starts: list[float], ends: list[float]) -> np.ndarray:
+    """Second-order pitch-class transition matrix (MIDI Toolbox ``pcdist2.m``)."""
+    pcd = np.zeros((12, 12), dtype=float)
+    if len(pitches) < 2 or not starts or not ends:
+        return pcd
+    accents = duration_accent(starts, ends)
+    n = min(len(pitches), len(accents))
+    pcs = [int(pitch) % 12 for pitch in pitches[:n]]
+    for k in range(1, n):
+        weight = accents[k - 1] * accents[k]
+        pcd[pcs[k - 1], pcs[k]] += weight
+    return pcd / (pcd.sum() + 1e-12)
+
 @midi_toolbox
 @pitch_class
 @pitch
@@ -115,6 +131,36 @@ def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
         return {}
     vec = _pcdist1_vector(pitches, starts, ends)
     return {i: float(vec[i]) for i in range(12) if vec[i] > 0}
+
+@midi_toolbox
+@pitch_class
+@pitch
+def pcdist2(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
+    """Second-order pitch-class transition distribution (MIDI Toolbox ``pcdist2.m``).
+
+    Transition weights are the product of Parncutt duration accents of the two
+    notes. Keys are ``(from_pitch_class, to_pitch_class)`` with pitch classes
+    0–11 (C=0, …, B=11).
+
+    Parameters
+    ----------
+    pitches : list[int]
+        List of MIDI pitch values
+    starts : list[float]
+        List of note start times
+    ends : list[float]
+        List of note end times
+
+    Returns
+    -------
+    dict
+        Map from pitch-class transition to proportion
+    """
+    if not pitches or not starts or not ends or len(pitches) < 2:
+        return {}
+    matrix = _pcdist2_matrix(pitches, starts, ends)
+    labels = list(range(12))
+    return transition_matrix_to_dict(matrix, labels)
 
 @jsymbolic
 @pitch_class
