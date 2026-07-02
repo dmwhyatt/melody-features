@@ -5,13 +5,13 @@ This module provides autocorrelation-based meter estimation functions that can b
 used as fallbacks when MIDI files don't contain explicit time signature information.
 """
 
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 from scipy.signal import correlate
 
 
-def _matlab_round(values: np.ndarray | float) -> np.ndarray:
+def _matlab_round(values: Union[np.ndarray, float]) -> np.ndarray:
     """Round like MATLAB ``round`` (half away from zero for positive values)."""
     arr = np.asarray(values, dtype=float)
     return np.floor(arr + 0.5).astype(int)
