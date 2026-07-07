@@ -111,9 +111,9 @@ def ioi_ratio(starts: list[float]) -> list[float]:
     """The sequence of ratios between successive inter-onset intervals.
 
     First, consecutive onset times are converted to inter-onset intervals (IOIs).
-    Each output value is then ``IOI[i] / IOI[i - 1]``. Values greater than ``1``
+    Each output value is then `IOI[i] / IOI[i - 1]`. Values greater than `1`
     indicate that the current onset gap is longer than the previous one, values
-    less than ``1`` indicate a shorter gap, and ``1`` indicates no change.
+    less than `1` indicate a shorter gap, and `1` indicates no change.
 
     Parameters
     ----------
@@ -138,9 +138,9 @@ def ioi_ratio(starts: list[float]) -> list[float]:
 def ioi_ratio_mean(starts: list[float]) -> float:
     """The arithmetic mean of successive inter-onset interval ratios.
 
-    The ratio sequence is computed as ``IOI[i] / IOI[i - 1]`` for each pair of
-    adjacent inter-onset intervals. This summary is above ``1`` when IOIs tend to
-    lengthen, below ``1`` when they tend to shorten, and close to ``1`` when
+    The ratio sequence is computed as `IOI[i] / IOI[i - 1]` for each pair of
+    adjacent inter-onset intervals. This summary is above `1` when IOIs tend to
+    lengthen, below `1` when they tend to shorten, and close to `1` when
     adjacent IOIs tend to have similar lengths.
 
     Parameters
@@ -164,7 +164,7 @@ def ioi_ratio_mean(starts: list[float]) -> float:
 def ioi_ratio_standard_deviation(starts: list[float]) -> float:
     """The sample standard deviation of successive inter-onset interval ratios.
 
-    This feature measures the variability of ``IOI[i] / IOI[i - 1]`` across the
+    This feature measures the variability of `IOI[i] / IOI[i - 1]` across the
     melody. Larger values indicate less regular proportional change between
     neighboring onset gaps.
 
@@ -239,7 +239,7 @@ def ioi_contour(starts: list[float]) -> list[int]:
 def ioi_contour_mean(starts: list[float]) -> float:
     """The arithmetic mean of ordinal IOI contour values.
 
-    IOI contour values are ``-1`` for shorter, ``0`` for unchanged, and ``1`` for
+    IOI contour values are `-1` for shorter, `0` for unchanged, and `1` for
     longer successive inter-onset intervals. The mean summarizes the balance of
     lengthening versus shortening onset gaps.
 

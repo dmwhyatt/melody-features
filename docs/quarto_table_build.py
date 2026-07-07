@@ -183,7 +183,8 @@ def format_description_html(description: str) -> str:
     """Wrap description text for consistent table typography."""
     if not description:
         return ""
-    return f'<span class="feature-description">{description}</span>'
+    text = re.sub(r"`([^`]+)`", lambda m: f"<code>{m.group(1)}</code>", description)
+    return f'<span class="feature-description">{text}</span>'
 
 
 def format_table_display_html(df: pd.DataFrame) -> pd.DataFrame:
@@ -993,6 +994,7 @@ def main():
             f.write("    font-size: 0.92rem;\n")
             f.write("    line-height: 1.45;\n")
             f.write("}\n")
+            f.write(".feature-description code,\n")
             f.write(".feature-notes code {\n")
             f.write("    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;\n")
             f.write("    font-size: 0.85em;\n")

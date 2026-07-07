@@ -99,10 +99,10 @@ def narmour_registral_direction(pitches: list[int]) -> int:
     """Narmour registral-direction score for the final three notes.
 
     The last three pitches define an implicative interval followed by a realized
-    interval. This feature returns ``1`` when a large implicative interval (greater
+    interval. This feature returns `1` when a large implicative interval (greater
     than a tritone) is followed by a change of direction, or when a small
     implicative interval (smaller than a tritone) continues in the same direction.
-    It returns ``0`` otherwise.
+    It returns `0` otherwise.
 
     Parameters
     ----------
@@ -127,11 +127,11 @@ def narmour_registral_direction(pitches: list[int]) -> int:
 def narmour_proximity(pitches: list[int]) -> int:
     """Narmour proximity score for the final melodic interval.
 
-    Proximity rewards small realized intervals. It is calculated as ``6 - d``,
-    where ``d`` is the absolute semitone distance between the final two notes, and
-    is clipped at ``0`` for intervals of a tritone or larger. Unisons therefore
-    receive ``6``, whole tones receive ``4``, perfect fourths receive ``1``, and
-    perfect fifths receive ``0``.
+    Proximity rewards small realized intervals. It is calculated as `6 - d`,
+    where `d` is the absolute semitone distance between the final two notes, and
+    is clipped at `0` for intervals of a tritone or larger. Unisons therefore
+    receive `6`, whole tones receive `4`, perfect fourths receive `1`, and
+    perfect fifths receive `0`.
 
     Parameters
     ----------
@@ -159,7 +159,7 @@ def narmour_closure(pitches: list[int]) -> int:
     The last three pitches define two successive intervals. One point is awarded
     when the second interval changes direction relative to the first. A second
     point is awarded when the second interval is at least two semitones smaller
-    than the first in absolute size. The resulting score ranges from ``0`` to ``2``.
+    than the first in absolute size. The resulting score ranges from `0` to `2`.
 
     Parameters
     ----------
@@ -187,8 +187,8 @@ def narmour_registral_return(pitches: list[int]) -> int:
     Registral return measures whether the last three notes move away from a pitch
     and then return toward it. The contour must change direction and neither
     interval may be a repeated note. An exact return to the first pitch scores
-    ``3``; returning within one semitone scores ``2``; returning within two
-    semitones scores ``1``; all other patterns score ``0``.
+    `3`; returning within one semitone scores `2`; returning within two
+    semitones scores `1`; all other patterns score `0`.
 
     Parameters
     ----------
@@ -215,11 +215,11 @@ def narmour_intervallic_difference(pitches: list[int]) -> int:
 
     The last three pitches define an implicative interval followed by a realized
     interval. If the implicative interval is large (greater than a tritone), this
-    feature returns ``1`` when the realized interval is sufficiently smaller: at
+    feature returns `1` when the realized interval is sufficiently smaller: at
     least three semitones smaller in the same direction, or at least two semitones
     smaller after a direction change. If the implicative interval is small (smaller
-    than a tritone), it returns ``1`` when the realized interval is similar in size,
-    within the same margins. Otherwise it returns ``0``.
+    than a tritone), it returns `1` when the realized interval is similar in size,
+    within the same margins. Otherwise it returns `0`.
 
     Parameters
     ----------
@@ -334,7 +334,7 @@ def mobility(pitches: list[int]) -> list[float]:
     Returns
     -------
     list[float]
-        One mobility value per input pitch (length matches ``pitches``).
+        One mobility value per input pitch (length matches `pitches`).
     
     Citation
     --------
@@ -451,8 +451,8 @@ def melodic_accent(pitches: list[int]) -> list[float]:
 
     Thomassen's model assigns accent strength from the melodic contour formed by
     three-note pitch windows. Notes at locally salient contour positions receive
-    higher values. The implementation follows the MIDI Toolbox ``melaccent.m``
-    convention and returns values from ``0`` (no salience) to ``1`` (maximum
+    higher values. The implementation follows the MIDI Toolbox `melaccent.m`
+    convention and returns values from `0` (no salience) to `1` (maximum
     salience).
     
     Parameters

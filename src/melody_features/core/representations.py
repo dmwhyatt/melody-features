@@ -13,7 +13,7 @@ def build_midi_sequence_string(
     starts: list[float],
     ends: list[float],
 ) -> str:
-    """Build the legacy ``MIDI Sequence`` string from parallel note lists."""
+    """Build the legacy `MIDI Sequence` string from parallel note lists."""
     return "Note(" + "Note(".join(
         f"pitch={p}, start={s}, end={e})"
         for p, s, e in zip(pitches, starts, ends)
@@ -30,7 +30,7 @@ def build_midi_data(
     time_signature: str = "4/4",
     tempo_changes: Optional[list[tuple[float, float]]] = None,
 ) -> dict:
-    """Build a ``midi_data`` dict from parallel note lists.
+    """Build a `midi_data` dict from parallel note lists.
 
     This is the structured input expected by :class:`Melody` and matches the
     shape returned by :func:`melody_features.io.midi.import_midi`.
@@ -66,10 +66,10 @@ def build_midi_data(
 class Melody:
     """Melody representation backed by parallel note lists.
 
-    Construct directly with :meth:`from_notes`, or pass a ``midi_data`` dict
-    with ``pitches``, ``starts``, and ``ends`` (as produced by
+    Construct directly with :meth:`from_notes`, or pass a `midi_data` dict
+    with `pitches`, `starts`, and `ends` (as produced by
     :func:`melody_features.io.midi.import_midi`). Legacy dicts that only
-    provide ``MIDI Sequence`` are still supported via string parsing.
+    provide `MIDI Sequence` are still supported via string parsing.
     """
 
     @classmethod
@@ -128,7 +128,7 @@ class Melody:
 
     @staticmethod
     def _has_structured_note_lists(midi_data: dict) -> bool:
-        """Return whether ``midi_data`` has aligned pitches/starts/ends lists."""
+        """Return whether `midi_data` has aligned pitches/starts/ends lists."""
         for key in ("pitches", "starts", "ends"):
             values = midi_data.get(key)
             if not isinstance(values, list):
@@ -182,7 +182,7 @@ class Melody:
 
     @staticmethod
     def _read_note_field(note_fragment: str, field_name: str) -> Optional[str]:
-        """Return the raw text of one ``Note(...)`` field (e.g. pitch, start, end)."""
+        """Return the raw text of one `Note(...)` field (e.g. pitch, start, end)."""
         marker = f"{field_name}="
         marker_at = note_fragment.find(marker)
         if marker_at == -1:

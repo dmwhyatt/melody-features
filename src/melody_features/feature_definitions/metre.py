@@ -42,7 +42,7 @@ def metric_hierarchy(melody: Melody) -> list[int]:
     )
 
 def _meter_accent_mean(melody: Melody) -> float:
-    """``meteraccent.m`` synchrony (float, unrounded)."""
+    """`meteraccent.m` synchrony (float, unrounded)."""
     hierarchy_values = metric_hierarchy(melody)
     if not hierarchy_values:
         return 0.0
@@ -77,7 +77,7 @@ def meter_accent(melody: Melody) -> float:
 def meter_numerator(melody: Melody) -> int:
     """The numerator of the melody's active time signature.
 
-    For a time signature written as ``numerator/denominator``, the numerator is
+    For a time signature written as `numerator/denominator`, the numerator is
     the number of beats in each notated bar. If a melody contains meter changes,
     this returns the meter stored on the melody object as its primary meter.
 
@@ -94,9 +94,9 @@ def meter_numerator(melody: Melody) -> int:
 def meter_denominator(melody: Melody) -> int:
     """The denominator of the melody's active time signature.
 
-    For a time signature written as ``numerator/denominator``, the denominator
-    gives the note value that represents one beat: for example, ``4`` means a
-    quarter-note beat and ``8`` means an eighth-note beat.
+    For a time signature written as `numerator/denominator`, the denominator
+    gives the note value that represents one beat: for example, `4` means a
+    quarter-note beat and `8` means an eighth-note beat.
 
     Returns
     -------
@@ -114,7 +114,7 @@ def proportion_of_time_in_first_meter(melody: Melody) -> float:
     The numerator and denominator of the first encountered time signature define
     the initial meter. This feature reports the fraction of total melody duration
     before any subsequent meter change. Melodies with no meter change therefore
-    return ``1.0``.
+    return `1.0`.
 
     Parameters
     ----------
@@ -248,7 +248,7 @@ def syncopicity(melody: Melody) -> float:
     float
         Sum of per-level syncopation proportions across tested levels (half-bar,
         beat, and first subdivision). Each level contributes
-        ``syncopation_count / number_of_notes``, so this is not a raw event count.
+        `syncopation_count / number_of_notes`, so this is not a raw event count.
     
     Note
     ----

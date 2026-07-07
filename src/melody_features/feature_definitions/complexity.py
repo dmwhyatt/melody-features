@@ -286,7 +286,7 @@ def tonal_entropy(pitches: list[int]) -> float:
     Returns
     -------
     float
-        Entropy in bits; ``0.0`` if all correlations are zero.
+        Entropy in bits; `0.0` if all correlations are zero.
     """
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
@@ -363,9 +363,9 @@ def gradus(pitches: list[int]) -> float:
     return float(np.mean(gradus_values)) if gradus_values else 0.0
 
 def _complebm(melody: Melody, method: str = 'o') -> float:
-    """Expectancy-based melodic complexity (MIDI Toolbox ``complebm.m``).
+    """Expectancy-based melodic complexity (MIDI Toolbox `complebm.m`).
 
-    Essen-calibrated: mean 5, SD 1. Methods ``p`` (pitch), ``r`` (rhythm), ``o`` (optimal).
+    Essen-calibrated: mean 5, SD 1. Methods `p` (pitch), `r` (rhythm), `o` (optimal).
 
     Citation
     --------
@@ -486,7 +486,7 @@ def bisect_unbalance(melody: Melody) -> float:
     """The bisect unbalance of a melody's temporal distribution of note onsets.
 
     Measures equilibrium between the first and second halves of the stimulus.
-    Computed as ``1 - 4 * f1 * f2``, where ``f1`` and ``f2`` are the proportions
+    Computed as `1 - 4 * f1 * f2`, where `f1` and `f2` are the proportions
     of note onsets falling before and after the temporal midpoint, respectively.
     Values near 1 indicate balanced onset placement; lower values indicate
     concentration of events in one half.
@@ -557,7 +557,7 @@ def event_heterogeneity(melody: Melody) -> float:
 def av_abs_interval(melody: Melody) -> float:
     """The mean log-transformed absolute melodic interval size.
 
-    Computed as the mean of ``log(abs(interval) + 1)`` over consecutive pitch
+    Computed as the mean of `log(abs(interval) + 1)` over consecutive pitch
     pairs, where intervals are measured in semitones.
 
     Parameters
@@ -640,8 +640,8 @@ def rhythm_abruptness(melody: Melody) -> float:
 
     Note
     -----
-    Duration accent follows the MIDI Toolbox ``duraccent`` defaults (``tau=0.5``,
-    ``accent_index=2.0``).
+    Duration accent follows the MIDI Toolbox `duraccent` defaults (`tau=0.5`,
+    `accent_index=2.0`).
 
     Citation
     --------
@@ -654,7 +654,7 @@ def rhythm_abruptness(melody: Melody) -> float:
 @complexity
 @pitch
 def pdist1(melody: Melody) -> dict:
-    """Pitch distribution (MUST ``pdist1.m``).
+    """Pitch distribution (MUST `pdist1.m`).
 
     Returns normalized weights keyed by MIDI pitch.
     """
@@ -667,7 +667,7 @@ def pdist1(melody: Melody) -> dict:
 @complexity
 @pitch
 def pdist2(melody: Melody) -> dict:
-    """2-tuple pitch distribution (MUST ``pdist2.m``).
+    """2-tuple pitch distribution (MUST `pdist2.m`).
 
     Returns normalized weights keyed by consecutive pitch pairs.
     """
@@ -680,7 +680,7 @@ def pdist2(melody: Melody) -> dict:
 @complexity
 @pitch
 def pdist3(melody: Melody) -> dict:
-    """3-tuple pitch distribution (MUST ``pdist3.m``).
+    """3-tuple pitch distribution (MUST `pdist3.m`).
 
     Returns normalized weights keyed by consecutive pitch triples.
     """
@@ -693,7 +693,7 @@ def pdist3(melody: Melody) -> dict:
 @complexity
 @pitch
 def idist1(melody: Melody) -> dict:
-    """Interval distribution marginalized from ``pdist2`` (MUST ``idist1.m``)."""
+    """Interval distribution marginalized from `pdist2` (MUST `idist1.m`)."""
     if not melody.pitches:
         return {}
     return _MUST_TOKENIZER.idist1(melody).as_dict()
@@ -703,7 +703,7 @@ def idist1(melody: Melody) -> dict:
 @complexity
 @pitch
 def idist2(melody: Melody) -> dict:
-    """2-interval distribution marginalized from ``pdist3`` (MUST ``idist2.m``)."""
+    """2-interval distribution marginalized from `pdist3` (MUST `idist2.m`)."""
     if not melody.pitches:
         return {}
     return _MUST_TOKENIZER.idist2(melody).as_dict()
@@ -713,9 +713,9 @@ def idist2(melody: Melody) -> dict:
 @complexity
 @rhythm
 def ddist1(melody: Melody) -> dict:
-    """Duration distribution in beats (MUST ``ddist1.m``).
+    """Duration distribution in beats (MUST `ddist1.m`).
 
-    The final note duration is excluded, consistent with the MUST ``ddist*``
+    The final note duration is excluded, consistent with the MUST `ddist*`
     convention. Durations are rounded to two decimal places in beats.
     """
     if not melody.pitches:
@@ -727,7 +727,7 @@ def ddist1(melody: Melody) -> dict:
 @complexity
 @rhythm
 def ddist2(melody: Melody) -> dict:
-    """2-tuple duration distribution in beats (MUST ``ddist2.m``)."""
+    """2-tuple duration distribution in beats (MUST `ddist2.m`)."""
     if not melody.pitches:
         return {}
     return _MUST_TOKENIZER.ddist2(melody).as_dict()
@@ -737,7 +737,7 @@ def ddist2(melody: Melody) -> dict:
 @complexity
 @rhythm
 def ddist3(melody: Melody) -> dict:
-    """3-tuple duration distribution in beats (MUST ``ddist3.m``)."""
+    """3-tuple duration distribution in beats (MUST `ddist3.m`)."""
     if not melody.pitches:
         return {}
     return _MUST_TOKENIZER.ddist3(melody).as_dict()
@@ -749,7 +749,7 @@ def ddist3(melody: Melody) -> dict:
 def asym_total(melody: Melody) -> float:
     """The total vertical mirror asymmetry of a melody.
 
-    Mirrors the MUST ``asymTotal`` implementation: build a sustained-pitch time
+    Mirrors the MUST `asymTotal` implementation: build a sustained-pitch time
     series, compare each sample to its temporally reversed counterpart, and
     return the mean absolute pitch difference.
 
@@ -767,10 +767,10 @@ def asym_total(melody: Melody) -> float:
     ----
     In the MUST/MIDI Toolbox notematrix, onset (column 1) and duration
     (column 2) are in beats. The reference MATLAB code samples with
-    ``for t = 0:0.0001:T`` using that same unit. There is no separate
+    `for t = 0:0.0001:T` using that same unit. There is no separate
     millisecond grid.
 
-    This implementation converts ``Melody`` timing to beats and uses the
+    This implementation converts `Melody` timing to beats and uses the
     same 0.0001 beat step. The real-time length of one step depends on tempo 
     (e.g. 0.1 ms only at 60 BPM, 0.05 ms at 120 BPM).
     """
@@ -783,7 +783,7 @@ def asym_total(melody: Melody) -> float:
 def asym_index(melody: Melody) -> float:
     """The vertical mirror asymmetry index of a melody.
 
-    Mirrors the MUST ``asymIndex`` implementation: the proportion of sampled
+    Mirrors the MUST `asymIndex` implementation: the proportion of sampled
     time points at which pitch differs from its temporally mirrored counterpart.
 
     Parameters
@@ -800,10 +800,10 @@ def asym_index(melody: Melody) -> float:
     ----
     In the MUST/MIDI Toolbox notematrix, onset (column 1) and duration
     (column 2) are in beats. The reference MATLAB code samples with
-    ``for t = 0:0.0001:T`` using that same unit. There is no separate
+    `for t = 0:0.0001:T` using that same unit. There is no separate
     millisecond grid.
 
-    This implementation converts ``Melody`` timing to beats and uses the
+    This implementation converts `Melody` timing to beats and uses the
     same 0.0001 beat step. The real-time length of one step depends on tempo 
     (e.g. 0.1 ms only at 60 BPM, 0.05 ms at 120 BPM).
     """
@@ -854,7 +854,7 @@ def av_local_p1_entropy(melody: Melody) -> float:
     Note
     -----
     Entropy is computed with the natural logarithm, consistent with the MUST
-    Toolbox ``shentropy`` implementation.
+    Toolbox `shentropy` implementation.
     """
     return must_algorithms.av_local_p1_entropy(melody)
 
@@ -880,7 +880,7 @@ def p1_entropy(melody: Melody) -> float:
     Note
     -----
     Entropy is computed with the natural logarithm, consistent with the MUST
-    Toolbox ``shentropy`` implementation.
+    Toolbox `shentropy` implementation.
     """
     return must_algorithms.p1_entropy(melody)
 
@@ -906,7 +906,7 @@ def p2_entropy(melody: Melody) -> float:
     Note
     -----
     Entropy is computed with the natural logarithm, consistent with the MUST
-    Toolbox ``shentropy`` implementation.
+    Toolbox `shentropy` implementation.
     """
     return must_algorithms.p2_entropy(melody)
 
@@ -932,7 +932,7 @@ def p3_entropy(melody: Melody) -> float:
     Note
     -----
     Entropy is computed with the natural logarithm, consistent with the MUST
-    Toolbox ``shentropy`` implementation.
+    Toolbox `shentropy` implementation.
     """
     return must_algorithms.p3_entropy(melody)
 
@@ -959,7 +959,7 @@ def i1_entropy(melody: Melody) -> float:
     Note
     -----
     Entropy is computed with the natural logarithm, consistent with the MUST
-    Toolbox ``shentropy`` implementation.
+    Toolbox `shentropy` implementation.
     """
     return must_algorithms.i1_entropy(melody)
 
@@ -986,7 +986,7 @@ def i2_entropy(melody: Melody) -> float:
     Note
     -----
     Entropy is computed with the natural logarithm, consistent with the MUST
-    Toolbox ``shentropy`` implementation.
+    Toolbox `shentropy` implementation.
     """
     return must_algorithms.i2_entropy(melody)
 
@@ -998,7 +998,7 @@ def d1_entropy(melody: Melody) -> float:
     """The zeroth-order duration entropy of a melody.
 
     Shannon entropy of the distribution of note durations in quarter-note beats.
-    The final note duration is excluded, consistent with the MUST ``ddist1``
+    The final note duration is excluded, consistent with the MUST `ddist1`
     convention.
 
     Parameters
@@ -1014,7 +1014,7 @@ def d1_entropy(melody: Melody) -> float:
     Note
     -----
     Entropy is computed with the natural logarithm, consistent with the MUST
-    Toolbox ``shentropy`` implementation. Durations are rounded to two decimal
+    Toolbox `shentropy` implementation. Durations are rounded to two decimal
     places before binning.
     """
     return must_algorithms.d1_entropy(melody)
@@ -1042,7 +1042,7 @@ def d2_entropy(melody: Melody) -> float:
     Note
     -----
     Entropy is computed with the natural logarithm, consistent with the MUST
-    Toolbox ``shentropy`` implementation. Durations are rounded to two decimal
+    Toolbox `shentropy` implementation. Durations are rounded to two decimal
     places before binning.
     """
     return must_algorithms.d2_entropy(melody)
@@ -1070,7 +1070,7 @@ def d3_entropy(melody: Melody) -> float:
     Note
     -----
     Entropy is computed with the natural logarithm, consistent with the MUST
-    Toolbox ``shentropy`` implementation. Durations are rounded to two decimal
+    Toolbox `shentropy` implementation. Durations are rounded to two decimal
     places before binning.
     """
     return must_algorithms.d3_entropy(melody)
@@ -1099,6 +1099,6 @@ def wp_entropy(melody: Melody) -> float:
     Note
     -----
     Entropy is computed with the natural logarithm, consistent with the MUST
-    Toolbox ``shentropy`` implementation.
+    Toolbox `shentropy` implementation.
     """
     return must_algorithms.wp_entropy(melody)

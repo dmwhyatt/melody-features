@@ -282,7 +282,7 @@ class MustDistribution:
 class MustTokenizer(MelodyTokenizer):
     """MUST distribution tokenization (Clemente et al., 2020).
 
-    Implements ``pdist*``, ``idist*``, and ``ddist*`` on notematrix-style timing:
+    Implements `pdist*`, `idist*`, and `ddist*` on notematrix-style timing:
     onsets and durations in beats.
     """
 
@@ -302,7 +302,7 @@ class MustTokenizer(MelodyTokenizer):
 
     @staticmethod
     def pitch_distribution(pitches: np.ndarray) -> MustDistribution:
-        """Marginal pitch distribution (``pdist1`` on a pitch vector)."""
+        """Marginal pitch distribution (`pdist1` on a pitch vector)."""
         pitches = np.asarray(pitches, dtype=int)
         if pitches.size == 0:
             return MustDistribution(values=np.array([]), weights=np.array([0.0]))
@@ -325,7 +325,7 @@ class MustTokenizer(MelodyTokenizer):
         pitch_rows: np.ndarray,
         pitch_weights: np.ndarray,
     ) -> MustDistribution:
-        """Interval marginal from pitch n-tuple distribution (``idist*``)."""
+        """Interval marginal from pitch n-tuple distribution (`idist*`)."""
         if pitch_rows.size == 0:
             return MustDistribution(values=np.array([]), weights=np.array([]))
         interval_diffs = np.diff(pitch_rows, axis=1)
@@ -337,11 +337,11 @@ class MustTokenizer(MelodyTokenizer):
         return MustDistribution(values=unique_intervals, weights=np.asarray(weights, dtype=float))
 
     def pdist1(self, melody: Melody) -> MustDistribution:
-        """Pitch distribution (MUST ``pdist1.m``)."""
+        """Pitch distribution (MUST `pdist1.m`)."""
         return self.pitch_distribution(self.pitch_tokens(melody))
 
     def pdist2(self, melody: Melody) -> MustDistribution:
-        """2-tuple pitch distribution (MUST ``pdist2.m``)."""
+        """2-tuple pitch distribution (MUST `pdist2.m`)."""
         pitches = self.pitch_tokens(melody)
         if len(pitches) < 2:
             return MustDistribution(values=np.array([]), weights=np.array([]))
@@ -349,7 +349,7 @@ class MustTokenizer(MelodyTokenizer):
         return self._tuple_distribution(pairs)
 
     def pdist3(self, melody: Melody) -> MustDistribution:
-        """3-tuple pitch distribution (MUST ``pdist3.m``)."""
+        """3-tuple pitch distribution (MUST `pdist3.m`)."""
         pitches = self.pitch_tokens(melody)
         if len(pitches) < 3:
             return MustDistribution(values=np.array([]), weights=np.array([]))
@@ -357,21 +357,21 @@ class MustTokenizer(MelodyTokenizer):
         return self._tuple_distribution(triples)
 
     def idist1(self, melody: Melody) -> MustDistribution:
-        """Interval distribution marginalized from ``pdist2`` (MUST ``idist1.m``)."""
+        """Interval distribution marginalized from `pdist2` (MUST `idist1.m`)."""
         pitch_dist = self.pdist2(melody)
         if pitch_dist.values.size == 0:
             return MustDistribution(values=np.array([]), weights=np.array([]))
         return self._marginalize_intervals(pitch_dist.values, pitch_dist.weights)
 
     def idist2(self, melody: Melody) -> MustDistribution:
-        """2-interval distribution marginalized from ``pdist3`` (MUST ``idist2.m``)."""
+        """2-interval distribution marginalized from `pdist3` (MUST `idist2.m`)."""
         pitch_dist = self.pdist3(melody)
         if pitch_dist.values.size == 0:
             return MustDistribution(values=np.array([]), weights=np.array([]))
         return self._marginalize_intervals(pitch_dist.values, pitch_dist.weights)
 
     def ddist1(self, melody: Melody) -> MustDistribution:
-        """Duration distribution in beats (MUST ``ddist1.m``)."""
+        """Duration distribution in beats (MUST `ddist1.m`)."""
         durations = self.duration_tokens(melody)
         if durations.size == 0:
             return MustDistribution(values=np.array([]), weights=np.array([0.0]))
@@ -380,7 +380,7 @@ class MustTokenizer(MelodyTokenizer):
         return MustDistribution(values=values, weights=weights)
 
     def ddist2(self, melody: Melody) -> MustDistribution:
-        """2-tuple duration distribution (MUST ``ddist2.m``)."""
+        """2-tuple duration distribution (MUST `ddist2.m`)."""
         durations = self.duration_tokens(melody)
         if len(durations) < 2:
             return MustDistribution(values=np.array([]), weights=np.array([]))
@@ -388,7 +388,7 @@ class MustTokenizer(MelodyTokenizer):
         return self._tuple_distribution(pairs)
 
     def ddist3(self, melody: Melody) -> MustDistribution:
-        """3-tuple duration distribution (MUST ``ddist3.m``)."""
+        """3-tuple duration distribution (MUST `ddist3.m`)."""
         durations = self.duration_tokens(melody)
         if len(durations) < 3:
             return MustDistribution(values=np.array([]), weights=np.array([1.0]))

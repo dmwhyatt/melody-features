@@ -23,7 +23,7 @@ def mean_and_std(values: list[float]) -> tuple[float, float]:
 
 
 def population_mean_and_std(values: list[float]) -> tuple[float, float]:
-    """Population mean and standard deviation (MIDI Toolbox ``std(x,0)``)."""
+    """Population mean and standard deviation (MIDI Toolbox `std(x,0)`)."""
     if not values:
         return 0.0, 0.0
     mean = float(np.mean(values))

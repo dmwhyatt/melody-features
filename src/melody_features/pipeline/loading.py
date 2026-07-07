@@ -15,14 +15,14 @@ FeatureInput = Union[os.PathLike, List[os.PathLike], List[Melody]]
 
 
 def _is_melody_list(input: object) -> bool:
-    """Return whether ``input`` is a non-empty list of :class:`Melody` objects."""
+    """Return whether `input` is a non-empty list of :class:`Melody` objects."""
     return isinstance(input, list) and bool(input) and all(
         isinstance(item, Melody) for item in input
     )
 
 
 def _finalize_melody_data_list(melody_data_list: List[dict], logger: logging.Logger) -> List[dict]:
-    """Assign ``melody_num`` and return the finalized melody data list."""
+    """Assign `melody_num` and return the finalized melody data list."""
     melody_data_list = [m for m in melody_data_list if m is not None]
     logger.info("Processing %s melodies", len(melody_data_list))
 

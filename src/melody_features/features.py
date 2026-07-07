@@ -564,7 +564,7 @@ def _get_features_by_domain_and_types(domain: str, allowed_types: list[str]) -> 
     )
 
 def _invoke_feature(func, melody: Melody, **extra):
-    """Call a feature function, binding ``melody`` fields and extras by parameter name."""
+    """Call a feature function, binding `melody` fields and extras by parameter name."""
     return _dispatch_invoke_feature(
         func,
         melody,
@@ -781,7 +781,7 @@ def get_metric_accent_features(melody: Melody) -> Dict:
     }
 
 def _collect_rhythm_domain_features(melody: Melody, allowed_types: list[str]) -> Dict:
-    """Collect @rhythm-domain features whose types intersect ``allowed_types``."""
+    """Collect @rhythm-domain features whose types intersect `allowed_types`."""
     rhythm_functions = _get_features_by_domain_and_types("rhythm", allowed_types)
     return _collect_feature_values(rhythm_functions, melody, tuple_suffix="std")
 
@@ -797,7 +797,7 @@ def get_rhythm_features(melody: Melody) -> Dict:
     """Dynamically collect all rhythm features for a melody.
 
     Combines timing, inter-onset interval, and metric-accent features for
-    backward-compatible ``rhythm_features`` export.
+    backward-compatible `rhythm_features` export.
     """
     features: Dict[str, Any] = {}
     features.update(get_timing_features(melody))
@@ -809,7 +809,7 @@ def get_rhythm_features(melody: Melody) -> Dict:
 def collect_rhythm_for_pipeline(melody: Melody) -> tuple[Dict[str, Any], Dict[str, float]]:
     """Collect rhythm features and per-subcategory timings for pipeline workers.
 
-    ``timing`` and ``inter_onset_interval`` are timed separately so pipeline
+    `timing` and `inter_onset_interval` are timed separately so pipeline
     statistics keep them as discrete taxonomy categories.
     """
     rhythm_timings: Dict[str, float] = {}

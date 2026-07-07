@@ -1,4 +1,4 @@
-"""MIDI Toolbox ``mobility.m`` implementation."""
+"""MIDI Toolbox `mobility.m` implementation."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import numpy as np
 
 
 def mobility_vector(pitches: list[int]) -> list[float]:
-    """Melodic mobility for each note (MIDI Toolbox ``mobility.m``)."""
+    """Melodic mobility for each note (MIDI Toolbox `mobility.m`)."""
     if not pitches:
         return []
     if len(pitches) == 1:

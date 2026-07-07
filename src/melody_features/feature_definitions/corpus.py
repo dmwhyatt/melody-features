@@ -208,7 +208,7 @@ def _fantastic_melody_tf_df(
     doc_freqs: dict,
     max_ngram_order: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Melody TF and corpus DF for m-types with df > 0 (FANTASTIC ``TFDF.tab`` rows)."""
+    """Melody TF and corpus DF for m-types with df > 0 (FANTASTIC `TFDF.tab` rows)."""
     tf_values: list[float] = []
     df_values: list[float] = []
     if max_ngram_order < 1:
@@ -231,7 +231,7 @@ def _fantastic_melody_tf_df(
 def _fantastic_log_normalized_tf_df(
     tf: np.ndarray, df: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
-    """log2-normalized TF and DF vectors as in FANTASTIC ``M-Type_Corpus_Features.R``."""
+    """log2-normalized TF and DF vectors as in FANTASTIC `M-Type_Corpus_Features.R`."""
     log_tf = np.log2(tf)
     log_df = np.log2(df)
     return log_tf / log_tf.sum(), log_df / log_df.sum()
@@ -240,7 +240,7 @@ def _fantastic_melody_ngram_counts(
     melody_tokens: list,
     max_ngram_order: int,
 ) -> dict[tuple, int]:
-    """Collapsed melody m-type counts for orders 1 through ``max_ngram_order`` (inclusive)."""
+    """Collapsed melody m-type counts for orders 1 through `max_ngram_order` (inclusive)."""
     all_ngram_counts: dict[tuple, int] = {}
     if max_ngram_order < 1:
         return all_ngram_counts
@@ -374,7 +374,7 @@ def tfdf_spearman(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngr
 def tfdf_kendall(melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int) -> float:
     """Kendall's tau rank correlation between melody TF and corpus DF for each m-type.
 
-    Similar to ``tfdf_spearman``, but ordinal association is measured
+    Similar to `tfdf_spearman`, but ordinal association is measured
     with Kendall's tau instead of Spearman's rho. Positive values mean
     higher within-melody usage tends to coincide with higher corpus-wide prevalence across m-types;
     negative values mean the opposite; near zero means little monotonic rank association.

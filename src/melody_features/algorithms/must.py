@@ -24,7 +24,7 @@ def _zero_for_empty_melody(melody: Melody) -> Optional[float]:
 
 
 def must_shannon_entropy(distribution: np.ndarray) -> float:
-    """Shannon entropy using natural log, matching MUST ``shentropy.m``."""
+    """Shannon entropy using natural log, matching MUST `shentropy.m`."""
     weights = np.asarray(distribution, dtype=float).ravel()
     total = weights.sum()
     if total == 0.0:
@@ -34,7 +34,7 @@ def must_shannon_entropy(distribution: np.ndarray) -> float:
 
 
 def _order_sign(a: int, b: int, c: int) -> int:
-    """Order signature for a 3-note pitch sequence (MUST ``ordersign.m``)."""
+    """Order signature for a 3-note pitch sequence (MUST `ordersign.m`)."""
     if a < b:
         if b < c:
             return 1
@@ -65,7 +65,7 @@ def _order_sign(a: int, b: int, c: int) -> int:
 
 
 def _duration_accent(durations: np.ndarray, tau: float = 0.5, accent_index: float = 2.0) -> np.ndarray:
-    """Parncutt (1994) duration accent (MIDI Toolbox ``duraccent.m``)."""
+    """Parncutt (1994) duration accent (MIDI Toolbox `duraccent.m`)."""
     durations = np.asarray(durations, dtype=float)
     return (1.0 - np.exp(-durations / tau)) ** accent_index
 
@@ -99,7 +99,7 @@ def _local_unbalance(
     notes_per_window: int = 2,
     step_fraction: float = 0.5,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Local unbalance curve (MUST ``localunbalance.m`` with event-based windows)."""
+    """Local unbalance curve (MUST `localunbalance.m` with event-based windows)."""
     onsets = _onsets_beats(melody)
     durations = _durations_beats(melody)
     note_count = len(onsets)
@@ -133,7 +133,7 @@ def _local_unbalance(
 
 
 def _onset_window_indices(onsets_sec: np.ndarray, min_time: float, max_time: float) -> np.ndarray:
-    """Seconds-based onset window (MIDI Toolbox ``onsetwindow.m`` with inclusive upper bound)."""
+    """Seconds-based onset window (MIDI Toolbox `onsetwindow.m` with inclusive upper bound)."""
     return np.where((onsets_sec >= min_time) & (onsets_sec <= max_time))[0]
 
 

@@ -95,7 +95,7 @@ def _pcdist1_vector(pitches: list[int], starts: list[float], ends: list[float]) 
 
 
 def _pcdist2_matrix(pitches: list[int], starts: list[float], ends: list[float]) -> np.ndarray:
-    """Second-order pitch-class transition matrix (MIDI Toolbox ``pcdist2.m``)."""
+    """Second-order pitch-class transition matrix (MIDI Toolbox `pcdist2.m`)."""
     pcd = np.zeros((12, 12), dtype=float)
     if len(pitches) < 2 or not starts or not ends:
         return pcd
@@ -136,10 +136,10 @@ def pcdist1(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
 @pitch_class
 @pitch
 def pcdist2(pitches: list[int], starts: list[float], ends: list[float]) -> dict:
-    """Second-order pitch-class transition distribution (MIDI Toolbox ``pcdist2.m``).
+    """Second-order pitch-class transition distribution (MIDI Toolbox `pcdist2.m`).
 
     Transition weights are the product of Parncutt duration accents of the two
-    notes. Keys are ``(from_pitch_class, to_pitch_class)`` with pitch classes
+    notes. Keys are `(from_pitch_class, to_pitch_class)` with pitch classes
     0–11 (C=0, …, B=11).
 
     Parameters

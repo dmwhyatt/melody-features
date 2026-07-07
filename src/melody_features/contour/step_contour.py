@@ -207,9 +207,9 @@ class StepContour:
         pitch is repeated in proportion to its duration. This feature is the
         standard deviation of that vector, so long notes influence the result more
         than short notes. Larger values indicate a wider duration-weighted pitch
-        spread. The ``"amads"`` method uses population standard deviation
-        (``ddof=0``), while ``"fantastic"`` uses sample standard deviation
-        (``ddof=1``) for compatibility with the original FANTASTIC convention.
+        spread. The `"amads"` method uses population standard deviation
+        (`ddof=0`), while `"fantastic"` uses sample standard deviation
+        (`ddof=1`) for compatibility with the original FANTASTIC convention.
 
         Returns
         -------
@@ -235,7 +235,7 @@ class StepContour:
         pitch vector and an ascending linear ramp. Positive values indicate an
         overall upward trajectory, negative values indicate an overall downward
         trajectory, and values near zero indicate little linear pitch direction.
-        A flat contour returns ``0.0``.
+        A flat contour returns `0.0`.
 
         Returns
         -------

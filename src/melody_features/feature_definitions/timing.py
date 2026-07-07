@@ -138,7 +138,7 @@ def _durdist1_vector(
 def _durdist2_matrix(
     starts: list[float], ends: list[float], tempo: float = 120.0
 ) -> np.ndarray:
-    """Second-order duration transition matrix (MIDI Toolbox ``durdist2.m``)."""
+    """Second-order duration transition matrix (MIDI Toolbox `durdist2.m`)."""
     durd = np.zeros((9, 9), dtype=float)
     du = _durdist1_categories(starts, ends, tempo)
     if du.size < 2:
@@ -185,10 +185,10 @@ def durdist1(
 def durdist2(
     starts: list[float], ends: list[float], tempo: float = 120.0
 ) -> dict:
-    """Second-order duration transition distribution (MIDI Toolbox ``durdist2.m``).
+    """Second-order duration transition distribution (MIDI Toolbox `durdist2.m`).
 
     Returns a 9×9 matrix of transition probabilities between log-spaced duration
-    bins (same bin centres as ``durdist1``). Keys are ``(from_bin, to_bin)`` with
+    bins (same bin centres as `durdist1`). Keys are `(from_bin, to_bin)` with
     bin indices 1–9.
 
     Parameters
@@ -2814,7 +2814,7 @@ def polyrhythms(
     Returns
     -------
     float
-        ``hits / n_peaks``, or ``0.0`` if there are no qualifying peaks.
+        `hits / n_peaks`, or `0.0` if there are no qualifying peaks.
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -2879,7 +2879,7 @@ def polyrhythms_tempo_standardized(
     Returns
     -------
     float
-        ``hits / n_peaks``, or ``0.0`` if there are no qualifying peaks.
+        `hits / n_peaks`, or `0.0` if there are no qualifying peaks.
     """
     if not starts or not ends or len(starts) != len(ends):
         return 0.0
@@ -3362,7 +3362,7 @@ def onset_autocorrelation(
     Returns
     -------
     list[float]
-        Normalized autocorrelation from lag 0 through ``max_lag_quarters`` quarters
+        Normalized autocorrelation from lag 0 through `max_lag_quarters` quarters
 
     Citation
     --------

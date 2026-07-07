@@ -90,9 +90,9 @@ def _ivdist1_vector(
 
 
 def _ivdirdist1_from_vector(ivd: np.ndarray) -> dict[int, float]:
-    """Directional interval bias from ``ivdist1`` (MIDI Toolbox ``ivdirdist1.m``).
+    """Directional interval bias from `ivdist1` (MIDI Toolbox `ivdirdist1.m`).
 
-    Reference CSV export (``mtbVecToJson``) only serializes strictly positive values.
+    Reference CSV export (`mtbVecToJson`) only serializes strictly positive values.
     """
     result: dict[int, float] = {}
     for interval_size in range(1, 13):
@@ -107,7 +107,7 @@ def _ivdirdist1_from_vector(ivd: np.ndarray) -> dict[int, float]:
 
 
 def _ivsizedist1_from_vector(ivd: np.ndarray) -> dict[int, float]:
-    """Interval-size distribution from ``ivdist1`` (MIDI Toolbox ``ivsizedist1.m``)."""
+    """Interval-size distribution from `ivdist1` (MIDI Toolbox `ivsizedist1.m`)."""
     size_index = list(range(12, -1, -1)) + list(range(1, 13))
     aggregated = np.zeros(13, dtype=float)
     for index, size in enumerate(size_index):
@@ -120,7 +120,7 @@ def _ivsizedist1_from_vector(ivd: np.ndarray) -> dict[int, float]:
 
 
 def _ivdist2_categories(pitches: list[int]) -> np.ndarray:
-    """Per-note interval classes for ``ivdist2`` (MIDI Toolbox ``ivdist2.m``)."""
+    """Per-note interval classes for `ivdist2` (MIDI Toolbox `ivdist2.m`)."""
     pitches_arr = np.asarray(pitches, dtype=int)
     if pitches_arr.size == 0:
         return np.array([], dtype=int)
@@ -134,7 +134,7 @@ def _ivdist2_categories(pitches: list[int]) -> np.ndarray:
 def _ivdist2_matrix(
     pitches: list[int], starts: list[float], ends: list[float]
 ) -> np.ndarray:
-    """Second-order interval transition matrix (MIDI Toolbox ``ivdist2.m``)."""
+    """Second-order interval transition matrix (MIDI Toolbox `ivdist2.m`)."""
     ivd = np.zeros((25, 25), dtype=float)
     if len(pitches) < 2 or not starts or not ends:
         return ivd
@@ -287,11 +287,11 @@ def ivdist1(
 @interval
 @pitch
 def ivdist2(pitches: list[int], starts: list[float], ends: list[float], tempo: float = 120.0) -> dict:
-    """Second-order interval transition distribution (MIDI Toolbox ``ivdist2.m``).
+    """Second-order interval transition distribution (MIDI Toolbox `ivdist2.m`).
 
     Each note is assigned an interval class (incoming interval modulo octave, with
     0 for the first note). Transition weights use the sum of Parncutt duration
-    accents of the two notes. Keys are ``(from_interval, to_interval)`` in
+    accents of the two notes. Keys are `(from_interval, to_interval)` in
     semitones (approximately -11 to 11).
 
     Parameters
@@ -329,7 +329,7 @@ def ivdirdist1(
 ) -> dict[int, float]:
     """Directional interval bias for each interval size (1-12 semitones).
 
-    Derived from duration-accent-weighted ``ivdist1`` (MIDI Toolbox ``ivdirdist1.m``).
+    Derived from duration-accent-weighted `ivdist1` (MIDI Toolbox `ivdirdist1.m`).
     """
     del tempo
     if not pitches or not starts or not ends or len(pitches) < 2:
@@ -347,9 +347,9 @@ def ivsizedist1(
     tempo: float = 120.0,
     channels: Optional[list[int]] = None,
 ) -> dict[int, float]:
-    """Interval-size distribution (0-12 semitones) from ``ivdist1``.
+    """Interval-size distribution (0-12 semitones) from `ivdist1`.
 
-    Derived from duration-accent-weighted ``ivdist1`` (MIDI Toolbox ``ivsizedist1.m``).
+    Derived from duration-accent-weighted `ivdist1` (MIDI Toolbox `ivsizedist1.m`).
     """
     del tempo
     if not pitches or not starts or not ends or len(pitches) < 2:

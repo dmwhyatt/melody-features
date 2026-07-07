@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Union
 
 
 def _is_canonical_function_binding(name: str, obj: Any) -> bool:
-    """Return whether ``name`` is the callable's defining name."""
+    """Return whether `name` is the callable's defining name."""
     return not (inspect.isfunction(obj) and obj.__name__ != name)
 
 
@@ -27,7 +27,7 @@ def _add_unique_feature(
 
 
 def get_features_by_type(module: Any, feature_type: str) -> Dict[str, Callable]:
-    """Get all canonical feature functions in ``module`` for a feature type."""
+    """Get all canonical feature functions in `module` for a feature type."""
     features: Dict[str, Callable] = {}
     seen_ids: set[int] = set()
 
@@ -48,7 +48,7 @@ def get_features_by_type(module: Any, feature_type: str) -> Dict[str, Callable]:
 
 
 def get_features_by_domain(module: Any, domain: str) -> Dict[str, Callable]:
-    """Get all canonical feature functions in ``module`` for a feature domain."""
+    """Get all canonical feature functions in `module` for a feature domain."""
     features: Dict[str, Callable] = {}
     seen_ids: set[int] = set()
 
@@ -104,7 +104,7 @@ def _is_source_candidate(obj: Any) -> bool:
 
 
 def get_features_by_source(module: Any, source: str) -> Dict[str, Callable]:
-    """Get decorated functions/classes in ``module`` for a source label."""
+    """Get decorated functions/classes in `module` for a source label."""
     source_features: Dict[str, Callable] = {}
 
     for name, obj in inspect.getmembers(module):
@@ -216,9 +216,9 @@ def discover_atomic_features(
     *,
     include_descriptors: bool = True,
 ) -> List[FeatureInfo]:
-    """Collect metadata for atomic features exported from ``module``.
+    """Collect metadata for atomic features exported from `module`.
 
-    Aggregator helpers (names starting with ``get_``) and alias bindings are
+    Aggregator helpers (names starting with `get_`) and alias bindings are
     excluded, matching the feature summary table conventions.
     """
     seen_function_ids: set[int] = set()
@@ -288,11 +288,11 @@ def list_available_features(
     Parameters
     ----------
     domain : str, optional
-        Filter by feature domain (``pitch``, ``rhythm``, or ``both``)
+        Filter by feature domain (`pitch`, `rhythm`, or `both`)
     feature_type : str, optional
-        Filter by decorator type (e.g. ``absolute``, ``interval``, ``contour``)
+        Filter by decorator type (e.g. `absolute`, `interval`, `contour`)
     source : str, optional
-        Filter by implementation source (e.g. ``fantastic``, ``jsymbolic``)
+        Filter by implementation source (e.g. `fantastic`, `jsymbolic`)
     detailed : bool, optional
         If True, return metadata dictionaries instead of names only
     module : module, optional
@@ -301,7 +301,7 @@ def list_available_features(
     Returns
     -------
     list[str] or list[dict]
-        Feature names, or metadata records when ``detailed=True``
+        Feature names, or metadata records when `detailed=True`
     """
     if module is None:
         import melody_features.features as features_module

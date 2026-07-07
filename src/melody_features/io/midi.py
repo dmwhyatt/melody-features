@@ -121,7 +121,7 @@ def list_midi_files(
     *,
     recursive: bool = False,
 ) -> List[str]:
-    """Return sorted paths to ``.mid`` / ``.midi`` files in a directory.
+    """Return sorted paths to `.mid` / `.midi` files in a directory.
 
     Parameters
     ----------
@@ -138,7 +138,7 @@ def list_midi_files(
     Raises
     ------
     FileNotFoundError
-        If ``directory`` does not exist or contains no MIDI files
+        If `directory` does not exist or contains no MIDI files
     """
     path = Path(directory)
     if not path.is_dir():

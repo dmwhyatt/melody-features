@@ -240,7 +240,7 @@ def tonal_clarity(pitches: list[int]) -> float:
     -------
     float
         Ratio between highest and second highest key correlation values.
-        Returns ``0.0`` when top/second correlations are unavailable or near-zero.
+        Returns `0.0` when top/second correlations are unavailable or near-zero.
     """
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
@@ -273,7 +273,7 @@ def tonal_spike(pitches: list[int]) -> float:
     -------
     float
         Ratio between highest correlation value and sum of all others.
-        Returns ``0.0`` when top/other correlations are unavailable or near-zero.
+        Returns `0.0` when top/other correlations are unavailable or near-zero.
     """
     pitch_classes = [pitch % 12 for pitch in pitches]
     correlations = compute_tonality_vector(pitch_classes)
@@ -813,10 +813,10 @@ def inscale(
     """
     """For each pitch, returns 1 if pitch class is in the resolved key scale, else 0.
 
-    Key resolution follows ``key_estimation``:
-    - ``always_read_from_file``: require key signature in MIDI metadata
-    - ``infer_if_necessary``: use MIDI key signature when present, else infer
-    - ``always_infer``: always infer from note content
+    Key resolution follows `key_estimation`:
+    - `always_read_from_file`: require key signature in MIDI metadata
+    - `infer_if_necessary`: use MIDI key signature when present, else infer
+    - `always_infer`: always infer from note content
     """
     pitches = melody.pitches
     pitch_classes = [pitch % 12 for pitch in pitches]

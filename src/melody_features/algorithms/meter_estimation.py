@@ -12,7 +12,7 @@ from scipy.signal import correlate
 
 
 def _matlab_round(values: Union[np.ndarray, float]) -> np.ndarray:
-    """Round like MATLAB ``round`` (half away from zero for positive values)."""
+    """Round like MATLAB `round` (half away from zero for positive values)."""
     arr = np.asarray(values, dtype=float)
     return np.floor(arr + 0.5).astype(int)
 
@@ -150,7 +150,7 @@ def _beat_onsets_and_durations(
     tempo: float = 120.0,
     tempo_changes: Optional[list[tuple[float, float]]] = None,
 ) -> tuple[np.ndarray, np.ndarray, list[float]]:
-    """Onsets/durations in quarter-note beats (MIDI Toolbox ``onset`` / ``dur``)."""
+    """Onsets/durations in quarter-note beats (MIDI Toolbox `onset` / `dur`)."""
     from ..algorithms.pitch_spelling import _seconds_to_beats
 
     if tempo_changes is None:
@@ -170,7 +170,7 @@ def _onset_function_grid(
     divisions_per_quarter: int = 4,
     max_lag_quarters: int = 8,
 ) -> np.ndarray:
-    """``onsetfunc.m``: delta grid weighted by accent values."""
+    """`onsetfunc.m`: delta grid weighted by accent values."""
     if len(onsets_beats) == 0:
         return np.zeros(1)
 
@@ -186,7 +186,7 @@ def _onset_function_grid(
 
 
 def _ofacorr(onset_grid: np.ndarray, max_lag_quarters: int = 8, divisions_per_quarter: int = 4) -> np.ndarray:
-    """``ofacorr.m``: subsampled onset-function autocorrelation for meter estimation."""
+    """`ofacorr.m`: subsampled onset-function autocorrelation for meter estimation."""
     full_autocorr = correlate(onset_grid, onset_grid, mode="full")
     center_index = len(full_autocorr) // 2
     end_index = min(len(full_autocorr), center_index + max_lag_quarters * divisions_per_quarter)
@@ -208,7 +208,7 @@ def compute_onset_autocorrelation(
     tempo: float = 120.0,
     tempo_changes: Optional[list[tuple[float, float]]] = None,
 ) -> list[float]:
-    """Autocorrelation of onset times weighted by accents (MIDI Toolbox ``onsetacorr.m``)."""
+    """Autocorrelation of onset times weighted by accents (MIDI Toolbox `onsetacorr.m`)."""
     expected_length = max_lag_quarters * divisions_per_quarter + 1
 
     if not starts or not ends or len(starts) != len(ends):
@@ -274,7 +274,7 @@ def estimate_meter_simple(
     tempo: float = 120.0,
     tempo_changes: Optional[list[tuple[float, float]]] = None,
 ) -> int:
-    """Simple meter estimation using duration accents only (``meter.m`` default)."""
+    """Simple meter estimation using duration accents only (`meter.m` default)."""
     if not starts or not ends or len(starts) != len(ends):
         return 2
 
@@ -300,7 +300,7 @@ def estimate_meter_optimal(
     tempo: float = 120.0,
     tempo_changes: Optional[list[tuple[float, float]]] = None,
 ) -> int:
-    """Optimal meter estimation (``meter.m`` with ``'optimal'``)."""
+    """Optimal meter estimation (`meter.m` with `'optimal'`)."""
     if not pitches or len(pitches) != len(starts):
         return estimate_meter_simple(starts, ends, tempo=tempo, tempo_changes=tempo_changes)
 
@@ -413,7 +413,7 @@ def _onset_mod_meter(
     pitches: list[int] = None,
     tempo_changes: Optional[list[tuple[float, float]]] = None,
 ) -> list[float]:
-    """Onset times modulo estimated meter (``onsetmodmeter.m``)."""
+    """Onset times modulo estimated meter (`onsetmodmeter.m`)."""
     if not starts:
         return []
 
@@ -453,7 +453,7 @@ def metric_hierarchy(
     pitches: list[int] = None,
     tempo_changes: Optional[list[tuple[float, float]]] = None,
 ) -> list[int]:
-    """Metric hierarchy per note (``metrichierarchy.m``)."""
+    """Metric hierarchy per note (`metrichierarchy.m`)."""
     del time_signature  # MIDI Toolbox always estimates meter from autocorrelation.
 
     if not starts:

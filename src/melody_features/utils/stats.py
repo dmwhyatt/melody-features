@@ -78,7 +78,7 @@ def shannon_entropy(values) -> float:
 
 
 def midi_toolbox_entropy(distribution) -> float:
-    """Relative entropy per MIDI Toolbox ``entropy.m`` (natural log, / log(n))."""
+    """Relative entropy per MIDI Toolbox `entropy.m` (natural log, / log(n))."""
     d = np.asarray(distribution, dtype=float).ravel()
     if d.size == 0:
         return 0.0
@@ -90,7 +90,7 @@ def midi_toolbox_entropy(distribution) -> float:
 def distribution_entropy(weights) -> float:
     """Base-2 Shannon entropy of a discrete distribution from non-negative weights.
 
-    Weights are normalized to sum to 1; zero weights are omitted. Returns ``0.0``
+    Weights are normalized to sum to 1; zero weights are omitted. Returns `0.0`
     if all weights are zero or the input is empty.
 
     Parameters

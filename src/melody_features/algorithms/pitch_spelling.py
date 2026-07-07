@@ -49,7 +49,7 @@ ALTER = np.array(["n", "#", "b"])
 
 
 def _is_melody_like(note_info) -> bool:
-    """Return whether ``note_info`` exposes the Melody note-list interface."""
+    """Return whether `note_info` exposes the Melody note-list interface."""
     return (
         hasattr(note_info, "pitches")
         and hasattr(note_info, "starts")

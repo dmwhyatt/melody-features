@@ -30,7 +30,7 @@ FEATURE_NAMES_PROTECTED_FROM_SHIM_FILES = frozenset(
 
 
 def register_legacy_shim(old_module: str, new_module: str) -> None:
-    """Point ``old_module`` at ``new_module`` in :data:`sys.modules`."""
+    """Point `old_module` at `new_module` in :data:`sys.modules`."""
     warn_legacy_import_shim(old_module, new_module)
     sys.modules[old_module] = importlib.import_module(new_module)
 

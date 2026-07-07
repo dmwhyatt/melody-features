@@ -54,13 +54,13 @@ def get_step_contour_features(
         Tempo in beats per minute, used to convert note durations to quarter-note
         units.
     method : str, optional
-        Contour statistic method, either ``"amads"`` or ``"fantastic"``. Defaults
-        to ``"amads"``.
+        Contour statistic method, either `"amads"` or `"fantastic"`. Defaults
+        to `"amads"`.
 
     Returns
     -------
     Tuple[float, float, float]
-        ``(global_variation, global_direction, local_variation)``, where global
+        `(global_variation, global_direction, local_variation)`, where global
         variation is the standard deviation of the step-contour vector, global
         direction is its correlation with an ascending linear ramp, and local
         variation is the mean absolute difference between adjacent contour samples.
@@ -100,8 +100,8 @@ def get_interpolation_contour_features(
     Returns
     -------
     Tuple[int, float, float, float, str]
-        ``(global_direction, mean_gradient, gradient_std, direction_changes,
-        class_label)``. The class label encodes four sampled gradient categories from
+        `(global_direction, mean_gradient, gradient_std, direction_changes,
+        class_label)`. The class label encodes four sampled gradient categories from
         strong downward to strong upward.
     """
     ic = InterpolationContour(pitches, starts)
@@ -119,9 +119,9 @@ def get_interpolation_contour_features(
 def comb_contour_matrix(pitches: list[int]) -> list[list[int]]:
     """The Marvin and Laprade comb contour matrix.
 
-    For a melody with ``n`` notes, this feature returns an ``n x n`` lower-triangular
-    binary matrix. Entry ``C[i][j]`` is ``1`` when note ``j`` is higher than note
-    ``i`` and ``i >= j``; otherwise it is ``0``. The matrix encodes pairwise
+    For a melody with `n` notes, this feature returns an `n x n` lower-triangular
+    binary matrix. Entry `C[i][j]` is `1` when note `j` is higher than note
+    `i` and `i >= j`; otherwise it is `0`. The matrix encodes pairwise
     pitch-height relations in the melodic contour.
 
     Parameters
@@ -177,8 +177,8 @@ def get_huron_contour_features(melody: Melody) -> str:
 
     The Huron contour reduces a melody to three pitch points: the first pitch, a
     rounded duration-weighted mean pitch, and the last pitch. Their relative ordering
-    is mapped to a categorical contour label such as ``"ascending"``,
-    ``"descending"``, ``"convex"``, ``"concave"``, or ``"horizontal"``.
+    is mapped to a categorical contour label such as `"ascending"`,
+    `"descending"`, `"convex"`, `"concave"`, or `"horizontal"`.
 
     Parameters
     ----------

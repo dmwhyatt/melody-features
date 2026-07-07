@@ -164,12 +164,12 @@ def transition_matrix_to_dict(
     row_labels : sequence
         Label for each row (source state)
     col_labels : sequence, optional
-        Label for each column (target state). Defaults to ``row_labels``.
+        Label for each column (target state). Defaults to `row_labels`.
 
     Returns
     -------
     dict
-        Map from ``(from_label, to_label)`` to probability for non-zero entries
+        Map from `(from_label, to_label)` to probability for non-zero entries
     """
     col_labels = row_labels if col_labels is None else col_labels
     arr = np.asarray(matrix, dtype=float)

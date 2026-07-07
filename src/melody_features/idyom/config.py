@@ -165,7 +165,7 @@ def _resolve_idyom_corpus(
 
 
 def _default_idyom_configs(corpus: Optional[os.PathLike] = None) -> dict[str, IDyOMConfig]:
-    """Build the standard four IDyOM configurations used by ``get_all_features``."""
+    """Build the standard four IDyOM configurations used by `get_all_features`."""
     return {
         "pitch_stm": IDyOMConfig(
             target_viewpoints=["cpitch"],

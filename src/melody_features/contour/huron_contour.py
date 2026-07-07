@@ -125,8 +125,8 @@ class HuronContour:
         The melody is reduced to three pitch points: the first pitch, a rounded
         duration-weighted mean pitch, and the last pitch. Their relative ordering
         determines the contour class. For example, first < mean < last is
-        ``"ascending"``, first > mean > last is ``"descending"``, first < mean > last
-        is ``"convex"``, and first > mean < last is ``"concave"``.
+        `"ascending"`, first > mean > last is `"descending"`, first < mean > last
+        is `"convex"`, and first > mean < last is `"concave"`.
 
         Citation
         --------
@@ -135,10 +135,10 @@ class HuronContour:
         Returns
         -------
         str
-            One of ``"ascending"``, ``"descending"``, ``"convex"``, ``"concave"``,
-            ``"horizontal"``, ``"ascending-horizontal"``, ``"horizontal-ascending"``,
-            ``"descending-horizontal"``, ``"horizontal-descending"``, or
-            ``"unclassified"``.
+            One of `"ascending"`, `"descending"`, `"convex"`, `"concave"`,
+            `"horizontal"`, `"ascending-horizontal"`, `"horizontal-ascending"`,
+            `"descending-horizontal"`, `"horizontal-descending"`, or
+            `"unclassified"`.
         """
         return self._huron_contour
 

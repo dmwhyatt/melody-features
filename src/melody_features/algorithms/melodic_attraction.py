@@ -1,4 +1,4 @@
-"""MIDI Toolbox ``melattraction.m`` implementation."""
+"""MIDI Toolbox `melattraction.m` implementation."""
 
 from __future__ import annotations
 
@@ -42,14 +42,14 @@ def _kkcc_from_nmat(
 def _transpose_to_c(
     pitches: list[int], starts: list[float], ends: list[float]
 ) -> list[int]:
-    """``transpose2c.m``: transpose so KKCC argmax key is tonic C."""
+    """`transpose2c.m`: transpose so KKCC argmax key is tonic C."""
     kk = _kkcc_from_nmat(pitches, starts, ends)
     key_index = int(np.argmax(kk)) + 1  # MATLAB 1..24
     return [int(pitch) - key_index + 1 for pitch in pitches]
 
 
 def _keymode_from_kkcc(kk: np.ndarray) -> int:
-    """``keymode.m``: 1 major, 2 minor."""
+    """`keymode.m`: 1 major, 2 minor."""
     if kk[0] > kk[12]:
         return 1
     if kk[0] < kk[12]:
@@ -58,7 +58,7 @@ def _keymode_from_kkcc(kk: np.ndarray) -> int:
 
 
 def _directed_motion_index(pitches: list[int]) -> list[float]:
-    """Directed motion index from ``melattraction.m``."""
+    """Directed motion index from `melattraction.m`."""
     if len(pitches) < 2:
         return [0.0] * len(pitches)
 
@@ -73,7 +73,7 @@ def _directed_motion_index(pitches: list[int]) -> list[float]:
 def melodic_attraction_vector(
     pitches: list[int], starts: list[float], ends: list[float]
 ) -> list[float]:
-    """Melodic attraction for each note (MIDI Toolbox ``melattraction.m``)."""
+    """Melodic attraction for each note (MIDI Toolbox `melattraction.m`)."""
     if not pitches:
         return []
     if len(pitches) == 1:
@@ -95,8 +95,8 @@ def melodic_attraction_vector(
     prox = [0.0] + [abs(transposed[i + 1] - transposed[i]) for i in range(len(transposed) - 1)]
 
     dd1: list[float] = []
-    # MATLAB ``sd2b`` is never cleared between loop iterations; ``length(sd2b)``
-    # keeps stale entries from earlier steps (``melattraction.m`` lines 118-132).
+    # MATLAB `sd2b` is never cleared between loop iterations; `length(sd2b)`
+    # keeps stale entries from earlier steps (`melattraction.m` lines 118-132).
     sd2b: list[float] = [0.0] * 9
     max_sd2b_len = 0
     j = 0

@@ -335,7 +335,7 @@ def closure(values: list[float]) -> float:
 
 
 def narmour_vector(pitches: list[int], principle: str) -> list[float]:
-    """Full Narmour implication-realization vector (MIDI Toolbox ``narmour.m``)."""
+    """Full Narmour implication-realization vector (MIDI Toolbox `narmour.m`)."""
     if not pitches:
         return []
     pc = np.asarray(pitches, dtype=float)

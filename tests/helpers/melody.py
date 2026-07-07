@@ -12,7 +12,7 @@ def make_melody(
     tempo=120.0,
     time_signature="4/4",
 ):
-    """Build a melody_data dict compatible with ``Melody``."""
+    """Build a melody_data dict compatible with `Melody`."""
     return build_midi_data(
         pitches,
         starts,

@@ -263,13 +263,13 @@ class InterpolationContour:
         Returns
         -------
         int
-            ``1`` if the summed gradients are positive, ``0`` if the sum is zero,
-            and ``-1`` if the summed gradients are negative.
+            `1` if the summed gradients are positive, `0` if the sum is zero,
+            and `-1` if the summed gradients are negative.
 
         Notes
         -----
         This is a net direction metric. Opposing upward and downward sections can
-        cancel, resulting in ``0`` even when the contour is not flat.
+        cancel, resulting in `0` even when the contour is not flat.
 
         Examples
         --------
@@ -324,9 +324,9 @@ class InterpolationContour:
         """The sample standard deviation of interpolation-contour gradients.
 
         This feature measures how much the sampled interpolation-contour gradients
-        vary around their mean. It uses Bessel's correction (``ddof=1``), matching
+        vary around their mean. It uses Bessel's correction (`ddof=1`), matching
         the usual sample-standard-deviation convention. Contours with fewer than
-        two gradient samples have no gradient variability and return ``0.0``.
+        two gradient samples have no gradient variability and return `0.0`.
 
         Returns
         -------
@@ -364,17 +364,17 @@ class InterpolationContour:
         of transitions between distinct gradient runs; the numerator is the number
         of those transitions where the gradient changes sign.
 
-        For example, the sampled contour ``[2, 2, 1, 1, -1, -1]`` has three
-        gradient runs, ``[2, 1, -1]``. It has two transitions between runs, but
-        only ``1 -> -1`` reverses direction, so the feature value is
-        ``1 / 2 = 0.5``.
+        For example, the sampled contour `[2, 2, 1, 1, -1, -1]` has three
+        gradient runs, `[2, 1, -1]`. It has two transitions between runs, but
+        only `1 -> -1` reverses direction, so the feature value is
+        `1 / 2 = 0.5`.
 
         Returns
         -------
         float
             The number of sign-reversing transitions divided by the number of
             transitions between distinct interpolation-gradient runs. Returns
-            ``0.0`` when there are no transitions between distinct gradient runs.
+            `0.0` when there are no transitions between distinct gradient runs.
 
         Examples
         --------
@@ -413,28 +413,28 @@ class InterpolationContour:
         Each sampled gradient is measured in semitones per second, rescaled to
         semitones per 0.25 seconds, and assigned to one of five ordered categories
         from strong downward motion to strong upward motion. The returned string
-        preserves temporal order, so ``"ddbb"`` means that the first two sampled
+        preserves temporal order, so `"ddbb"` means that the first two sampled
         regions are upward and the last two are downward.
 
         Categories are defined as follows:
 
-        - ``"a"``: strong downward motion; normalized gradient <= -1.45.
-        - ``"b"``: downward motion; -1.45 < normalized gradient <= -0.45.
-        - ``"c"``: approximately flat; -0.45 < normalized gradient < 0.45.
-        - ``"d"``: upward motion; 0.45 <= normalized gradient < 1.45.
-        - ``"e"``: strong upward motion; normalized gradient >= 1.45.
+        - `"a"`: strong downward motion; normalized gradient <= -1.45.
+        - `"b"`: downward motion; -1.45 < normalized gradient <= -0.45.
+        - `"c"`: approximately flat; -0.45 < normalized gradient < 0.45.
+        - `"d"`: upward motion; 0.45 <= normalized gradient < 1.45.
+        - `"e"`: strong upward motion; normalized gradient >= 1.45.
 
         Returns
         -------
         str
-            A string of length four whose characters are drawn from ``"a"`` to
-            ``"e"``. Each character gives the gradient category at one sampled
+            A string of length four whose characters are drawn from `"a"` to
+            `"e"`. Each character gives the gradient category at one sampled
             position in the interpolation contour.
 
         Notes
         -----
-        Returned labels are letters (``"a"``-``"e"``). Numeric codes (``-2`` to
-        ``2``) are threshold descriptions only and are not returned by this property.
+        Returned labels are letters (`"a"`-`"e"`). Numeric codes (`-2` to
+        `2`) are threshold descriptions only and are not returned by this property.
 
         Examples
         --------
