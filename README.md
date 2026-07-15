@@ -77,6 +77,36 @@ By default, this function will produce a Pandas DataFrame containing the tabulat
 
 This function can be customised in a number of ways, please see `notebooks/example.ipynb` for a detailed breakdown.
 
+### Long format
+
+By default `get_all_features` returns one row per melody, with one column per feature (`{family}.{feature_name}`, e.g. `absolute_pitch.pitch_range`). Pass `long_format=True` to instead get a tidy long-format DataFrame with one row per melody/feature combination.
+
+```python
+from melody_features import get_all_features, get_feature_metadata, to_long_format
+
+long_results = get_all_features(input="path/to/your/midi/files", long_format=True)
+# columns: melody_num, melody_id, feature_name, family, source, domain, type, value, description, notes, references
+
+# e.g. keep only descriptor-type features from jSymbolic
+descriptors = long_results[
+    (long_results["type"] == "Descriptor") & (long_results["source"].str.contains("jSymbolic"))
+]
+
+# group by source or family, e.g. to see which sources contribute most features
+long_results.groupby("family")["feature_name"].nunique()
+```
+
+By default, feature metadata (source, family, domain, type, description) is joined onto the long DataFrame automatically. Pass `join_metadata=False` to skip this and get a minimal `melody_num, melody_id, feature_name, value` table instead.
+
+You can also reshape an existing wide-format DataFrame (for example one you've already saved to CSV) with `to_long_format`, and fetch the metadata table on its own with `get_feature_metadata()`:
+
+```python
+wide_results = get_all_features(input="path/to/your/midi/files")
+long_results = to_long_format(wide_results)
+
+metadata = get_feature_metadata()  # feature_name, family, source, domain, type, description, notes, references
+```
+
 ## Loading melodies and computing individual features
 
 Besides the batch pipeline, you can load a `Melody` and call feature functions from the package root. Use `list_available_features()` to browse the full catalogue.

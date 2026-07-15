@@ -33,7 +33,19 @@ def warn_legacy_import_shim(
 
 
 def suppress_common_melody_warnings() -> None:
-    """Suppress noisy warnings from pretty_midi and deprecated pkg_resources."""
+    """Suppress noisy warnings from pretty_midi, deprecated pkg_resources, and
+    benign NumPy floating-point warnings triggered by expected degenerate
+    inputs (e.g. single-note melodies, zero-variance intervals).
+
+    Many features take a sample standard deviation (`ddof=1`) or similar
+    statistic over very short sequences (e.g. a melody with 0 or 1 notes),
+    which is a legitimate, already-handled edge case but makes NumPy emit
+    RuntimeWarnings such as "Degrees of freedom <= 0 for slice" or "invalid
+    value encountered in divide". These are silenced here (scoped to
+    NumPy's own internal modules) so end users of this package don't see
+    them by default; the resulting `nan`/`0.0` feature values are handled
+    explicitly wherever they occur.
+    """
     warnings.filterwarnings("ignore", category=UserWarning, module="pretty_midi")
     warnings.filterwarnings("ignore", category=RuntimeWarning, module="pretty_midi")
     warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
@@ -42,3 +54,15 @@ def suppress_common_melody_warnings() -> None:
         category=UserWarning,
         message=".*pkg_resources is deprecated.*",
     )
+    for message in (
+        r".*invalid value encountered.*",
+        r".*divide by zero encountered.*",
+        r"Degrees of freedom <= 0 for slice.*",
+        r"Mean of empty slice.*",
+    ):
+        warnings.filterwarnings(
+            "ignore",
+            category=RuntimeWarning,
+            message=message,
+            module=r"numpy(\..*)?",
+        )

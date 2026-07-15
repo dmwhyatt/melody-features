@@ -756,30 +756,6 @@ def get_interval_features(melody: Melody) -> Dict:
     interval_functions = _get_features_by_domain_and_types("pitch", ["interval"])
     return _collect_feature_values(interval_functions, melody, tuple_suffix="sd")
 
-def get_metric_accent_features(melody: Melody) -> Dict:
-    """Compute metric hierarchy and meter accent features for a melody.
-
-    Based on MIDI toolbox metric hierarchy and meteraccent analysis.
-    Calculates the strength of each note position within the known or estimated meter,
-    and computes phenomenal accent synchrony.
-
-    Parameters
-    ----------
-    melody : Melody
-        The melody to analyze
-
-    Returns
-    -------
-    Dict
-        Dictionary containing:
-        - metric_hierarchy: List of hierarchy values for each note
-        - meter_accent: Phenomenal accent synchrony measure (from MIDI toolbox meteraccent.m)
-    """
-    return {
-        "metric_hierarchy": metric_hierarchy(melody),
-        "meter_accent": meter_accent(melody),
-    }
-
 def _collect_rhythm_domain_features(melody: Melody, allowed_types: list[str]) -> Dict:
     """Collect @rhythm-domain features whose types intersect `allowed_types`."""
     rhythm_functions = _get_features_by_domain_and_types("rhythm", allowed_types)
@@ -796,13 +772,15 @@ def get_inter_onset_interval_features(melody: Melody) -> Dict:
 def get_rhythm_features(melody: Melody) -> Dict:
     """Dynamically collect all rhythm features for a melody.
 
-    Combines timing, inter-onset interval, and metric-accent features for
-    backward-compatible `rhythm_features` export.
+    Combines timing and inter-onset interval features for backward-compatible
+    `rhythm_features` export. `metric_hierarchy` and `meter_accent` are
+    excluded here since they are already reported under `metre_features`
+    (via `get_metre_features`); including them in both would duplicate the
+    same values under two column prefixes (`timing.*` and `metre.*`).
     """
     features: Dict[str, Any] = {}
     features.update(get_timing_features(melody))
     features.update(get_inter_onset_interval_features(melody))
-    features.update(get_metric_accent_features(melody))
     return features
 
 
@@ -810,7 +788,10 @@ def collect_rhythm_for_pipeline(melody: Melody) -> tuple[Dict[str, Any], Dict[st
     """Collect rhythm features and per-subcategory timings for pipeline workers.
 
     `timing` and `inter_onset_interval` are timed separately so pipeline
-    statistics keep them as discrete taxonomy categories.
+    statistics keep them as discrete taxonomy categories. `metric_hierarchy`
+    and `meter_accent` are intentionally omitted here; they are collected
+    once, under `metre_features`, to avoid duplicating them under both
+    `timing.*` and `metre.*` column prefixes.
     """
     rhythm_timings: Dict[str, float] = {}
 
@@ -822,11 +803,9 @@ def collect_rhythm_for_pipeline(melody: Melody) -> tuple[Dict[str, Any], Dict[st
     ioi_features = get_inter_onset_interval_features(melody)
     rhythm_timings["inter_onset_interval"] = time.time() - start
 
-    metric_accent_features = get_metric_accent_features(melody)
     rhythm_features = {
         **timing_features,
         **ioi_features,
-        **metric_accent_features,
     }
     return rhythm_features, rhythm_timings
 
@@ -1033,6 +1012,8 @@ def get_all_features(
     config: Optional[Config] = None,
     log_level: int = logging.INFO,
     skip_idyom: bool = False,
+    long_format: bool = False,
+    join_metadata: bool = True,
 ) -> "pd.DataFrame":
     """Calculate a multitude of features from across the computational melody analysis field.
     This function returns a pandas DataFrame with a row for every melody in the supplied input.
@@ -1065,12 +1046,25 @@ def get_all_features(
         Logging level (default: logging.INFO)
     skip_idyom : bool
         If True, skip IDyOM feature calculation (default: False)
+    long_format : bool
+        If True, return a tidy long-format DataFrame (one row per
+        melody/feature combination, with `feature_name` and `value` columns)
+        instead of the default wide format. See
+        :func:`melody_features.to_long_format`, which can also be applied to
+        an existing wide DataFrame (default: False)
+    join_metadata : bool
+        Only used when `long_format=True`. If True, join feature metadata
+        (family, source, domain, type, description, notes, references) onto
+        the long DataFrame by `feature_name`, so features can be filtered or
+        grouped by source/family without a separate join step. See
+        :func:`melody_features.get_feature_metadata` (default: True)
 
     Returns
     -------
     pd.DataFrame
         A pandas DataFrame with a row for every melody in the input, containing all extracted features.
         You can save this to CSV using df.to_csv('filename.csv') if needed.
+        If `long_format=True`, one row per melody/feature combination instead.
 
     """
     suppress_common_melody_warnings()
@@ -1175,5 +1169,10 @@ def get_all_features(
     log_timing_statistics(logger, timing_stats, end_time - start_time)
 
     logger.info(f"Successfully extracted features for {len(df)} melodies")
+
+    if long_format:
+        from .reshape import to_long_format
+
+        df = to_long_format(df, join_metadata=join_metadata)
 
     return df

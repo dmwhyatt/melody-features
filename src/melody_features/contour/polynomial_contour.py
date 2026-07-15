@@ -318,7 +318,10 @@ class PolynomialContour:
         # Count only non-zero coefficients as parameters
         n_params = np.sum(np.abs(coeffs) > 1e-10)
 
-        return n * np.log(rss / n) + n_params * np.log(n)
+        # A perfect fit (rss == 0) makes log(rss / n) -> -inf; this is a
+        # legitimate BIC value (perfect fit is maximally preferred), not an error.
+        with np.errstate(divide="ignore"):
+            return n * np.log(rss / n) + n_params * np.log(n)
 
 
 def polynomial_contour_coefficients(melody: Melody) -> list[float]:

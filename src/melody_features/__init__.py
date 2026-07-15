@@ -42,6 +42,8 @@ from .features import (
     get_all_features,
     list_available_features,
 )
+from .feature_metadata import get_feature_metadata
+from .reshape import to_long_format
 
 __all__ = [
     "essen_corpus",
@@ -53,6 +55,8 @@ __all__ = [
     "IDyOMConfig",
     "get_all_features",
     "list_available_features",
+    "get_feature_metadata",
+    "to_long_format",
     "load_melodies_from_directory",
     *_absolute_pitch_all,
     *_pitch_class_all,

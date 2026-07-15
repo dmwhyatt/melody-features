@@ -234,7 +234,10 @@ def _fantastic_log_normalized_tf_df(
     """log2-normalized TF and DF vectors as in FANTASTIC `M-Type_Corpus_Features.R`."""
     log_tf = np.log2(tf)
     log_df = np.log2(df)
-    return log_tf / log_tf.sum(), log_df / log_df.sum()
+    # log_tf/log_df sum to 0 when every m-type has tf/df == 1 (log2(1) == 0);
+    # the resulting 0/0 -> nan is an expected, already-handled degenerate case.
+    with np.errstate(invalid="ignore"):
+        return log_tf / log_tf.sum(), log_df / log_df.sum()
 
 def _fantastic_melody_ngram_counts(
     melody_tokens: list,

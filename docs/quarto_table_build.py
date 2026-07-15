@@ -11,6 +11,12 @@ metadata, and emits a CSV or Markdown table with columns:
 - Type (Descriptor or Sequence)
 - Notes
 
+The metadata collection itself (sources, categories, descriptions, notes,
+references, etc.) lives in `melody_features.feature_metadata` so that the
+docs table and the package-level `get_feature_metadata()` API share a single
+source of truth. This script only adds Quarto/HTML-specific rendering on
+top of that shared data.
+
 Usage:
   python docs/quarto_table_build.py --format csv --out /path/to/features_table.csv
   python docs/quarto_table_build.py --format qmd --out /path/to/features_table.qmd
@@ -19,14 +25,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import inspect
 import re
 import sys
-import os
-from dataclasses import dataclass
-from typing import Iterable
 from pathlib import Path
-from urllib.parse import quote
 
 import pandas as pd
 
@@ -34,64 +35,22 @@ script_dir = Path(__file__).parent
 src_dir = script_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
-from melody_features import features as features_module
-from melody_features.contour import (
-    HuronContour,
-    InterpolationContour,
-    PolynomialContour,
-    StepContour,
+from melody_features.feature_metadata import (  # noqa: E402
+    build_table,
+    count_features,
 )
-from melody_features.ngram_counter import NGramCounter
 
 
-@dataclass
-class FeatureRow:
-    name: str
-    implementations: str
-    references: str
-    description: str
-    type_label: str
-    notes: str
-    category: str
-    domain: str
-    sort_name: str
-
-
-SECTION_RE = re.compile(r"^([A-Za-z ]+)\n[-]+$", re.MULTILINE)
-
-FEATURE_ALIAS_EXPORTS: dict[str, tuple[str, str]] = {
-    "ambitus": ("pitch_range", "MIDI Toolbox"),
-    "average_time_between_attacks": ("ioi_mean", "jSymbolic"),
-    "duration_in_seconds": ("global_duration", "jSymbolic"),
-    "mean_melodic_interval": ("mean_absolute_interval", "jSymbolic"),
-    "most_common_interval": ("modal_interval", "jSymbolic"),
-    "number_of_common_pitches_classes": ("number_of_common_pitch_classes", "local legacy export"),
-    "pitch_variability": ("pitch_standard_deviation", "jSymbolic"),
-    "variability_of_time_between_attacks": ("ioi_standard_deviation", "jSymbolic"),
-    "total_number_of_notes": ("length", "jSymbolic"),
-}
-
-FEATURE_DISPLAY_NAME_OVERRIDES: dict[str, str] = {
-    "compltrans": "Melodic Originality (Compltrans)",
-    "complebm_pitch": "Expectancy Complexity Pitch (Complebm)",
-    "complebm_rhythm": "Expectancy Complexity Rhythm (Complebm)",
-    "complebm_optimal": "Expectancy Complexity Optimal (Complebm)",
-}
-
-_CANONICAL_ALIAS_NOTES: dict[str, list[tuple[str, str]]] = {}
-for _alias, (_canonical, _source) in FEATURE_ALIAS_EXPORTS.items():
-    _CANONICAL_ALIAS_NOTES.setdefault(_canonical, []).append((_alias, _source))
-
-
-def _alias_display_name(python_name: str) -> str:
-    return fix_possessive_feature_names(normalize_feature_text(snake_to_title(python_name)))
-
-
-def _alias_note(alternate_python_name: str, source: str) -> str:
-    return (
-        f'This feature is named `{alternate_python_name}` '
-        f"({_alias_display_name(alternate_python_name)}) in {source}."
-    )
+def format_implementations_html(implementations: str) -> str:
+    """Render implementation sources as compact badges."""
+    if not implementations:
+        return ""
+    tokens = [t.strip() for t in implementations.split(",") if t.strip()]
+    badges = []
+    for token in tokens:
+        css_class = _IMPL_BADGE_CLASSES.get(token, "impl-default")
+        badges.append(f'<span class="impl-badge {css_class}">{token}</span>')
+    return '<span class="impl-badges">' + " ".join(badges) + "</span>"
 
 
 _IMPL_BADGE_CLASSES: dict[str, str] = {
@@ -105,18 +64,6 @@ _IMPL_BADGE_CLASSES: dict[str, str] = {
     "Novel": "impl-novel",
     "Partitura": "impl-partitura",
 }
-
-
-def format_implementations_html(implementations: str) -> str:
-    """Render implementation sources as compact badges."""
-    if not implementations:
-        return ""
-    tokens = [t.strip() for t in implementations.split(",") if t.strip()]
-    badges = []
-    for token in tokens:
-        css_class = _IMPL_BADGE_CLASSES.get(token, "impl-default")
-        badges.append(f'<span class="impl-badge {css_class}">{token}</span>')
-    return '<span class="impl-badges">' + " ".join(badges) + "</span>"
 
 
 def format_type_badge_html(type_label: str) -> str:
@@ -187,9 +134,23 @@ def format_description_html(description: str) -> str:
     return f'<span class="feature-description">{text}</span>'
 
 
+def format_name_html(name: str, source_url: str) -> str:
+    """Render the feature name as a link to its source definition, if known."""
+    if source_url:
+        return (
+            f'<a class="feature-name-link" href="{source_url}" target="_blank" '
+            f'rel="noopener noreferrer">{name}</a>'
+        )
+    return f'<span class="feature-name-text">{name}</span>'
+
+
 def format_table_display_html(df: pd.DataFrame) -> pd.DataFrame:
     """Apply HTML formatting to columns shown in the Quarto feature table."""
     display = df.copy()
+    if "name" in display.columns and "source_url" in display.columns:
+        display["name"] = display.apply(
+            lambda r: format_name_html(r["name"], r.get("source_url", "")), axis=1
+        )
     if "Pre-existing Implementations" in display.columns:
         display["Pre-existing Implementations"] = display["Pre-existing Implementations"].map(
             lambda v: format_implementations_html(v if isinstance(v, str) else "")
@@ -213,503 +174,6 @@ def format_table_display_html(df: pd.DataFrame) -> pd.DataFrame:
     return display
 
 
-def _notes_for_feature(python_name: str, docstring_notes: str) -> str:
-    parts: list[str] = []
-    if docstring_notes:
-        parts.append(docstring_notes)
-    doc_lower = docstring_notes.lower()
-    for alternate_name, source in _CANONICAL_ALIAS_NOTES.get(python_name, []):
-        if alternate_name.lower() in doc_lower:
-            continue
-        note = _alias_note(alternate_name, source)
-        if note not in parts and all(note not in p for p in parts):
-            parts.append(note)
-    return " ".join(parts)
-
-
-def snake_to_title(name: str) -> str:
-    return name.replace("_", " ").strip().title()
-
-
-def capitalize_ioi(text: str) -> str:
-    """Capitalize 'IOI' in text while preserving other formatting."""
-    if not text:
-        return text
-    return re.sub(r'\bioi\b', 'IOI', text, flags=re.IGNORECASE)
-
-
-def normalize_feature_text(text: str) -> str:
-    """Normalize acronyms and tokens in free text.
-    - IOI -> IOI
-    - df -> DF (word-boundary)
-    - tfdf -> TFDF (word-boundary)
-    - npvi -> NPVI (word-boundary)
-    """
-    if not text:
-        return text
-    # First, handle IOI via existing helper
-    text = capitalize_ioi(text)
-    # Then other acronyms
-    text = re.sub(r"\bstm\b", "STM", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bltm\b", "LTM", text, flags=re.IGNORECASE)
-    text = re.sub(r"\btfdf\b", "TFDF", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bdf\b", "DF", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bnpvi\b", "NPVI", text, flags=re.IGNORECASE)
-    return text
-
-
-def fix_possessive_feature_names(text: str) -> str:
-    """Fix known feature name possessives that are lost by title-casing.
-    E.g., 'Honores H' -> "Honore's H", 'Sichels S' -> "Sichel's S", etc.
-    """
-    if not text:
-        return text
-    replacements = [
-        (r"\bHonores H\b", "Honore's H"),
-        (r"\bSichels S\b", "Sichel's S"),
-        (r"\bSimpsons D\b", "Simpson's D"),
-        (r"\bYules K\b", "Yule's K"),
-    ]
-    result = text
-    for pattern, repl in replacements:
-        result = re.sub(pattern, repl, result, flags=re.IGNORECASE)
-    return result
-
-
-def extract_sections_from_docstring(doc: str) -> dict[str, str]:
-    """Parse simple NumPy-style sections (Parameters, Returns, Notes, Citation, etc.)."""
-    if not doc:
-        return {}
-    text = inspect.cleandoc(doc)
-    sections: dict[str, str] = {}
-    matches = list(SECTION_RE.finditer(text))
-    if not matches:
-        sections["Preamble"] = text.strip()
-        return sections
-    first_start = matches[0].start()
-    preamble = text[:first_start].strip()
-    if preamble:
-        sections["Preamble"] = preamble
-    for idx, m in enumerate(matches):
-        title = m.group(1).strip()
-        start = m.end()
-        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
-        body = text[start:end].strip()
-        sections[title] = body
-    return sections
-
-
-def determine_type_from_return_annotation(obj) -> str:
-    try:
-        ann = inspect.signature(obj).return_annotation
-    except (TypeError, ValueError):
-        return "Descriptor"
-
-    if ann is inspect.Signature.empty:
-        return "Descriptor"
-
-    scalar_types = (int, float, bool)
-    sequence_type_names = {"list", "tuple", "dict", "set", "ndarray", "Series", "DataFrame"}
-
-    if isinstance(ann, type):
-        return "Descriptor" if issubclass(ann, scalar_types) else "Sequence"
-
-    if isinstance(ann, str):
-        lowered = ann.lower()
-        if any(t in lowered for t in ("int", "float", "bool")) and not any(t in lowered for t in ("list", "tuple", "dict", "set")):
-            return "Descriptor"
-        if any(t in lowered for t in ("list", "tuple", "dict", "set", "ndarray")):
-            return "Sequence"
-        return "Descriptor"
-
-    name = getattr(getattr(ann, "__origin__", None), "__name__", "") or getattr(ann, "_name", "") or str(ann)
-    for seq_name in sequence_type_names:
-        if seq_name in str(name):
-            return "Sequence"
-    return "Descriptor"
-
-
-def collect_feature_rows(objs: Iterable[tuple[str, object]]) -> list[FeatureRow]:
-    rows: list[FeatureRow] = []
-    seen_function_ids: set[int] = set()
-    repo_root = script_dir.parent
-
-    def detect_repo_info() -> tuple[str, str]:
-        """Return (repo_url, branch). Tries env, then pyproject, falls back to defaults."""
-        repo_url = os.getenv("REPO_URL") or os.getenv("FEATURES_REPO_URL")
-        branch = os.getenv("REPO_BRANCH") or os.getenv("FEATURES_REPO_BRANCH") or "main"
-        if not repo_url:
-            try:
-                import tomllib
-            except ImportError:
-                tomllib = None
-            if tomllib is not None:
-                pyproj = repo_root / "pyproject.toml"
-                if pyproj.exists():
-                    try:
-                        with open(pyproj, "rb") as f:
-                            data = tomllib.load(f)
-                        repo_url = (
-                            data.get("project", {})
-                            .get("urls", {})
-                            .get("Homepage")
-                            or data.get("project", {})
-                            .get("urls", {})
-                            .get("Repository")
-                            or ""
-                        )
-                    except (OSError, tomllib.TOMLDecodeError):
-                        repo_url = None
-        if not repo_url:
-            repo_url = "https://github.com/dmwhyatt/melody-features"
-        return repo_url.rstrip("/"), branch
-
-    REPO_URL, REPO_BRANCH = detect_repo_info()
-
-    def build_source_url(obj: object) -> str:
-        target = obj.fget if isinstance(obj, property) else obj
-
-        try:
-            target_unwrapped = inspect.unwrap(target)
-        except (AttributeError, ValueError):
-            target_unwrapped = target
-        try:
-            file_path_str = inspect.getsourcefile(target_unwrapped) or inspect.getfile(target_unwrapped)
-            if not file_path_str:
-                return ""
-            file_path = Path(file_path_str)
-            _, start_line = inspect.getsourcelines(target_unwrapped)
-        except (OSError, TypeError):
-            return ""
-
-        try:
-            rel_path = file_path.relative_to(repo_root)
-        except ValueError:
-            parts = file_path.parts
-            rel_path = None
-            if "src" in parts:
-                idx = parts.index("src")
-                rel_path = Path(*parts[idx:])
-            elif "melody_features" in parts:
-                idx = parts.index("melody_features")
-                rel_path = Path("src") / Path(*parts[idx:])
-            if rel_path is None:
-                return ""
-
-        quoted_path = quote(rel_path.as_posix())
-        return f"{REPO_URL}/blob/{REPO_BRANCH}/{quoted_path}#L{start_line}"
-    
-    def format_source_name(raw_name: str) -> str:
-        """Return canonical display names for pre-existing implementations.
-        Falls back to Title Case when not explicitly mapped.
-        """
-        if not raw_name:
-            return ""
-        normalized = raw_name.replace("_", " ").strip().lower()
-        mapping = {
-            "fantastic": "FANTASTIC",
-            "jsymbolic": "jSymbolic",
-            "midi toolbox": "MIDI Toolbox",
-            "midi_toolbox": "MIDI Toolbox",
-            "must": "MUST",
-            "simile": "SIMILE",
-            "idyom": "IDyOM",
-        }
-        return mapping.get(normalized, raw_name.replace("_", " ").strip().title())
-    for name, obj in objs:
-        if name.startswith("get_") or name.startswith("_"):
-            continue
-        if name in FEATURE_ALIAS_EXPORTS:
-            continue
-
-        # Skip InverseEntropyWeighting class
-        if name == "InverseEntropyWeighting":
-            continue
-
-        is_property = isinstance(obj, property)
-        
-        if is_property and hasattr(obj, 'fget') and obj.fget is not None:
-            feature_types = getattr(obj.fget, "_feature_types", None)
-        else:
-            feature_types = getattr(obj, "_feature_types", None)
-        if not feature_types and not is_property:
-            continue
-
-        if not is_property:
-            try:
-                function_id = id(inspect.unwrap(obj))
-            except (AttributeError, ValueError):
-                function_id = id(obj)
-            if function_id in seen_function_ids:
-                continue
-            seen_function_ids.add(function_id)
-
-        if "." in name:
-            class_name, prop_name = name.split(".", 1)
-            class_display = class_name
-            if class_name == "StepContour":
-                class_display = "Step Contour"
-            elif class_name == "InterpolationContour":
-                class_display = "Interpolation Contour"
-            elif class_name == "PolynomialContour":
-                class_display = "Polynomial Contour"
-            elif class_name == "HuronContour":
-                class_display = "Huron Contour"
-            elif class_name == "NGramCounter":
-                class_display = ""
-            class_part = f"{class_display} " if class_display else ""
-            pretty_name = f"{class_part}{snake_to_title(prop_name)}".strip()
-        else:
-            pretty_name = snake_to_title(name)
-
-        pretty_name = FEATURE_DISPLAY_NAME_OVERRIDES.get(name, pretty_name)
-
-        # Apply possessive fixes and acronym normalization to the display name
-        pretty_name = fix_possessive_feature_names(normalize_feature_text(pretty_name))
-
-        source_url = build_source_url(obj)
-        display_name = (
-            f'<a class="feature-name-link" href="{source_url}" target="_blank" '
-            f'rel="noopener noreferrer">{pretty_name}</a>'
-            if source_url
-            else f'<span class="feature-name-text">{pretty_name}</span>'
-        )
-
-        feature_sources = getattr(obj, "_feature_sources", [])
-        if feature_sources:
-            implementations = ", ".join(sorted({format_source_name(s) for s in feature_sources}))
-        else:
-            implementations = ""
-            if is_property and "." in name:
-                class_name = name.split(".", 1)[0]
-                class_source_map = {
-                    "StepContour": "FANTASTIC",
-                    "InterpolationContour": "FANTASTIC",
-                    "PolynomialContour": "FANTASTIC",
-                    "HuronContour": "FANTASTIC",
-                    "NGramCounter": "FANTASTIC",
-                }
-                mapped = class_source_map.get(class_name)
-                if mapped:
-                    implementations = mapped
-
-        doc_string = inspect.getdoc(obj.fget) if is_property else inspect.getdoc(obj)
-        sections = extract_sections_from_docstring(doc_string or "")
-        description = normalize_feature_text(" ".join(sections.get("Preamble", "").split()))
-        doc_notes = normalize_feature_text(" ".join(sections.get("Note", "").split()))
-        feature_python_name = name.split(".", 1)[-1] if "." in name else name
-        notes = _notes_for_feature(feature_python_name, doc_notes)
-
-        citation_section = sections.get("Citation", "").strip()
-        if citation_section:
-            references = normalize_feature_text(
-                " | ".join([" ".join(p.split()) for p in re.split(r"\n\s*\n", citation_section) if p.strip()])
-            )
-        else:
-            references = ""
-
-        if is_property:
-            type_label = "Descriptor"
-            if "." in name:
-                class_name, prop_name = name.split(".", 1)
-                if class_name == "PolynomialContour" and prop_name == "coefficients":
-                    type_label = "Sequence"  # list[float]
-                if class_name == "HuronContour" and prop_name == "huron_contour":
-                    type_label = "Descriptor"  # str
-        else:
-            type_label = determine_type_from_return_annotation(obj)
-
-        # Determine domain from decorator if present
-        if is_property and hasattr(obj, 'fget') and obj.fget is not None:
-            domain_attr = getattr(obj.fget, "_feature_domain", None)
-        else:
-            domain_attr = getattr(obj, "_feature_domain", None)
-        
-        # Extract feature name for category determination
-        feature_name = name.split(".", 1)[-1] if "." in name else name
-        category = _get_feature_category(obj, domain_attr, feature_name)
-
-        # Set domain to "pitch" for contour class properties if not already set
-        if is_property and "." in name:
-            class_name = name.split(".", 1)[0]
-            contour_classes = ["StepContour", "InterpolationContour", "PolynomialContour", "HuronContour"]
-            if class_name in contour_classes and not domain_attr:
-                domain_attr = "pitch"
-
-        domain_for_filter = domain_attr if domain_attr else ""
-
-        rows.append(
-            FeatureRow(
-                name=display_name,
-                implementations=implementations,
-                references=references,
-                description=description,
-                type_label=type_label,
-                notes=notes,
-                category=category,
-                domain=domain_for_filter,
-                sort_name=pretty_name,
-            )
-        )
-    return rows
-
-
-def to_dataframe(rows: list[FeatureRow]) -> pd.DataFrame:
-    df = pd.DataFrame([r.__dict__ for r in rows])
-    sort_cols = ['sort_name'] if 'sort_name' in df.columns else ['name']
-    df = df.sort_values(sort_cols, kind='mergesort').reset_index(drop=True)
-    
-    return df
-
-def _get_feature_category(obj, domain: str = None, feature_name: str = None) -> str:
-    if feature_name in {"mean_melodic_accent", "melodic_accent_std"}:
-        return "Complexity"
-
-    """Determine the feature category based on the actual feature type decorator.
-    Returns a comma-separated string of categories for features that belong to multiple categories.
-    
-    Parameters
-    ----------
-    obj : object
-        The feature object (function or property)
-    domain : str, optional
-        The feature domain ('pitch', 'rhythm', 'both', etc.)
-    feature_name : str, optional
-        The feature name to help determine category (e.g., for mtype features or IOI features)
-    """
-    # MType feature names (lexical diversity features) - separate from corpus
-    mtype_features = {"yules_k", "simpsons_d", "sichels_s", "honores_h", "mean_entropy", "mean_productivity"}
-    
-    # Corpus feature names (features that require corpus_stats)
-    corpus_feature_names = {
-        "tfdf_spearman", "tfdf_kendall", "norm_log_dist", "max_log_df", "min_log_df", 
-        "mean_log_df", "mean_global_local_weight", 
-        "mean_global_weight", "mean_log_tfdf",
-        "mean_document_frequency"
-    }
-    
-    # Check if this is a corpus feature (by name or signature)
-    if feature_name and feature_name in corpus_feature_names:
-        return 'Corpus'
-    
-    # Check function signature for corpus_stats parameter (indicates corpus feature)
-    is_property = isinstance(obj, property)
-    target = obj.fget if is_property else obj
-    try:
-        sig = inspect.signature(target)
-        if 'corpus_stats' in sig.parameters:
-            # But exclude mtype features which also have corpus_stats but are lexical diversity
-            if feature_name and feature_name not in mtype_features:
-                return 'Corpus'
-    except (TypeError, ValueError):
-        pass
-    
-    # Check if this is an mtype feature (lexical diversity)
-    if feature_name and feature_name in mtype_features:
-        return 'Lexical Diversity'
-    
-    if is_property and hasattr(obj, 'fget') and obj.fget is not None:
-        feature_types = getattr(obj.fget, "_feature_types", None)
-    else:
-        feature_types = getattr(obj, "_feature_types", None)
-    
-    type_mapping = {
-        'pitch': 'Absolute Pitch',
-        'interval': 'Pitch Interval', 
-        'contour': 'Contour',
-        'rhythm': 'Timing',
-        'complexity': 'Complexity',
-        'tonality': 'Tonality',
-        'metre': 'Metre',
-        'expectation': 'Expectation',
-        'lexical_diversity': 'Lexical Diversity',
-        'corpus': 'Corpus',
-        'mtype': 'Lexical Diversity',
-        'pitch_class': 'Pitch Class',  
-        'absolute': 'Absolute Pitch',
-        'timing': 'Timing',
-    }
-    
-    if feature_types and len(feature_types) > 0:
-        # Map all feature types to their categories
-        categories = []
-        for feature_type in feature_types:
-            mapped = type_mapping.get(feature_type)
-            
-            if feature_type == 'absolute' and domain == 'pitch':
-                mapped = 'Absolute Pitch'
-            elif feature_type == 'pitch_class' and domain == 'pitch':
-                mapped = 'Pitch Class'
-            elif feature_type == 'interval' and domain == 'pitch':
-                mapped = 'Pitch Interval'
-            elif feature_type == 'interval' and domain == 'rhythm':
-                # Check if this is an IOI feature
-                if feature_name and 'ioi' in feature_name.lower():
-                    mapped = 'Inter-Onset Interval'
-                else:
-                    mapped = 'Timing'
-            
-            if mapped and mapped not in categories:
-                categories.append(mapped)
-        
-        if categories:
-            return ', '.join(categories)
-        # Fallback: if no mapping found, convert to Title Case
-        return feature_types[0].replace('_', ' ').title()
-    
-    # handle class based features (fallback for features without decorators)
-    if hasattr(obj, '__name__'):
-        name = obj.__name__
-        if name in ['honores_h', 'yules_k', 'simpsons_d', 'sichels_s', 'mean_entropy', 'mean_productivity']:
-            return 'Lexical Diversity'
-        elif name in ['class_label', 'global_variation', 'global_direction', 'local_variation', 'coefficients']:
-            return 'Contour'
-    
-    # get properties
-    if isinstance(obj, property):
-        if hasattr(obj, 'fget') and obj.fget:
-            if hasattr(obj.fget, '__qualname__'):
-                qualname = obj.fget.__qualname__
-                if 'NGramCounter' in qualname:
-                    return 'Complexity'
-                elif any(cls in qualname for cls in ['HuronContour', 'StepContour', 'InterpolationContour', 'PolynomialContour']):
-                    return 'Contour'
-        return 'Other'
-    
-    return 'Other'
-
-
-def build_table() -> pd.DataFrame:
-    """Build the exported feature table from atomic feature callables only.
-
-    Convention: helper/aggregator wrappers (for example `get_*`) are intentionally
-    excluded so the table contains only user-facing scalar/sequence feature atoms.
-    """
-    members = inspect.getmembers(features_module)
-    
-    all_features = []
-    
-    functions = [(n, o) for n, o in members if inspect.isfunction(o)]
-    all_features.extend(functions)
-    
-    feature_classes = [StepContour, InterpolationContour, PolynomialContour, HuronContour, NGramCounter]
-    excluded_properties = {"count_values", "freq_spec", "total_tokens"}
-    
-    for cls in feature_classes:
-        class_name = cls.__name__
-        for prop_name, prop_obj in inspect.getmembers(cls):
-            if isinstance(prop_obj, property) and prop_name not in excluded_properties:
-                all_features.append((f"{class_name}.{prop_name}", prop_obj))
-    
-    rows = collect_feature_rows(all_features)
-    return to_dataframe(rows)
-
-
-def count_features() -> int:
-    """Return the number of features included in the summary table."""
-    return len(build_table())
-
-
 def main():
     parser = argparse.ArgumentParser(description="Build a feature summary table for Quarto.")
     parser.add_argument("--format", choices=["csv", "qmd"], default="qmd", help="Output format")
@@ -720,8 +184,9 @@ def main():
     feature_count = len(df)
 
     if args.format == "csv":
-        df.rename(
+        display_df = df.rename(
             columns={
+                "python_name": "Python Name",
                 "name": "Name",
                 "implementations": "Pre-existing Implementations",
                 "references": "Further References",
@@ -729,7 +194,8 @@ def main():
                 "type_label": "Type",
                 "notes": "Notes",
             }
-        ).to_csv(args.out, index=False)
+        )
+        display_df.drop(columns=["source_url"], errors="ignore").to_csv(args.out, index=False)
     else:
         _ = df.rename(
             columns={
@@ -741,7 +207,7 @@ def main():
                 "notes": "Notes",
             }
         )
-        
+
         with open(args.out, "w", encoding="utf-8") as f:
             f.write("---\n")
             f.write("title: \"Melody Features Summary\"\n")
@@ -765,7 +231,8 @@ def main():
             f.write("docs_dir = script_dir / \"docs\"\n")
             f.write("sys.path.insert(0, str(src_dir))\n")
             f.write("sys.path.insert(0, str(docs_dir))\n")
-            f.write("from quarto_table_build import build_table, format_table_display_html\n\n")
+            f.write("from melody_features.feature_metadata import build_table\n")
+            f.write("from quarto_table_build import format_table_display_html\n\n")
             f.write("df = build_table()\n")
             f.write("df_renamed = df.rename(columns={\n")
             f.write("    'name': 'Name',\n")
@@ -787,8 +254,9 @@ def main():
             f.write("df_renamed['data-domain'] = df_renamed.index.map(lambda i: df.iloc[i].get('domain', ''))\n")
             f.write("\n")
             f.write("# Create a single table with category data for filtering (exclude category columns from display)\n")
-            f.write("df_display = df_renamed.drop(columns=['category', 'domain', 'data-category', 'data-domain', 'sort_name'], errors='ignore')\n")
+            f.write("df_display = df_renamed.drop(columns=['category', 'domain', 'data-category', 'data-domain', 'sort_name', 'python_name'], errors='ignore')\n")
             f.write("df_display = format_table_display_html(df_display)\n")
+            f.write("df_display = df_display.drop(columns=['source_url'], errors='ignore')\n")
             f.write("table_html = df_display.to_html(classes='table table-striped table-hover', table_id='features-table', escape=False, index=False)\n")
             f.write("\n")
             f.write("# Add data-category attributes to table rows using a more robust approach\n")
