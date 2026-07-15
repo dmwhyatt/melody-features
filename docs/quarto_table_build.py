@@ -195,7 +195,9 @@ def main():
                 "notes": "Notes",
             }
         )
-        display_df.drop(columns=["source_url"], errors="ignore").to_csv(args.out, index=False)
+        display_df.drop(
+            columns=["source_url", "feature_types", "has_corpus_stats_param"], errors="ignore"
+        ).to_csv(args.out, index=False)
     else:
         _ = df.rename(
             columns={
@@ -254,7 +256,7 @@ def main():
             f.write("df_renamed['data-domain'] = df_renamed.index.map(lambda i: df.iloc[i].get('domain', ''))\n")
             f.write("\n")
             f.write("# Create a single table with category data for filtering (exclude category columns from display)\n")
-            f.write("df_display = df_renamed.drop(columns=['category', 'domain', 'data-category', 'data-domain', 'sort_name', 'python_name'], errors='ignore')\n")
+            f.write("df_display = df_renamed.drop(columns=['category', 'domain', 'data-category', 'data-domain', 'sort_name', 'python_name', 'feature_types', 'has_corpus_stats_param'], errors='ignore')\n")
             f.write("df_display = format_table_display_html(df_display)\n")
             f.write("df_display = df_display.drop(columns=['source_url'], errors='ignore')\n")
             f.write("table_html = df_display.to_html(classes='table table-striped table-hover', table_id='features-table', escape=False, index=False)\n")
