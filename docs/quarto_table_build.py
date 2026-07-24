@@ -147,9 +147,10 @@ def format_name_html(name: str, source_url: str) -> str:
 def format_table_display_html(df: pd.DataFrame) -> pd.DataFrame:
     """Apply HTML formatting to columns shown in the Quarto feature table."""
     display = df.copy()
-    if "name" in display.columns and "source_url" in display.columns:
-        display["name"] = display.apply(
-            lambda r: format_name_html(r["name"], r.get("source_url", "")), axis=1
+    name_col = "Name" if "Name" in display.columns else "name"
+    if name_col in display.columns and "source_url" in display.columns:
+        display[name_col] = display.apply(
+            lambda r: format_name_html(r[name_col], r.get("source_url", "")), axis=1
         )
     if "Pre-existing Implementations" in display.columns:
         display["Pre-existing Implementations"] = display["Pre-existing Implementations"].map(
