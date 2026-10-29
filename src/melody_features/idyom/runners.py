@@ -160,7 +160,7 @@ def get_idyom_results(
             )
             return {}
 
-        # Get a naturally sorted list of MIDI files to match IDyOM's processing order.
+        # Melody numbers follow the natural sort order of the input files.
         # Since we created temp files, IDyOM processed the temp directory files
         if temp_dir:
             # Use the temp directory files since that's what IDyOM actually processed
@@ -192,6 +192,10 @@ def get_idyom_results(
                 # The last column should be the information content value
                 info_content_col_idx = len(header_parts) - 1
 
+                # IDyOM reads files in its own (lexical) order, so map rows by melody name.
+                name_col_idx = header_parts.index("melody.name") if "melody.name" in header_parts else None
+                melody_positions = {os.path.splitext(os.path.basename(p))[0]: i for i, p in enumerate(midi_files)}
+
                 logger.debug(f"Will extract information content from column index {info_content_col_idx} (header has {len(header_parts)} columns)")
 
                 line_count = 0
@@ -204,8 +208,10 @@ def get_idyom_results(
                         continue  # Skip malformed lines
 
                     try:
-                        # IDyOM's melody ID is a 1-based index.
-                        melody_idx = int(parts[0]) - 1
+                        if name_col_idx is None:
+                            melody_idx = int(parts[0]) - 1
+                        else:
+                            melody_idx = melody_positions.get(parts[name_col_idx].strip('"'), -1)
 
                         if 0 <= melody_idx < len(midi_files):
                             # Map the index to the melody number (1-based index)
