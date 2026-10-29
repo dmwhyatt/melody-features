@@ -635,5 +635,20 @@ class TestKeyEstimationStrategies:
                 assert isinstance(result, dict), "Should return a dictionary"
 
 
+    def test_get_idyom_results_maps_rows_by_melody_name(self, tmp_path):
+        """IDyOM lists files lexically, so rows must be matched to melodies by name, not position."""
+        from melody_features.features import get_idyom_results
+
+        for name in ("m_1", "m_2", "m_10"):
+            (tmp_path / f"{name}.mid").touch()
+        dat = tmp_path / "out.dat"
+        dat.write_text('melody.id melody.name mean.information.content\n1 "m_10" 10.0\n2 "m_1" 1.0\n3 "m_2" 2.0\n')
+
+        with patch('melody_features.features.create_temp_midi_with_key_signature', return_value=str(tmp_path)), \
+             patch('melody_features.features.run_idyom', return_value=str(dat)):
+            result = get_idyom_results(str(tmp_path), ["cpitch"], ["cpint"], ":both", 1, None)
+
+        assert {k: v["mean_information_content"] for k, v in result.items()} == {"1": 1.0, "2": 2.0, "3": 10.0}
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
