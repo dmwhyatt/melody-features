@@ -119,6 +119,7 @@ class TestFantasticCorpusFeatures:
             import_midi("src/melody_features/corpora/essen_folksong_collection/appenzel.mid")
         )
         corpus_stats = {
+            "tokenizer_version": 2, "phrase_gap": 1.5, "n_range": (1, 5),
             "document_frequencies": {
                 str(k): {"count": v}
                 for k, v in [
@@ -144,6 +145,7 @@ class TestFantasticCorpusFeatures:
             import_midi("src/melody_features/corpora/essen_folksong_collection/appenzel.mid")
         )
         corpus_stats = {
+            "tokenizer_version": 2, "phrase_gap": 1.5, "n_range": (1, 5),
             "document_frequencies": {
                 str(("a",)): {"count": 3},
                 str(("b",)): {"count": 2},
@@ -177,6 +179,7 @@ class TestFantasticCorpusFeatures:
             import_midi("src/melody_features/corpora/essen_folksong_collection/appenzel.mid")
         )
         corpus_stats = {
+            "tokenizer_version": 2, "phrase_gap": 1.5, "n_range": (1, 5),
             "document_frequencies": {
                 str(("x",)): {"count": 4},
                 str(("y",)): {"count": 4},
@@ -215,6 +218,7 @@ class TestCorpusFeatures:
             
             # Create mock corpus stats
             corpus_stats = {
+                "tokenizer_version": 2, "phrase_gap": 1.5,
                 "document_frequencies": {
                     "('C',)": {"count": 10},
                     "('D',)": {"count": 8},
@@ -222,7 +226,7 @@ class TestCorpusFeatures:
                     "('D', 'E')": {"count": 3}
                 },
                 "corpus_size": 100,
-                "n_range": (1, 3)
+                "n_range": (1, 5)
             }
             
             features = get_corpus_features(
@@ -542,11 +546,16 @@ class TestCorpusStatisticsIntegration:
             )
 
             output_file1 = os.path.join(temp_dir, "output1.csv")
+            # Pre-fix counts have incompatible token identities and boundaries.
+            legacy = Path(temp_dir) / "test_corpus_corpus_stats_pg1p5_n5.json"
+            legacy.write_text('{"document_frequencies": {}, "legacy": true}')
             stats1 = _setup_corpus_statistics(config, output_file1)
+            assert stats1["tokenizer_version"] == 2
+            assert "legacy" not in stats1
             # checking whether we correctly check for corpus stats and generate
             # only if not found
             corpus_name = Path(corpus_dir).name
-            expected_stats_file = Path(output_file1).parent / f"{corpus_name}_corpus_stats_pg1p5_n5.json"
+            expected_stats_file = Path(output_file1).parent / f"{corpus_name}_corpus_stats_v2_pg1p5_n5.json"
             assert expected_stats_file.exists(), "Corpus stats file should be created"
 
             output_file2 = os.path.join(temp_dir, "output2.csv")
@@ -574,8 +583,8 @@ class TestCorpusStatisticsIntegration:
             _setup_corpus_statistics(config_b, output_file)
 
             corpus_name = Path(corpus_dir).name
-            expected_a = Path(output_file).parent / f"{corpus_name}_corpus_stats_pg1p5_n5.json"
-            expected_b = Path(output_file).parent / f"{corpus_name}_corpus_stats_pg2p0_n4.json"
+            expected_a = Path(output_file).parent / f"{corpus_name}_corpus_stats_v2_pg1p5_n5.json"
+            expected_b = Path(output_file).parent / f"{corpus_name}_corpus_stats_v2_pg2p0_n4.json"
             assert expected_a.exists()
             assert expected_b.exists()
 

@@ -330,30 +330,16 @@ class TestMelsimBatchProcessing:
 
     def setup_method(self):
         """Set up test data for batch processing."""
-        # Skip if Rscript is not available
-        if shutil.which("Rscript") is None:
-            pytest.skip("Rscript not available, skipping melsim tests")
-        
         self.test_melodies = {
             "melody1": ([60, 62, 64, 65], [0.0, 0.5, 1.0, 1.5], [0.4, 0.9, 1.4, 1.9]),
             "melody2": ([60, 62, 64, 67], [0.0, 0.5, 1.0, 1.5], [0.4, 0.9, 1.4, 1.9]),
             "melody3": ([67, 69, 71, 72], [0.0, 0.5, 1.0, 1.5], [0.4, 0.9, 1.4, 1.9])
         }
 
-    @patch('multiprocessing.Pool')
-    @patch('melody_features.melsim_wrapper.melsim._batch_compute_similarities')
-    def test_directory_pairwise_comparisons(self, mock_batch_compute, mock_pool):
+    @patch('melody_features.melsim_wrapper.melsim.subprocess.run')
+    def test_directory_pairwise_comparisons(self, mock_subprocess):
         """Test pairwise comparisons for directory of MIDI files."""
-        mock_pool_instance = MagicMock()
-        mock_pool.return_value.__enter__.return_value = mock_pool_instance
-
-        mock_pool_instance.imap.return_value = [
-            ("melody1.mid", self.test_melodies["melody1"]),
-            ("melody2.mid", self.test_melodies["melody2"]),
-            ("melody3.mid", self.test_melodies["melody3"])
-        ]
-
-        mock_batch_compute.return_value = [0.8, 0.6, 0.4]
+        mock_subprocess.return_value = MagicMock(returncode=0, stdout='[0.8, 0.6, 0.4]')
 
         with tempfile.TemporaryDirectory() as temp_dir:
             for name, (pitches, starts, ends) in self.test_melodies.items():
@@ -369,19 +355,10 @@ class TestMelsimBatchProcessing:
             assert isinstance(similarities, dict), "Should return similarity dictionary"
             assert len(similarities) == 3, "Should have 3 pairwise comparisons"
 
-    @patch('multiprocessing.Pool')
-    @patch('melody_features.melsim_wrapper.melsim._batch_compute_similarities')
-    def test_multiple_methods_and_transformations(self, mock_batch_compute, mock_pool):
+    @patch('melody_features.melsim_wrapper.melsim.subprocess.run')
+    def test_multiple_methods_and_transformations(self, mock_subprocess):
         """Test multiple methods and transformations simultaneously."""
-        mock_pool_instance = MagicMock()
-        mock_pool.return_value.__enter__.return_value = mock_pool_instance
-
-        mock_pool_instance.imap.return_value = [
-            ("melody1.mid", self.test_melodies["melody1"]),
-            ("melody2.mid", self.test_melodies["melody2"])
-        ]
-
-        mock_batch_compute.return_value = [0.8, 0.7, 0.6, 0.5]
+        mock_subprocess.return_value = MagicMock(returncode=0, stdout='[0.8, 0.7, 0.6, 0.5]')
 
         with tempfile.TemporaryDirectory() as temp_dir:
             for name in ["melody1", "melody2"]:
@@ -526,29 +503,16 @@ class TestMelsimComprehensiveValidation:
 class TestMelsimFileHandling:
     """Test file handling and batch processing."""
 
-    def setup_method(self):
-        """Set up test - skip if Rscript is not available."""
-        if shutil.which("Rscript") is None:
-            pytest.skip("Rscript not available, skipping melsim tests")
-
-    @patch('multiprocessing.Pool')
-    @patch('melody_features.melsim_wrapper.melsim._batch_compute_similarities')
-    def test_get_similarity_from_midi_batch_size_parameter(self, mock_batch_compute, mock_pool):
+    @patch('melody_features.melsim_wrapper.melsim.subprocess.run')
+    def test_get_similarity_from_midi_batch_size_parameter(self, mock_subprocess):
         """Test that batch_size parameter is respected."""
-        mock_pool_instance = MagicMock()
-        mock_pool.return_value.__enter__.return_value = mock_pool_instance
-
         melodies_data = [
             ([60, 62, 64], [0.0, 0.5, 1.0], [0.4, 0.9, 1.4]),
             ([67, 69, 71], [0.0, 0.5, 1.0], [0.4, 0.9, 1.4]),
             ([72, 74, 76], [0.0, 0.5, 1.0], [0.4, 0.9, 1.4])
         ]
 
-        mock_pool_instance.imap.return_value = [
-            (f"melody_{i}.mid", melodies_data[i]) for i in range(3)
-        ]
-
-        mock_batch_compute.return_value = [0.5, 0.7, 0.4]
+        mock_subprocess.return_value = MagicMock(returncode=0, stdout='[0.5]')
 
         with tempfile.TemporaryDirectory() as temp_dir:
             for i, (pitches, starts, ends) in enumerate(melodies_data):
@@ -559,26 +523,23 @@ class TestMelsimFileHandling:
                 temp_dir, method="Jaccard", transformation="pitch", batch_size=1
             )
 
+            assert mock_subprocess.call_count == 3
+            mock_subprocess.reset_mock()
+            mock_subprocess.return_value.stdout = '[0.5, 0.5, 0.5]'
+
             similarities2 = get_similarity_from_midi(
                 temp_dir, method="Jaccard", transformation="pitch", batch_size=10
             )
 
-            assert len(similarities1) == len(similarities2), "Batch size shouldn't affect number of results"
+            mock_subprocess.assert_called_once()
+            assert len(similarities1) == 3
+            assert similarities1 == similarities2, "Batch size shouldn't affect results"
 
-    @patch('multiprocessing.Pool')
-    @patch('melody_features.melsim_wrapper.melsim._batch_compute_similarities')
+    @patch('melody_features.melsim_wrapper.melsim.subprocess.run')
     @patch('pandas.DataFrame.to_json')
-    def test_output_file_json_extension(self, mock_to_json, mock_batch_compute, mock_pool):
+    def test_output_file_json_extension(self, mock_to_json, mock_subprocess):
         """Test that output files get .json extension automatically."""
-        mock_pool_instance = MagicMock()
-        mock_pool.return_value.__enter__.return_value = mock_pool_instance
-
-        mock_pool_instance.imap.return_value = [
-            ("melody_0.mid", ([60, 62, 64], [0.0, 0.5, 1.0], [0.4, 0.9, 1.4])),
-            ("melody_1.mid", ([61, 63, 65], [0.0, 0.5, 1.0], [0.4, 0.9, 1.4]))
-        ]
-
-        mock_batch_compute.return_value = [0.5]
+        mock_subprocess.return_value = MagicMock(returncode=0, stdout='[0.5]')
 
         with tempfile.TemporaryDirectory() as temp_dir:
             for i in range(2):

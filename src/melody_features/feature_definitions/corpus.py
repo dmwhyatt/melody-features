@@ -7,9 +7,9 @@ from typing import Dict, Optional
 import numpy as np
 import scipy
 
-from ..corpus import load_corpus_stats, make_corpus_stats
+from ..corpus import load_corpus_stats, make_corpus_stats, validate_corpus_stats
 from ..feature_decorators import both, corpus, fantastic
-from ..melody_tokenizer import FantasticTokenizer
+from ..melody_tokenizer import FantasticTokenizer, FANTASTIC_TOKENIZER_VERSION
 from ..ngram_counter import NGramCounter
 from ..core.representations import Melody
 
@@ -55,6 +55,7 @@ def get_ngram_document_frequency(ngram: tuple, corpus_stats: dict) -> int:
     int
         Document frequency count for the n-gram
     """
+    validate_corpus_stats(corpus_stats)
     # Get document frequencies dictionary once
     doc_freqs = corpus_stats.get("document_frequencies", {})
 
@@ -80,6 +81,7 @@ class InverseEntropyWeighting:
     the global weight of an m-type, and the combined weight of an m-type.
     """
     def __init__(self, ngram_counts: dict, corpus_stats: dict):
+        validate_corpus_stats(corpus_stats)
         self.ngram_counts = ngram_counts
         self.corpus_stats = corpus_stats
 
@@ -193,15 +195,10 @@ class InverseEntropyWeighting:
         return [l * g for l, g in zip(self.local_weights, self.global_weights)]
 
 def _fantastic_melody_tokens(melody: Melody, phrase_gap: float) -> list:
-    """Tokenize a melody into FANTASTIC m-type tokens across phrases."""
+    """Return flattened tokens for compatibility; not for cross-phrase n-grams."""
     tokenizer = FantasticTokenizer()
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-    all_tokens = []
-    for segment in segments:
-        all_tokens.extend(
-            tokenizer.tokenize_melody(segment.pitches, segment.starts, segment.ends)
-        )
-    return all_tokens
+    return [token for phrase in tokenizer.tokenize_phrases(melody, phrase_gap)
+            for token in phrase]
 
 def _fantastic_melody_tf_df(
     melody_tokens: list,
@@ -209,22 +206,19 @@ def _fantastic_melody_tf_df(
     max_ngram_order: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Melody TF and corpus DF for m-types with df > 0 (FANTASTIC `TFDF.tab` rows)."""
+    counts = _fantastic_melody_ngram_counts(melody_tokens, max_ngram_order)
+    return _fantastic_counts_tf_df(counts, doc_freqs)
+
+
+def _fantastic_counts_tf_df(counts: dict, doc_freqs: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Match already-counted within-phrase m-types to reference document counts."""
     tf_values: list[float] = []
     df_values: list[float] = []
-    if max_ngram_order < 1:
-        return np.array([], dtype=float), np.array([], dtype=float)
-
-    for n in range(1, max_ngram_order + 1):
-        ngram_counts: dict[tuple, int] = {}
-        for i in range(len(melody_tokens) - n + 1):
-            ngram = tuple(melody_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-
-        for ngram, tf in ngram_counts.items():
-            df = doc_freqs.get(str(ngram), {}).get("count", 0)
-            if df > 0:
-                tf_values.append(float(tf))
-                df_values.append(float(df))
+    for ngram, tf in counts.items():
+        df = doc_freqs.get(str(ngram), {}).get("count", 0)
+        if df > 0:
+            tf_values.append(float(tf))
+            df_values.append(float(df))
 
     return np.array(tf_values, dtype=float), np.array(df_values, dtype=float)
 
@@ -244,18 +238,9 @@ def _fantastic_melody_ngram_counts(
     max_ngram_order: int,
 ) -> dict[tuple, int]:
     """Collapsed melody m-type counts for orders 1 through `max_ngram_order` (inclusive)."""
-    all_ngram_counts: dict[tuple, int] = {}
-    if max_ngram_order < 1:
-        return all_ngram_counts
-
-    for n in range(1, max_ngram_order + 1):
-        ngram_counts: dict[tuple, int] = {}
-        for i in range(len(melody_tokens) - n + 1):
-            ngram = tuple(melody_tokens[i : i + n])
-            ngram_counts[ngram] = ngram_counts.get(ngram, 0) + 1
-        for ngram, tf in ngram_counts.items():
-            all_ngram_counts[ngram] = all_ngram_counts.get(ngram, 0) + tf
-    return all_ngram_counts
+    counter = NGramCounter()
+    counter.count_ngrams(melody_tokens, max_order=max_ngram_order)
+    return counter.get_counts()
 
 def _fantastic_min_tie_ranks(values: np.ndarray) -> np.ndarray:
     """Return 1-based ranks with FANTASTIC-compatible minimum tie policy."""
@@ -278,9 +263,17 @@ def _compute_corpus_feature_bundle(
     melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int
 ) -> Dict[str, float]:
     """Compute all corpus features from one shared TF/DF + weighting pipeline."""
+    validate_corpus_stats(
+        corpus_stats, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
+    )
     doc_freqs = corpus_stats.get("document_frequencies", {})
-    all_tokens = _fantastic_melody_tokens(melody, phrase_gap)
-    tf, df = _fantastic_melody_tf_df(all_tokens, doc_freqs, max_ngram_order)
+    counter = NGramCounter()
+    counter.count_sequences(
+        FantasticTokenizer().tokenize_phrases(melody, phrase_gap),
+        max_order=max_ngram_order,
+    )
+    all_ngram_counts = counter.get_counts()
+    tf, df = _fantastic_counts_tf_df(all_ngram_counts, doc_freqs)
 
     features: dict[str, float] = {
         "tfdf_spearman": 0.0,
@@ -316,7 +309,6 @@ def _compute_corpus_feature_bundle(
         features["min_log_df"] = float(np.log2(df.min()))
         features["mean_log_df"] = float(np.mean(np.log2(df)))
 
-    all_ngram_counts = _fantastic_melody_ngram_counts(all_tokens, max_ngram_order)
     if all_ngram_counts and doc_freqs:
         weights = InverseEntropyWeighting(all_ngram_counts, corpus_stats)
         all_combined_weights = weights.combined_weights
@@ -730,7 +722,7 @@ def _setup_corpus_statistics(config, output_file: str) -> Optional[dict]:
     max_order = config.fantastic.max_ngram_order
     corpus_stats_path = (
         Path(output_file).parent
-        / f"{corpus_name}_corpus_stats_pg{phrase_gap_slug}_n{max_order}.json"
+        / f"{corpus_name}_corpus_stats_v{FANTASTIC_TOKENIZER_VERSION}_pg{phrase_gap_slug}_n{max_order}.json"
     )
     logger.info(f"Corpus statistics file will be at: {corpus_stats_path}")
 
@@ -752,6 +744,9 @@ def _setup_corpus_statistics(config, output_file: str) -> Optional[dict]:
         logger.info("Existing corpus statistics file found.")
 
     corpus_stats = load_corpus_stats(str(corpus_stats_path))
+    validate_corpus_stats(
+        corpus_stats, phrase_gap=config.fantastic.phrase_gap, max_ngram_order=max_order
+    )
     logger.info("Corpus statistics loaded successfully.")
 
     return corpus_stats

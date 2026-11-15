@@ -6,6 +6,14 @@ import numpy as np
 from melody_features.ngram_counter import NGramCounter
 from melody_features.core.representations import Melody
 from melody_features.feature_utils import _get_durations
+from melody_features.algorithms.pitch_spelling import _seconds_to_beats
+
+
+# Changes to token identity or phrase handling invalidate corpus statistics.
+FANTASTIC_TOKENIZER_VERSION = 2
+
+# In the requested gap units (seconds or quarter notes), below MIDI precision.
+PHRASE_GAP_TOLERANCE = 1e-9
 
 
 class MType:
@@ -83,31 +91,17 @@ class FantasticTokenizer(MelodyTokenizer):
         abs_interval = abs(interval)
 
         if scheme == "FANTASTIC":
-            if abs_interval == 0:
+            # Müllensiefen (2009), Table 1 and section 6.2.1: signed
+            # diatonic classes, with separate tritone and compound classes.
+            # Integer codes retain the existing MType API: 0 = unison;
+            # +/-1..9 = second, third, fourth, tritone, fifth, sixth,
+            # seventh, octave, larger than an octave.
+            if interval == 0:
                 return 0
-            if abs_interval == 1:
-                return 1
-            if abs_interval == 2:
-                return 2
-            if abs_interval == 3:
-                return 3
-            if abs_interval == 4:
-                return 4
-            if abs_interval == 5:
-                return 5
-            if abs_interval == 7:
-                return 6
-            if abs_interval == 8:
-                return 7
-            if abs_interval == 9:
-                return 8
-            if abs_interval == 10:
-                return 9
-            if abs_interval == 11:
-                return 10
-            if abs_interval == 12:
-                return 11
-            return 12
+            classes = {1: 1, 2: 1, 3: 2, 4: 2, 5: 3, 6: 4,
+                       7: 5, 8: 6, 9: 6, 10: 7, 11: 7, 12: 8}
+            magnitude = classes.get(abs_interval, 9)
+            return magnitude if interval > 0 else -magnitude
 
         if scheme == "SIMILE":
             if interval == 0:
@@ -147,6 +141,8 @@ class FantasticTokenizer(MelodyTokenizer):
     ) -> List[MType]:
         """Tokenize a melody into M-Type tokens."""
         if len(pitches) < 2:
+            self.phrases = []
+            self.ngram_counter.reset()
             return []
 
         pitch_intervals = [pitches[i] - pitches[i - 1] for i in range(1, len(pitches))]
@@ -167,30 +163,51 @@ class FantasticTokenizer(MelodyTokenizer):
         """Get n-gram counts for the current melody."""
         return self.ngram_counter.get_counts(n)
 
+    def tokenize_phrases(
+        self, melody: Melody, phrase_gap: float = 1.5
+    ) -> List[List[MType]]:
+        """Tokenize phrases separately, preserving boundaries for n-gram counts.
+
+        ``phrase_gap`` is an inter-onset threshold in quarter notes. The
+        first interval of each phrase retains rhythm class 0 (no preceding
+        IOI ratio); it must not be joined to the preceding phrase.
+        ``ngram_counts()`` is replaced with the summed within-phrase counts.
+        """
+        phrases = [
+            self.tokenize_melody(segment.pitches, segment.starts, segment.ends)
+            for segment in self.segment_melody(melody, phrase_gap, units="quarters")
+        ]
+        self.phrases = [token for phrase in phrases for token in phrase]
+        self.ngram_counter.count_sequences(phrases)
+        return phrases
+
     def segment_melody(
         self, melody: Melody, phrase_gap: float = 1.5, units: str = "quarters"
     ) -> List[Melody]:
-        """Segment melody into phrases based on IOI gaps."""
+        """Split after an IOI gap exceeding the threshold in the requested units.
+
+        Quarter-note gaps use the melody's tempo map; the notes returned by
+        each segment retain seconds as their timing unit.
+        A tolerance of 1e-9 in the requested units absorbs conversion roundoff.
+        """
         assert units in ["seconds", "quarters"]
-        if units == "seconds":
-            raise NotImplementedError(
-                "Seconds are not yet implemented, see issue #75: "
-                "https://github.com/music-computing/amads/issues/75"
-            )
 
         phrases = []
         current_phrase_pitches = []
         current_phrase_starts = []
         current_phrase_ends = []
 
-        iois = []
-        for index in range(1, len(melody.starts)):
-            iois.append(melody.starts[index] - melody.starts[index - 1])
-        iois.append(None)
+        onsets = (
+            _seconds_to_beats(melody.starts, melody.tempo_changes)
+            if units == "quarters" else melody.starts
+        )
+        # The gap belongs before the current note, not after it.
+        iois = [None] + list(np.diff(onsets))
 
         for pitch, start, end, ioi in zip(melody.pitches, melody.starts, melody.ends, iois):
             need_new_phrase = (
-                len(current_phrase_pitches) > 0 and ioi is not None and ioi > phrase_gap
+                len(current_phrase_pitches) > 0 and ioi is not None
+                and ioi > phrase_gap + PHRASE_GAP_TOLERANCE
             )
 
             if need_new_phrase:

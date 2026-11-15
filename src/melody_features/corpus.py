@@ -9,7 +9,9 @@ Runtime corpus-dependent feature calculations are handled in corpus_features.py.
 """
 import json
 import logging
+import math
 from collections import Counter
+from numbers import Integral, Real
 import os
 import multiprocessing as mp
 from importlib import resources
@@ -20,7 +22,8 @@ from natsort import natsorted
 from tqdm import tqdm
 
 from melody_features.io.midi import import_midi, load_midi
-from melody_features.melody_tokenizer import FantasticTokenizer
+from melody_features.melody_tokenizer import FantasticTokenizer, FANTASTIC_TOKENIZER_VERSION
+from melody_features.ngram_counter import NGramCounter
 from melody_features.core.representations import Melody, read_midijson
 
 # Corpus paths for easy access
@@ -60,25 +63,11 @@ def process_melody_ngrams(args) -> set:
         )
     tokenizer = FantasticTokenizer()
 
-    # Segment the melody first
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    # Get tokens for each segment
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    unique_ngrams = set()
-    for n in range(n_range[0], n_range[1] + 1):
-        # Count n-grams in the combined tokens
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            unique_ngrams.add(ngram)
-
-    return unique_ngrams
+    counter = NGramCounter()
+    counter.count_sequences(
+        tokenizer.tokenize_phrases(melody, phrase_gap), max_order=n_range[1]
+    )
+    return {ngram for ngram in counter.get_counts() if len(ngram) >= n_range[0]}
 
 
 def compute_corpus_ngrams(
@@ -148,6 +137,8 @@ def compute_corpus_ngrams(
         "document_frequencies": frequencies["document_frequencies"],
         "corpus_size": len(melodies),
         "n_range": n_range,
+        "tokenizer_version": FANTASTIC_TOKENIZER_VERSION,
+        "phrase_gap": phrase_gap,
     }
 
 
@@ -172,6 +163,44 @@ def save_corpus_stats(stats: Dict, filename: str) -> None:
         json.dump(stats, f, indent=2)
 
 
+def validate_corpus_stats(
+    stats: Dict,
+    *,
+    phrase_gap: Optional[float] = None,
+    max_ngram_order: Optional[int] = None,
+) -> None:
+    """Reject statistics incompatible with the current FANTASTIC vocabulary.
+
+    Raw JSON loading remains available for inspection. Consumers must validate
+    before matching numeric token codes, whose meanings changed in version 2.
+    When provided, settings must match the phrase gap and be covered by n_range.
+    """
+    reason = None
+    if not isinstance(stats, dict) or stats.get("tokenizer_version") != FANTASTIC_TOKENIZER_VERSION:
+        reason = f"tokenizer_version must be {FANTASTIC_TOKENIZER_VERSION}"
+    else:
+        gap = stats.get("phrase_gap")
+        n_range = stats.get("n_range")
+        if not isinstance(gap, Real) or math.isnan(gap) or gap < 0:
+            reason = "phrase_gap metadata is missing or invalid"
+        elif phrase_gap is not None and gap != phrase_gap:
+            reason = f"phrase_gap {gap} does not match requested {phrase_gap}"
+        elif (not isinstance(n_range, (list, tuple)) or len(n_range) != 2
+              or not all(isinstance(n, Integral) and not isinstance(n, bool) for n in n_range)
+              or not 1 <= n_range[0] <= n_range[1]):
+            reason = "n_range metadata is missing or invalid"
+        elif max_ngram_order is not None and not (n_range[0] == 1 and n_range[1] >= max_ngram_order):
+            reason = f"n_range {n_range} does not cover requested orders 1..{max_ngram_order}"
+        elif not isinstance(stats.get("document_frequencies"), dict):
+            reason = "document_frequencies is missing or invalid"
+    if reason is not None:
+        raise ValueError(
+            f"Incompatible FANTASTIC corpus statistics: {reason}. "
+            "Regenerate with make_corpus_stats using the current tokenizer and "
+            "matching phrase_gap/n_range; do not relabel old statistics."
+        )
+
+
 def load_corpus_stats(filename: str) -> Dict:
     """Load corpus statistics from a JSON file.
 
@@ -183,7 +212,8 @@ def load_corpus_stats(filename: str) -> Dict:
     Returns
     -------
     Dict
-        Corpus statistics dictionary
+        Raw corpus statistics dictionary, including legacy files for inspection.
+        Compatibility is checked when statistics are used for feature computation.
     """
     # Ensure filename has .json extension
     if not filename.endswith(".json"):
