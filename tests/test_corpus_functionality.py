@@ -369,7 +369,9 @@ class TestMidiToCorpusStatsWorkflow:
                 create_test_midi_file(pitches, starts, ends, filepath=midi_path)
 
             stats_file = os.path.join(temp_dir, "test_corpus_stats")
-            make_corpus_stats(corpus_dir, stats_file)
+            # These one-second IOIs are two quarters at the MIDI helper's
+            # 120 BPM. Keep them within phrases with an explicit threshold.
+            make_corpus_stats(corpus_dir, stats_file, phrase_gap=2.5)
 
             stats = load_corpus_stats(stats_file)
 

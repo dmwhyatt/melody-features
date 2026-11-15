@@ -20,7 +20,8 @@ from natsort import natsorted
 from tqdm import tqdm
 
 from melody_features.io.midi import import_midi, load_midi
-from melody_features.melody_tokenizer import FantasticTokenizer
+from melody_features.melody_tokenizer import FantasticTokenizer, FANTASTIC_TOKENIZER_VERSION
+from melody_features.ngram_counter import NGramCounter
 from melody_features.core.representations import Melody, read_midijson
 
 # Corpus paths for easy access
@@ -60,25 +61,11 @@ def process_melody_ngrams(args) -> set:
         )
     tokenizer = FantasticTokenizer()
 
-    # Segment the melody first
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    # Get tokens for each segment
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    unique_ngrams = set()
-    for n in range(n_range[0], n_range[1] + 1):
-        # Count n-grams in the combined tokens
-        for i in range(len(all_tokens) - n + 1):
-            ngram = tuple(all_tokens[i : i + n])
-            unique_ngrams.add(ngram)
-
-    return unique_ngrams
+    counter = NGramCounter()
+    counter.count_sequences(
+        tokenizer.tokenize_phrases(melody, phrase_gap), max_order=n_range[1]
+    )
+    return {ngram for ngram in counter.get_counts() if len(ngram) >= n_range[0]}
 
 
 def compute_corpus_ngrams(
@@ -148,6 +135,8 @@ def compute_corpus_ngrams(
         "document_frequencies": frequencies["document_frequencies"],
         "corpus_size": len(melodies),
         "n_range": n_range,
+        "tokenizer_version": FANTASTIC_TOKENIZER_VERSION,
+        "phrase_gap": phrase_gap,
     }
 
 

@@ -542,11 +542,16 @@ class TestCorpusStatisticsIntegration:
             )
 
             output_file1 = os.path.join(temp_dir, "output1.csv")
+            # Pre-fix counts have incompatible token identities and boundaries.
+            legacy = Path(temp_dir) / "test_corpus_corpus_stats_pg1p5_n5.json"
+            legacy.write_text('{"document_frequencies": {}, "legacy": true}')
             stats1 = _setup_corpus_statistics(config, output_file1)
+            assert stats1["tokenizer_version"] == 2
+            assert "legacy" not in stats1
             # checking whether we correctly check for corpus stats and generate
             # only if not found
             corpus_name = Path(corpus_dir).name
-            expected_stats_file = Path(output_file1).parent / f"{corpus_name}_corpus_stats_pg1p5_n5.json"
+            expected_stats_file = Path(output_file1).parent / f"{corpus_name}_corpus_stats_v2_pg1p5_n5.json"
             assert expected_stats_file.exists(), "Corpus stats file should be created"
 
             output_file2 = os.path.join(temp_dir, "output2.csv")
@@ -574,8 +579,8 @@ class TestCorpusStatisticsIntegration:
             _setup_corpus_statistics(config_b, output_file)
 
             corpus_name = Path(corpus_dir).name
-            expected_a = Path(output_file).parent / f"{corpus_name}_corpus_stats_pg1p5_n5.json"
-            expected_b = Path(output_file).parent / f"{corpus_name}_corpus_stats_pg2p0_n4.json"
+            expected_a = Path(output_file).parent / f"{corpus_name}_corpus_stats_v2_pg1p5_n5.json"
+            expected_b = Path(output_file).parent / f"{corpus_name}_corpus_stats_v2_pg2p0_n4.json"
             assert expected_a.exists()
             assert expected_b.exists()
 

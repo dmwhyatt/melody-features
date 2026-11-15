@@ -6,7 +6,7 @@ from .feature_decorators import FeatureType, FeatureDomain
 
 
 class NGramCounter:
-    """A stateful n-gram counter that accumulates counts across multiple sequences."""
+    """Count n-grams within one sequence or separately within multiple phrases."""
 
     def __init__(self):
         """Initialize an empty n-gram counter."""
@@ -26,21 +26,19 @@ class NGramCounter:
         max_order : int, optional
             Maximum n-gram length to count (default: 5)
         """
-        # Clear previous counts and caches
-        self.ngram_counts = {}
-        self.ngram_counts_by_order = {}
-        self._total_tokens = None
-        self._freq_spec = None
-        self._count_values = None
+        self.count_sequences([tokens], max_order=max_order)
 
-        # Count n-grams for each possible length up to max_order
-        max_length = min(max_order, len(tokens))
-        for length in range(1, max_length + 1):
-            counts_for_length = self.ngram_counts_by_order.setdefault(length, {})
-            for i in range(len(tokens) - length + 1):
-                ngram = tuple(tokens[i : i + length])
-                self.ngram_counts[ngram] = self.ngram_counts.get(ngram, 0) + 1
-                counts_for_length[ngram] = counts_for_length.get(ngram, 0) + 1
+    def count_sequences(self, sequences, max_order: int = 5) -> None:
+        """Replace counts with their sum across sequences, never crossing a boundary."""
+        self.reset()
+        for tokens in sequences:
+            max_length = min(max_order, len(tokens))
+            for length in range(1, max_length + 1):
+                counts_for_length = self.ngram_counts_by_order.setdefault(length, {})
+                for i in range(len(tokens) - length + 1):
+                    ngram = tuple(tokens[i : i + length])
+                    self.ngram_counts[ngram] = self.ngram_counts.get(ngram, 0) + 1
+                    counts_for_length[ngram] = counts_for_length.get(ngram, 0) + 1
 
     def reset(self) -> None:
         """Reset the n-gram counter to empty."""

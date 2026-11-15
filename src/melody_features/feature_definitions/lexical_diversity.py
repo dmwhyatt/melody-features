@@ -36,22 +36,10 @@ def get_mtype_features(melody: Melody, phrase_gap: float, max_ngram_order: int) 
     # Initialize tokenizer and get M-type tokens
     tokenizer = FantasticTokenizer()
 
-    # Segment the melody first, using quarters as the time unit
-    segments = tokenizer.segment_melody(melody, phrase_gap=phrase_gap, units="quarters")
-
-    # Get tokens for each segment
-    all_tokens = []
-    for segment in segments:
-        segment_tokens = tokenizer.tokenize_melody(
-            segment.pitches, segment.starts, segment.ends
-        )
-        all_tokens.extend(segment_tokens)
-
-    # Create a fresh counter for this melody
     ngram_counter = NGramCounter()
-    ngram_counter.ngram_counts = {}  # Explicitly reset the counter
-
-    ngram_counter.count_ngrams(all_tokens, max_order=max_ngram_order)
+    ngram_counter.count_sequences(
+        tokenizer.tokenize_phrases(melody, phrase_gap), max_order=max_ngram_order
+    )
 
     # Calculate complexity measures for each n-gram length
     mtype_features = {}

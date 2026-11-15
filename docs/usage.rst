@@ -657,9 +657,20 @@ below are what happens under the hood, and what you can call yourself.
    :class:`~melody_features.melody_tokenizer.MType` (classified pitch interval
    × classified IOI ratio). Default scheme is ``"FANTASTIC"``; ``"SIMILE"``
    uses a coarser signed-interval map.
+   FANTASTIC preserves direction and groups major/minor variants, following
+   Table 1 and section 6.2.1 of `Müllensiefen (2009)
+   <https://www.doc.gold.ac.uk/isms/m4s/FANTASTIC_docs.pdf>`_. Integer pitch
+   codes are ``0`` for unison and signed ``1`` through ``9`` for second,
+   third, fourth, tritone, fifth, sixth, seventh, octave and larger-than-octave
+   intervals. Thus ascending and descending seconds have codes ``1`` and
+   ``-1``; minor and major seconds in the same direction share a code.
+   Rhythm codes remain ``1`` (shorter), ``2`` (similar), ``3`` (longer), with
+   ``0`` for the first interval's unavailable preceding IOI ratio.
 3. **N-gram counting** — accumulate m-type n-grams of order ``1`` …
-   ``max_ngram_order`` with
+   ``max_ngram_order`` separately within each phrase with
    :class:`~melody_features.ngram_counter.NGramCounter`.
+   Counts of the same type are summed across phrases; windows never span
+   a phrase boundary.
 4. **Lexical / corpus features** — lexical-diversity (m-type) measures use
    the melody’s own counts; distributional corpus features compare those
    counts to reference document frequencies from ``Config.corpus`` (or a
@@ -675,14 +686,24 @@ Inspect steps 1–3 directly:
 
    melody = load_midi("example.mid")
    tok = FantasticTokenizer()  # scheme="FANTASTIC" (or "SIMILE")
-   phrases = tok.segment_melody(melody, phrase_gap=1.5, units="quarters")
-   tokens = tok.tokenize_melody(melody.pitches, melody.starts, melody.ends)
-   counts = tok.ngram_counts()  # all orders counted during tokenize_melody
-
-   # Or count with an explicit counter / max order:
+   phrases = tok.tokenize_phrases(melody, phrase_gap=1.5)
    counter = NGramCounter()
-   counter.count_ngrams(tokens, max_order=5)
+   counter.count_sequences(phrases, max_order=5)
+   counts = counter.get_counts()
    bigrams = counter.get_counts(n=2)
+
+   # For a single phrase, tokenize_melody and count_ngrams remain available.
+
+.. important::
+
+   The corrected FANTASTIC tokenizer changes token identities and derived
+   lexical/corpus statistics. Earlier versions discarded interval direction,
+   separated major/minor variants, and could count across phrase boundaries.
+   Phrase gaps now use the requested units and split before the note following
+   the gap. Automatically generated corpus caches use a versioned filename
+   (``_corpus_stats_v2_...``), so old caches are not reused. Regenerate any
+   externally supplied corpus statistics and affected feature tables; integer
+   token codes in old files are not compatible with the corrected mapping.
 
 Selective helpers that consume the same knobs (and optional ``corpus_stats``):
 
