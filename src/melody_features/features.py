@@ -457,7 +457,7 @@ from melody_features.algorithms import (
     repeated_notes_proportion,
     stepwise_motion_proportion,
 )
-from melody_features.corpus import load_corpus_stats, make_corpus_stats
+from melody_features.corpus import load_corpus_stats, make_corpus_stats, validate_corpus_stats
 from melody_features.utils.distributional import (
     distribution_proportions,
     histogram_bins,
@@ -981,6 +981,12 @@ def _compute_features_by_source(
         Dictionary containing all features from the specified source
     """
     import inspect
+
+    # Fail before the per-feature exception handler can hide an incompatible corpus.
+    if source == "fantastic" and corpus_stats is not None:
+        validate_corpus_stats(
+            corpus_stats, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
+        )
 
     source_features = _get_features_by_source(source)
     computed_features = {}

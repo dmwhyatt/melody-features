@@ -119,6 +119,7 @@ class TestFantasticCorpusFeatures:
             import_midi("src/melody_features/corpora/essen_folksong_collection/appenzel.mid")
         )
         corpus_stats = {
+            "tokenizer_version": 2, "phrase_gap": 1.5, "n_range": (1, 5),
             "document_frequencies": {
                 str(k): {"count": v}
                 for k, v in [
@@ -144,6 +145,7 @@ class TestFantasticCorpusFeatures:
             import_midi("src/melody_features/corpora/essen_folksong_collection/appenzel.mid")
         )
         corpus_stats = {
+            "tokenizer_version": 2, "phrase_gap": 1.5, "n_range": (1, 5),
             "document_frequencies": {
                 str(("a",)): {"count": 3},
                 str(("b",)): {"count": 2},
@@ -177,6 +179,7 @@ class TestFantasticCorpusFeatures:
             import_midi("src/melody_features/corpora/essen_folksong_collection/appenzel.mid")
         )
         corpus_stats = {
+            "tokenizer_version": 2, "phrase_gap": 1.5, "n_range": (1, 5),
             "document_frequencies": {
                 str(("x",)): {"count": 4},
                 str(("y",)): {"count": 4},
@@ -215,6 +218,7 @@ class TestCorpusFeatures:
             
             # Create mock corpus stats
             corpus_stats = {
+                "tokenizer_version": 2, "phrase_gap": 1.5,
                 "document_frequencies": {
                     "('C',)": {"count": 10},
                     "('D',)": {"count": 8},
@@ -222,7 +226,7 @@ class TestCorpusFeatures:
                     "('D', 'E')": {"count": 3}
                 },
                 "corpus_size": 100,
-                "n_range": (1, 3)
+                "n_range": (1, 5)
             }
             
             features = get_corpus_features(

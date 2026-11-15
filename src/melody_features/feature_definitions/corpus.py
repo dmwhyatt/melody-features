@@ -7,7 +7,7 @@ from typing import Dict, Optional
 import numpy as np
 import scipy
 
-from ..corpus import load_corpus_stats, make_corpus_stats
+from ..corpus import load_corpus_stats, make_corpus_stats, validate_corpus_stats
 from ..feature_decorators import both, corpus, fantastic
 from ..melody_tokenizer import FantasticTokenizer, FANTASTIC_TOKENIZER_VERSION
 from ..ngram_counter import NGramCounter
@@ -55,6 +55,7 @@ def get_ngram_document_frequency(ngram: tuple, corpus_stats: dict) -> int:
     int
         Document frequency count for the n-gram
     """
+    validate_corpus_stats(corpus_stats)
     # Get document frequencies dictionary once
     doc_freqs = corpus_stats.get("document_frequencies", {})
 
@@ -80,6 +81,7 @@ class InverseEntropyWeighting:
     the global weight of an m-type, and the combined weight of an m-type.
     """
     def __init__(self, ngram_counts: dict, corpus_stats: dict):
+        validate_corpus_stats(corpus_stats)
         self.ngram_counts = ngram_counts
         self.corpus_stats = corpus_stats
 
@@ -261,6 +263,9 @@ def _compute_corpus_feature_bundle(
     melody: Melody, corpus_stats: dict, phrase_gap: float, max_ngram_order: int
 ) -> Dict[str, float]:
     """Compute all corpus features from one shared TF/DF + weighting pipeline."""
+    validate_corpus_stats(
+        corpus_stats, phrase_gap=phrase_gap, max_ngram_order=max_ngram_order
+    )
     doc_freqs = corpus_stats.get("document_frequencies", {})
     counter = NGramCounter()
     counter.count_sequences(
@@ -739,6 +744,9 @@ def _setup_corpus_statistics(config, output_file: str) -> Optional[dict]:
         logger.info("Existing corpus statistics file found.")
 
     corpus_stats = load_corpus_stats(str(corpus_stats_path))
+    validate_corpus_stats(
+        corpus_stats, phrase_gap=config.fantastic.phrase_gap, max_ngram_order=max_order
+    )
     logger.info("Corpus statistics loaded successfully.")
 
     return corpus_stats

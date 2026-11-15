@@ -79,6 +79,49 @@ def test_empty_and_single_note_phrases():
     assert tok.tokenize_phrases(Melody.from_notes([60], [0], [1])) == [[]]
 
 
+@pytest.mark.parametrize("bpm", [60, 100, 108, 120])
+@pytest.mark.parametrize("excess", [0, 1e-6])
+def test_phrase_gap_boundary_is_stable_across_tempi(bpm, excess):
+    starts = [i * (1.5 + excess) * 60 / bpm for i in range(16)]
+    melody = Melody.from_notes([60 + i % 3 for i in range(16)], starts,
+                              [s + .1 for s in starts], tempo=bpm)
+    sizes = [len(s.pitches) for s in FantasticTokenizer().segment_melody(melody)]
+    assert sizes == ([16] if excess == 0 else [1] * 16)
+
+
+def test_phrase_tokenization_updates_all_counts_without_boundary_windows():
+    tok = FantasticTokenizer()
+    tok.tokenize_phrases(two_phrases())
+    up0, up, down0, down = MType(1, 0), MType(1, 2), MType(-1, 0), MType(-1, 2)
+    assert tok.ngram_counts() == {
+        (up0,): 1, (up,): 1, (down0,): 1, (down,): 1,
+        (up0, up): 1, (down0, down): 1,
+    }
+    assert tok.phrases == [up0, up, down0, down]
+    # Switching back to a single phrase replaces the multi-phrase state.
+    tok.tokenize_melody([60, 61], [0, .5], [.4, .9])
+    assert tok.ngram_counts() == {(up0,): 1}
+
+
+@pytest.mark.parametrize("pitches,starts,ends", [([], [], []), ([60], [0], [1])])
+@pytest.mark.parametrize("method", ["tokenize_melody", "tokenize_phrases"])
+def test_short_inputs_clear_previous_tokenizer_state(pitches, starts, ends, method):
+    tok = FantasticTokenizer()
+    tok.tokenize_phrases(two_phrases())
+    # Populate derived caches as well as the raw counts.
+    assert tok.ngram_counter.total_tokens == 4
+    assert tok.ngram_counter.freq_spec
+    assert tok.ngram_counter.count_values
+    if method == "tokenize_melody":
+        tok.tokenize_melody(pitches, starts, ends)
+    else:
+        tok.tokenize_phrases(Melody.from_notes(pitches, starts, ends))
+    assert tok.ngram_counts() == {} and tok.phrases == []
+    assert tok.ngram_counter.total_tokens == 0
+    assert tok.ngram_counter.freq_spec == {}
+    assert tok.ngram_counter.count_values == []
+
+
 def test_count_sequences_does_not_bridge_phrases_and_resets_caches():
     counter = NGramCounter()
     counter.count_sequences([["a", "b"], [], ["a", "b"]], max_order=3)
@@ -105,7 +148,8 @@ def test_lexical_and_corpus_paths_use_only_within_phrase_ngrams():
     # Four equally frequent unigrams (entropy 2), two bigrams (entropy 1).
     assert get_mtype_features(melody, 1.5, 5)["mean_entropy"] == pytest.approx(1.5)
     # A deliberately tempting DF entry for the artificial boundary bigram.
-    stats = {"document_frequencies": {str((up, down0)): {"count": 1024}}}
+    stats = {"tokenizer_version": 2, "phrase_gap": 1.5, "n_range": [1, 5],
+             "document_frequencies": {str((up, down0)): {"count": 1024}}}
     features = _compute_corpus_feature_bundle(melody, stats, 1.5, 5)
     assert features["max_log_df"] == 0
     # Real within-phrase matches are still used by both TF/DF and weighting.

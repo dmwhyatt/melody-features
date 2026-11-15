@@ -12,6 +12,9 @@ from melody_features.algorithms.pitch_spelling import _seconds_to_beats
 # Changes to token identity or phrase handling invalidate corpus statistics.
 FANTASTIC_TOKENIZER_VERSION = 2
 
+# In the requested gap units (seconds or quarter notes), below MIDI precision.
+PHRASE_GAP_TOLERANCE = 1e-9
+
 
 class MType:
     """A class representing a melody token based on pitch interval and IOI ratio classifications."""
@@ -138,6 +141,8 @@ class FantasticTokenizer(MelodyTokenizer):
     ) -> List[MType]:
         """Tokenize a melody into M-Type tokens."""
         if len(pitches) < 2:
+            self.phrases = []
+            self.ngram_counter.reset()
             return []
 
         pitch_intervals = [pitches[i] - pitches[i - 1] for i in range(1, len(pitches))]
@@ -166,11 +171,15 @@ class FantasticTokenizer(MelodyTokenizer):
         ``phrase_gap`` is an inter-onset threshold in quarter notes. The
         first interval of each phrase retains rhythm class 0 (no preceding
         IOI ratio); it must not be joined to the preceding phrase.
+        ``ngram_counts()`` is replaced with the summed within-phrase counts.
         """
-        return [
+        phrases = [
             self.tokenize_melody(segment.pitches, segment.starts, segment.ends)
             for segment in self.segment_melody(melody, phrase_gap, units="quarters")
         ]
+        self.phrases = [token for phrase in phrases for token in phrase]
+        self.ngram_counter.count_sequences(phrases)
+        return phrases
 
     def segment_melody(
         self, melody: Melody, phrase_gap: float = 1.5, units: str = "quarters"
@@ -179,6 +188,7 @@ class FantasticTokenizer(MelodyTokenizer):
 
         Quarter-note gaps use the melody's tempo map; the notes returned by
         each segment retain seconds as their timing unit.
+        A tolerance of 1e-9 in the requested units absorbs conversion roundoff.
         """
         assert units in ["seconds", "quarters"]
 
@@ -196,7 +206,8 @@ class FantasticTokenizer(MelodyTokenizer):
 
         for pitch, start, end, ioi in zip(melody.pitches, melody.starts, melody.ends, iois):
             need_new_phrase = (
-                len(current_phrase_pitches) > 0 and ioi is not None and ioi > phrase_gap
+                len(current_phrase_pitches) > 0 and ioi is not None
+                and ioi > phrase_gap + PHRASE_GAP_TOLERANCE
             )
 
             if need_new_phrase:

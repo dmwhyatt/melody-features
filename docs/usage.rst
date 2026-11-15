@@ -687,6 +687,8 @@ Inspect steps 1–3 directly:
    melody = load_midi("example.mid")
    tok = FantasticTokenizer()  # scheme="FANTASTIC" (or "SIMILE")
    phrases = tok.tokenize_phrases(melody, phrase_gap=1.5)
+   counts = tok.ngram_counts()  # summed within-phrase counts, orders 1..5
+   # Or choose a maximum order explicitly:
    counter = NGramCounter()
    counter.count_sequences(phrases, max_order=5)
    counts = counter.get_counts()
@@ -704,6 +706,16 @@ Inspect steps 1–3 directly:
    (``_corpus_stats_v2_...``), so old caches are not reused. Regenerate any
    externally supplied corpus statistics and affected feature tables; integer
    token codes in old files are not compatible with the corrected mapping.
+   Feature computation rejects missing or incompatible ``tokenizer_version``
+   metadata, a different ``phrase_gap``, or an ``n_range`` that does not cover
+   the requested orders. Rebuild statistics rather than editing their version
+   field. ``load_corpus_stats`` still permits inspection of legacy JSON files;
+   compatibility is enforced when the statistics are consumed.
+
+   Phrase-gap comparisons allow a numerical tolerance of ``1e-9`` in the
+   requested units, so roundoff at an exact threshold does not create a phrase
+   boundary. Both tokenization methods replace their cached counts; empty or
+   single-note input clears previous results.
 
 Selective helpers that consume the same knobs (and optional ``corpus_stats``):
 
