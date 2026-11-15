@@ -8,7 +8,8 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Python 3.9 is unavailable on Ubuntu 26.04 (the current ubuntu-latest).
+    runs-on: ubuntu-22.04
     
     strategy:
       matrix:
