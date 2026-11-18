@@ -26,7 +26,7 @@ try:
 
     release = _pkg_version("melody-features")
 except Exception:
-    release = "1.3.3"
+    release = "1.3.4"
 version = ".".join(release.split(".")[:2])
 
 # -- General configuration ---------------------------------------------------

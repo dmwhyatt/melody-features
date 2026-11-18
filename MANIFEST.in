@@ -2,3 +2,5 @@ include *.py
 include *.sh
 recursive-include src/melody_features *.mid
 recursive-include src/melody_features *.midi 
+include CITATION.cff
+include CHANGELOG.md
