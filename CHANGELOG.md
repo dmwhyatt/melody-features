@@ -41,6 +41,8 @@ can alter a feature value is the IDyOM fix below.
   reference, and pages on IDyOM setup, configuration, key estimation, contours,
   corpora and melsim ([#8](https://github.com/dmwhyatt/melody-features/pull/8)).
 - `CITATION.cff` and this changelog.
+- A GitHub Actions workflow that publishes to PyPI when a GitHub release is
+  published.
 
 ### Documentation
 
