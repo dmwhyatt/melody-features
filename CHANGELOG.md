@@ -25,6 +25,9 @@ can alter a feature value is the IDyOM fix below.
 - `get_corpus_files` is now exported from the package root, so the documented
   `mf.get_corpus_files(...)` call works. It was previously importable only from
   `melody_features.corpus`.
+- `install_idyom.sh` is now included in the wheel and sdist, so
+  `melody_features.idyom.interface.install_idyom()` works after `pip install`
+  ([#42](https://github.com/dmwhyatt/melody-features/issues/42)).
 
 ### Changed
 

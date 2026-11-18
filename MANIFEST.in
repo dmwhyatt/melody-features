@@ -1,5 +1,5 @@
 include *.py
-include *.sh
+include src/melody_features/install_idyom.sh
 recursive-include src/melody_features *.mid
 recursive-include src/melody_features *.midi 
 include CITATION.cff

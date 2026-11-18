@@ -46,6 +46,7 @@ jobs:
           python -m pip install dist/*.whl
           cd "$RUNNER_TEMP"
           python -c "import importlib.metadata as m, melody_features as mf; print('melody-features', m.version('melody-features')); assert mf.get_all_features"
+          python -c "from importlib.resources import files; assert (files('melody_features') / 'install_idyom.sh').is_file(), 'install_idyom.sh missing from wheel'"
 
       - uses: actions/upload-artifact@v4
         with:
