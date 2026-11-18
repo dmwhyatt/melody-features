@@ -1,5 +1,8 @@
 """Complexity feature definitions."""
 
+from functools import lru_cache
+from typing import NamedTuple, Optional
+
 import numpy as np
 
 from ..algorithms import compute_tonality_vector
@@ -112,11 +115,15 @@ def _keymode_from_pcd(pcd: np.ndarray) -> int:
     return 0
 
 def _tonality_midi_toolbox(
-    pitches: list[int], starts: list[float], ends: list[float]
+    pitches: list[int],
+    starts: list[float],
+    ends: list[float],
+    pcd: Optional[np.ndarray] = None,
 ) -> list[float]:
     if not pitches:
         return []
-    pcd = _pcdist1_vector(pitches, starts, ends)
+    if pcd is None:
+        pcd = _pcdist1_vector(pitches, starts, ends)
     kk = _KK_MIN_PROFILE if _keymode_from_pcd(pcd) == 2 else _KK_MAJ_PROFILE
     return [float(kk[int(p) % 12]) for p in pitches]
 
@@ -362,6 +369,71 @@ def gradus(pitches: list[int]) -> float:
 
     return float(np.mean(gradus_values)) if gradus_values else 0.0
 
+class _ComplebmComponents(NamedTuple):
+    """Melody-derived inputs shared by all three `complebm_*` formulas."""
+
+    pcd: np.ndarray
+    ivd: np.ndarray
+    ton_component: float
+    aveint: float
+    dud: float
+    noteden: float
+    rhyvar: float
+
+
+@lru_cache(maxsize=256)
+def _complebm_components(
+    pitches: tuple[int, ...],
+    starts: tuple[float, ...],
+    ends: tuple[float, ...],
+    tempo: float,
+) -> "_ComplebmComponents":
+    """Cached shared inputs for `complebm_pitch`/`complebm_rhythm`/`complebm_optimal`.
+
+    All three features call `_complebm` for the same melody, and (aside from
+    which final formula gets applied) need the exact same pitch-class
+    distribution, interval distribution, tonality profile, duration accent,
+    duration-category entropy, note density, and duration variance.
+    Previously each of the three calls recomputed all of this from scratch
+    -- and even a single call did some of it twice over, since
+    `_tonality_midi_toolbox` independently recomputed the pitch-class
+    distribution that its caller had just computed. Caching it here, keyed
+    on the melody's hashable pitch/timing data, means it's computed once
+    per melody no matter how many of the three features ask for it.
+    """
+    pitches_l = list(pitches)
+    starts_l = list(starts)
+    ends_l = list(ends)
+
+    pcd = _pcdist1_vector(pitches_l, starts_l, ends_l)
+    ivd = _ivdist1_vector(pitches_l, starts_l, ends_l)
+    ton = _tonality_midi_toolbox(pitches_l, starts_l, ends_l, pcd=pcd)
+    dur_acc = duration_accent(starts_l, ends_l)
+    n = min(len(ton), len(dur_acc))
+    ton_component = float(np.mean([ton[i] * dur_acc[i] for i in range(n)])) * -1.0 if n else 0.0
+
+    intervals = np.diff(np.asarray(pitches_l, dtype=float))
+    aveint = float(np.mean(intervals)) if len(intervals) else 0.0
+
+    dud = midi_toolbox_entropy(_durdist1_vector(starts_l, ends_l, tempo))
+    noteden = _notedensity_seconds(starts_l)
+    du_sec = [float(e) - float(s) for s, e in zip(starts_l, ends_l) if float(e) > float(s)]
+    if len(du_sec) > 1:
+        rhyvar = float(np.std(np.log(du_sec), ddof=0))
+    else:
+        rhyvar = 0.0
+
+    return _ComplebmComponents(
+        pcd=pcd,
+        ivd=ivd,
+        ton_component=ton_component,
+        aveint=aveint,
+        dud=dud,
+        noteden=noteden,
+        rhyvar=rhyvar,
+    )
+
+
 def _complebm(melody: Melody, method: str = 'o') -> float:
     """Expectancy-based melodic complexity (MIDI Toolbox `complebm.m`).
 
@@ -378,20 +450,19 @@ def _complebm(melody: Melody, method: str = 'o') -> float:
     if method not in ('p', 'r', 'o'):
         raise ValueError("Method must be 'p' (pitch), 'r' (rhythm), or 'o' (optimal)")
 
-    pitches = melody.pitches
     starts = melody.starts
     ends = melody.ends
-    tempo = melody.tempo
 
-    pcd = _pcdist1_vector(pitches, starts, ends)
-    ivd = _ivdist1_vector(pitches, starts, ends)
-    ton = _tonality_midi_toolbox(pitches, starts, ends)
-    dur_acc = duration_accent(starts, ends)
-    n = min(len(ton), len(dur_acc))
-    ton_component = float(np.mean([ton[i] * dur_acc[i] for i in range(n)])) * -1.0 if n else 0.0
-
-    intervals = np.diff(np.asarray(pitches, dtype=float))
-    aveint = float(np.mean(intervals)) if len(intervals) else 0.0
+    components = _complebm_components(
+        tuple(int(p) for p in melody.pitches),
+        tuple(float(s) for s in starts),
+        tuple(float(e) for e in ends),
+        float(melody.tempo),
+    )
+    pcd = components.pcd
+    ivd = components.ivd
+    ton_component = components.ton_component
+    aveint = components.aveint
 
     if method == 'p':
         constant = -0.2407
@@ -404,16 +475,9 @@ def _complebm(melody: Melody, method: str = 'o') -> float:
         ) / 0.9040 + 5.0
         return float(y)
 
-    dud = midi_toolbox_entropy(_durdist1_vector(starts, ends, tempo))
-    noteden = _notedensity_seconds(starts)
-    du_sec = [float(e) - float(s) for s, e in zip(starts, ends) if float(e) > float(s)]
-    if len(du_sec) > 1:
-        rhyvar = float(np.std(np.log(du_sec), ddof=0))
-    elif len(du_sec) == 1:
-        rhyvar = 0.0
-    else:
-        rhyvar = 0.0
-
+    dud = components.dud
+    noteden = components.noteden
+    rhyvar = components.rhyvar
     metach = _meter_accent_mean(melody)
 
     if method == 'r':

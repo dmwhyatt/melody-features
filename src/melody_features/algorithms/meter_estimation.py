@@ -5,6 +5,7 @@ This module provides autocorrelation-based meter estimation functions that can b
 used as fallbacks when MIDI files don't contain explicit time signature information.
 """
 
+from functools import lru_cache
 from typing import Optional, Union
 
 import numpy as np
@@ -459,13 +460,52 @@ def metric_hierarchy(
     if not starts:
         return []
 
+    pitches_key = tuple(pitches) if pitches is not None else None
+    tempo_changes_key = (
+        tuple((float(t), float(v)) for t, v in tempo_changes)
+        if tempo_changes is not None
+        else None
+    )
+    hierarchy = _metric_hierarchy_cached(
+        tuple(starts), tuple(ends), float(tempo), pitches_key, tempo_changes_key
+    )
+    return list(hierarchy)
+
+
+@lru_cache(maxsize=256)
+def _metric_hierarchy_cached(
+    starts: tuple[float, ...],
+    ends: tuple[float, ...],
+    tempo: float,
+    pitches: Optional[tuple[int, ...]],
+    tempo_changes: Optional[tuple[tuple[float, float], ...]],
+) -> tuple[int, ...]:
+    """Cached body of `metric_hierarchy`.
+
+    This is autocorrelation-based meter estimation (`estimate_meter` calls
+    `scipy.signal.correlate` on an onset grid), one of the most expensive
+    things this package computes per melody -- and several independent
+    features ask for it for the same melody: the `metric_hierarchy` feature
+    itself, `syncopation`, `meter_accent` (via `_meter_accent_mean`), and
+    (also via `_meter_accent_mean`) both `complebm_rhythm` and
+    `complebm_optimal`. Caching it here, keyed on the melody's hashable
+    onset/duration/pitch data, means the autocorrelation runs once per
+    melody no matter how many of those features ask for it.
+    """
+    starts_list = list(starts)
+    ends_list = list(ends)
+    pitches_list = list(pitches) if pitches is not None else None
+    tempo_changes_list = (
+        [tuple(tc) for tc in tempo_changes] if tempo_changes is not None else None
+    )
+
     onset_mod = np.asarray(
         _onset_mod_meter(
-            starts,
-            ends,
+            starts_list,
+            ends_list,
             tempo=tempo,
-            pitches=pitches,
-            tempo_changes=tempo_changes,
+            pitches=pitches_list,
+            tempo_changes=tempo_changes_list,
         ),
         dtype=float,
     )
@@ -475,7 +515,7 @@ def metric_hierarchy(
     for _ in range(3):
         ob = ob * 2.0
         hierarchy = hierarchy + (np.abs(ob - np.round(ob)) < 1e-6).astype(int)
-    return hierarchy.tolist()
+    return tuple(int(h) for h in hierarchy.tolist())
 
 
 def meter_to_time_signature(estimated_meter: int) -> tuple[int, int]:

@@ -252,10 +252,9 @@ def _process_melodies_parallel(
         "total": n_melodies,
         "unit": "melody",
         "dynamic_ncols": True,
-        "mininterval": 0.15,
-        "maxinterval": 1.0,
-        "miniters": max(1, n_melodies // 200),
-        "smoothing": 0.45,
+        "mininterval": 0.1,
+        "maxinterval": 0.5,
+        "smoothing": 0.3,
         "bar_format": "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
     }
     logger = logging.getLogger("melody_features")
@@ -272,10 +271,23 @@ def _process_melodies_parallel(
         logger.info("Parallel processing initiated")
 
         n_cores = cpu_count()
-        chunk_size = max(1, n_melodies // (n_cores * 16))
+        # Cap chunk size instead of letting it grow with corpus size: `imap`
+        # only hands a result back to this loop once a *whole* chunk has
+        # finished inside a worker, so a large chunk (the old formula could
+        # reach into the dozens for big corpora) means the bar sits still and
+        # then jumps by a chunk's worth of melodies all at once. Each melody
+        # is fast to process now, so the per-task IPC overhead of a small
+        # chunk is negligible next to the visible responsiveness gain.
+        chunk_size = max(1, min(4, n_melodies // (n_cores * 16)))
 
         with Pool(n_cores) as pool:
-            results_iter = pool.imap(process_melody, melody_args, chunksize=chunk_size)
+            # `imap_unordered` also avoids head-of-line blocking: with plain
+            # `imap`, results must be consumed in submission order, so if one
+            # in-flight chunk happens to be slower than the ones behind it,
+            # the bar stalls waiting for that specific chunk even though
+            # later melodies already finished. Output order doesn't depend on
+            # this -- `all_features` is re-sorted by melody_num afterwards.
+            results_iter = pool.imap_unordered(process_melody, melody_args, chunksize=chunk_size)
             for result in tqdm(results_iter, desc="Processing melodies", **tqdm_kwargs):
                 try:
                     _record_timing_result(

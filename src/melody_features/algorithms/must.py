@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
@@ -114,27 +115,54 @@ def _local_unbalance(
     window_length = expected_duration * notes_per_window
     window_step = step_fraction * window_length
 
-    densities: list[float] = []
-    center_weights: list[float] = []
+    # Same window-start sequence as before, built by repeated addition (not
+    # `np.arange`) so the floating-point values match exactly at the
+    # boundary. This part is cheap -- it's the per-window note count below
+    # that used to dominate.
+    window_starts: list[float] = []
     time = 0.0
     while time < total_time - window_length + window_step * 0.5:
-        rounded_onsets = np.round(onsets, 3)
-        count = np.sum(
-            (rounded_onsets >= np.round(time, 3))
-            & (rounded_onsets < np.round(time + window_length, 3))
-        )
-        densities.append(count / window_length / local_expected_density)
-        center_weights.append(abs((time + window_length / 2.0) - total_time / 2.0) / (total_time / 2.0))
+        window_starts.append(time)
         time += window_step
 
-    if not densities:
+    if not window_starts:
         return np.array([1.0]), np.array([0.0])
+
+    # `onsets` never changes across windows, so round it once up front
+    # (previously this rounded the full onset array from scratch on every
+    # iteration). Onsets are time-ordered, so rounding preserves that order
+    # and each window's note count is `hi - lo` from `searchsorted` on the
+    # window bounds -- one batched O(n_windows log n_notes) numpy call
+    # instead of an O(n_windows * n_notes) boolean scan repeated per window.
+    rounded_onsets = np.round(onsets, 3)
+    starts_arr = np.asarray(window_starts, dtype=float)
+    lo = np.searchsorted(rounded_onsets, np.round(starts_arr, 3), side="left")
+    hi = np.searchsorted(rounded_onsets, np.round(starts_arr + window_length, 3), side="left")
+    counts = (hi - lo).astype(float)
+
+    densities = counts / window_length / local_expected_density
+    center_weights = np.abs((starts_arr + window_length / 2.0) - total_time / 2.0) / (total_time / 2.0)
     return np.asarray(densities, dtype=float), np.asarray(center_weights, dtype=float)
+
+
+def _onset_window_bounds(onsets_sec: np.ndarray, min_time: float, max_time: float) -> tuple[int, int]:
+    """Sorted-onsets index bounds for a window (MIDI Toolbox `onsetwindow.m`, inclusive upper bound).
+
+    Equivalent to `np.where((onsets_sec >= min_time) & (onsets_sec <= max_time))[0]`
+    but returns the matching (contiguous) range in O(log n) instead of scanning
+    every onset: onsets are already time-ordered (the mirror-pitch-series and
+    meter-estimation helpers in this module rely on the same assumption), so
+    the matching notes are exactly `onsets_sec[lo:hi]`.
+    """
+    lo = int(np.searchsorted(onsets_sec, min_time, side="left"))
+    hi = int(np.searchsorted(onsets_sec, max_time, side="right"))
+    return lo, hi
 
 
 def _onset_window_indices(onsets_sec: np.ndarray, min_time: float, max_time: float) -> np.ndarray:
     """Seconds-based onset window (MIDI Toolbox `onsetwindow.m` with inclusive upper bound)."""
-    return np.where((onsets_sec >= min_time) & (onsets_sec <= max_time))[0]
+    lo, hi = _onset_window_bounds(onsets_sec, min_time, max_time)
+    return np.arange(lo, hi)
 
 
 def bisect_unbalance(melody: Melody) -> float:
@@ -240,43 +268,121 @@ def rhythm_abruptness(melody: Melody) -> float:
     return float(np.mean(ratios)) if ratios else 0.0
 
 
+@lru_cache(maxsize=256)
+def _mirror_pitch_series_cached(
+    pitches: tuple[float, ...],
+    onsets: tuple[float, ...],
+    durations: tuple[float, ...],
+) -> tuple[float, ...]:
+    """Cached body of `_mirror_pitch_series`.
+
+    `asym_total` and `asym_index` are both `@must complexity` features and
+    both need this exact sampled pitch series for a melody, and caching it
+    means the two features share one pass instead of each building it
+    independently.
+
+    Building the series means classifying every 0.0001-beat sample into
+    the note sounding at that instant (or no note, during a rest) -- a
+    melody note is "sounding" for samples in `[onset, onset + duration)`.
+    That note index is a monotonically non-decreasing step function of
+    time, so instead of a Python loop that advances `note_index` one
+    sample at a time (the dominant cost of the MUST complexity features:
+    a melody spanning tens of beats means hundreds of thousands of
+    iterations), `np.searchsorted` locates every sample's note in one
+    vectorized pass: `searchsorted(onsets, t, side="right") - 1` gives the
+    index of the last note whose onset is at or before `t`, which is
+    exactly the `note_index` the loop converges to for that `t`. Samples
+    that land in a rest (after a note's duration ends but before the next
+    onset) are then dropped with a boolean mask, matching the loop's
+    `time < onsets[note_index] + durations[note_index]` check.
+    """
+    onsets_arr = np.asarray(onsets, dtype=float)
+    durations_arr = np.asarray(durations, dtype=float)
+    pitches_arr = np.asarray(pitches, dtype=float)
+    total_time = onsets_arr[-1] + durations_arr[-1]
+    sample_count = int(total_time / 0.0001) + 1
+    times = np.arange(sample_count) * 0.0001
+    note_index = np.searchsorted(onsets_arr, times, side="right") - 1
+    np.clip(note_index, 0, len(onsets_arr) - 1, out=note_index)
+    note_end_times = onsets_arr + durations_arr
+    sounding = times < note_end_times[note_index]
+    return tuple(pitches_arr[note_index[sounding]].tolist())
+
+
 def _mirror_pitch_series(melody: Melody) -> np.ndarray:
     if len(melody.pitches) == 0:
         return np.array([], dtype=float)
     pitches = _pitches(melody)
     onsets = _onsets_beats(melody) - _onsets_beats(melody)[0]
     durations = _durations_beats(melody)
-    total_time = onsets[-1] + durations[-1]
-    series: list[float] = []
-    note_index = 0
-    sample_count = int(total_time / 0.0001) + 1
-    for sample in range(sample_count):
-        time = sample * 0.0001
-        if note_index < len(onsets) - 1 and time >= onsets[note_index + 1]:
-            note_index += 1
-        if time < onsets[note_index] + durations[note_index]:
-            series.append(pitches[note_index])
+    series = _mirror_pitch_series_cached(
+        tuple(pitches.tolist()), tuple(onsets.tolist()), tuple(durations.tolist())
+    )
     return np.asarray(series, dtype=float)
+
+
+def _mirror_series_key(melody: Melody) -> tuple[tuple[float, ...], tuple[float, ...], tuple[float, ...]]:
+    """Hashable (pitches, onsets, durations) cache key shared by the mirror-series helpers."""
+    pitches = _pitches(melody)
+    onsets = _onsets_beats(melody) - _onsets_beats(melody)[0]
+    durations = _durations_beats(melody)
+    return tuple(pitches.tolist()), tuple(onsets.tolist()), tuple(durations.tolist())
+
+
+@lru_cache(maxsize=256)
+def _mirror_asymmetry_stats(
+    pitches: tuple[float, ...],
+    onsets: tuple[float, ...],
+    durations: tuple[float, ...],
+) -> tuple[float, float]:
+    """Cached `(asym_total, asym_index)` for a melody.
+
+    `asym_total` and `asym_index` both reduce the same per-sample mirror
+    pitch series (one sample per 0.0001 beat -- for a melody spanning tens
+    of beats, that's hundreds of thousands to millions of samples) down to
+    a single number. Caching `_mirror_pitch_series` itself (see
+    `_mirror_pitch_series_cached` below) already avoids rebuilding that
+    series twice, but the two features were still each independently
+    paying two more O(sample-count) costs: reconstructing a numpy array
+    from the cached tuple, and running their own `abs(series -
+    series[::-1])` reduction over it -- for a several-hundred-note melody
+    that "cheap" reduction is actually the largest remaining cost in the
+    whole MUST complexity feature set. Computing both final scalars here,
+    directly from the vectorized series construction (no huge tuple/array
+    round-trip), means that per-sample numpy work happens exactly once no
+    matter which of the two features (or both) get requested.
+    """
+    onsets_arr = np.asarray(onsets, dtype=float)
+    durations_arr = np.asarray(durations, dtype=float)
+    pitches_arr = np.asarray(pitches, dtype=float)
+    total_time = onsets_arr[-1] + durations_arr[-1]
+    sample_count = int(total_time / 0.0001) + 1
+    times = np.arange(sample_count) * 0.0001
+    note_index = np.searchsorted(onsets_arr, times, side="right") - 1
+    np.clip(note_index, 0, len(onsets_arr) - 1, out=note_index)
+    note_end_times = onsets_arr + durations_arr
+    sounding = times < note_end_times[note_index]
+    series = pitches_arr[note_index[sounding]]
+    if series.size == 0:
+        return 0.0, 0.0
+    asymmetry = np.abs(series - series[::-1])
+    total = float(asymmetry.sum() / asymmetry.size)
+    index = float(np.sum(asymmetry > 0) / asymmetry.size)
+    return total, index
 
 
 def asym_total(melody: Melody) -> float:
     if (empty := _zero_for_empty_melody(melody)) is not None:
         return empty
-    series = _mirror_pitch_series(melody)
-    if series.size == 0:
-        return 0.0
-    asymmetry = np.abs(series - series[::-1])
-    return float(asymmetry.sum() / asymmetry.size)
+    total, _ = _mirror_asymmetry_stats(*_mirror_series_key(melody))
+    return total
 
 
 def asym_index(melody: Melody) -> float:
     if (empty := _zero_for_empty_melody(melody)) is not None:
         return empty
-    series = _mirror_pitch_series(melody)
-    if series.size == 0:
-        return 0.0
-    asymmetry = np.abs(series - series[::-1])
-    return float(np.sum(asymmetry > 0) / asymmetry.size)
+    _, index = _mirror_asymmetry_stats(*_mirror_series_key(melody))
+    return index
 
 
 def event_density(melody: Melody) -> float:
@@ -304,10 +410,10 @@ def av_local_p1_entropy(
     entropies: list[float] = []
     time = 0.0
     while time <= total_time + 1e-12:
-        indices = _onset_window_indices(onsets, time - window_length, time)
-        if indices.size:
+        lo, hi = _onset_window_bounds(onsets, time - window_length, time)
+        if hi > lo:
             entropies.append(
-                _MUST_TOKENIZER.pitch_distribution(pitches[indices]).entropy()
+                _MUST_TOKENIZER.pitch_distribution(pitches[lo:hi]).entropy()
             )
         time += window_step
     return float(np.mean(entropies)) if entropies else 0.0

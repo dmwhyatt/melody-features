@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, Dict, Hashable, List, Optional
 
 import numpy as np
@@ -279,26 +280,152 @@ class MustDistribution:
         return must_shannon_entropy(self.weights)
 
 
+_MUST_TOKENIZER_CACHE_SIZE = 256
+
+
+@lru_cache(maxsize=_MUST_TOKENIZER_CACHE_SIZE)
+def _pitch_tokens_from_tuple(pitches: tuple[int, ...]) -> np.ndarray:
+    """Cached pitch-token array for a melody's pitch sequence.
+
+    `get_all_features` invokes every `@must`/`complexity` feature function
+    independently for the same melody (e.g. `pdist1`, `pdist2`, `idist1`,
+    `p1_entropy`, `p2_entropy`, `i1_entropy` ...), and several of them need
+    the exact same tokenized pitch sequence. Keying on the melody's pitch
+    values (rather than rebuilding an array per call) means that work
+    happens once and is reused by every feature that asks for it.
+    """
+    return np.asarray(pitches, dtype=int)
+
+
+@lru_cache(maxsize=_MUST_TOKENIZER_CACHE_SIZE)
+def _duration_tokens_from_tuple(
+    starts: tuple[float, ...], ends: tuple[float, ...], tempo: float
+) -> tuple[float, ...]:
+    """Cached beat-duration tokens (MUST `ddist*` convention) for a melody."""
+    durations = np.asarray(
+        _get_durations(list(starts), list(ends), tempo),
+        dtype=float,
+    )
+    if durations.size == 0:
+        return ()
+    return tuple(np.round(durations[:-1], 2).tolist())
+
+
+@lru_cache(maxsize=_MUST_TOKENIZER_CACHE_SIZE)
+def _pdist1_from_tuple(pitches: tuple[int, ...]) -> "MustDistribution":
+    return MustTokenizer.pitch_distribution(_pitch_tokens_from_tuple(pitches))
+
+
+@lru_cache(maxsize=_MUST_TOKENIZER_CACHE_SIZE)
+def _pdist2_from_tuple(pitches: tuple[int, ...]) -> "MustDistribution":
+    tokens = _pitch_tokens_from_tuple(pitches)
+    if len(tokens) < 2:
+        return MustDistribution(values=np.array([]), weights=np.array([]))
+    pairs = np.column_stack([tokens[:-1], tokens[1:]])
+    return MustTokenizer._tuple_distribution(pairs)
+
+
+@lru_cache(maxsize=_MUST_TOKENIZER_CACHE_SIZE)
+def _pdist3_from_tuple(pitches: tuple[int, ...]) -> "MustDistribution":
+    tokens = _pitch_tokens_from_tuple(pitches)
+    if len(tokens) < 3:
+        return MustDistribution(values=np.array([]), weights=np.array([]))
+    triples = np.column_stack([tokens[:-2], tokens[1:-1], tokens[2:]])
+    return MustTokenizer._tuple_distribution(triples)
+
+
+@lru_cache(maxsize=_MUST_TOKENIZER_CACHE_SIZE)
+def _idist1_from_tuple(pitches: tuple[int, ...]) -> "MustDistribution":
+    pitch_dist = _pdist2_from_tuple(pitches)
+    if pitch_dist.values.size == 0:
+        return MustDistribution(values=np.array([]), weights=np.array([]))
+    return MustTokenizer._marginalize_intervals(pitch_dist.values, pitch_dist.weights)
+
+
+@lru_cache(maxsize=_MUST_TOKENIZER_CACHE_SIZE)
+def _idist2_from_tuple(pitches: tuple[int, ...]) -> "MustDistribution":
+    pitch_dist = _pdist3_from_tuple(pitches)
+    if pitch_dist.values.size == 0:
+        return MustDistribution(values=np.array([]), weights=np.array([]))
+    return MustTokenizer._marginalize_intervals(pitch_dist.values, pitch_dist.weights)
+
+
+@lru_cache(maxsize=_MUST_TOKENIZER_CACHE_SIZE)
+def _ddist1_from_tuple(durations: tuple[float, ...]) -> "MustDistribution":
+    arr = np.asarray(durations, dtype=float)
+    if arr.size == 0:
+        return MustDistribution(values=np.array([]), weights=np.array([0.0]))
+    values, counts = np.unique(arr, return_counts=True)
+    weights = counts.astype(float) / counts.sum()
+    return MustDistribution(values=values, weights=weights)
+
+
+@lru_cache(maxsize=_MUST_TOKENIZER_CACHE_SIZE)
+def _ddist2_from_tuple(durations: tuple[float, ...]) -> "MustDistribution":
+    arr = np.asarray(durations, dtype=float)
+    if len(arr) < 2:
+        return MustDistribution(values=np.array([]), weights=np.array([]))
+    pairs = np.column_stack([arr[:-1], arr[1:]])
+    return MustTokenizer._tuple_distribution(pairs)
+
+
+@lru_cache(maxsize=_MUST_TOKENIZER_CACHE_SIZE)
+def _ddist3_from_tuple(durations: tuple[float, ...]) -> "MustDistribution":
+    arr = np.asarray(durations, dtype=float)
+    if len(arr) < 3:
+        return MustDistribution(values=np.array([]), weights=np.array([1.0]))
+    triples = np.column_stack([arr[:-2], arr[1:-1], arr[2:]])
+    unique_triples = np.unique(triples, axis=0)
+    weights = []
+    for triple in unique_triples:
+        weights.append(float(np.sum(triples == triple)))
+    weights_arr = np.asarray(weights, dtype=float)
+    return MustDistribution(values=unique_triples, weights=weights_arr / weights_arr.sum())
+
+
 class MustTokenizer(MelodyTokenizer):
     """MUST distribution tokenization (Clemente et al., 2020).
 
     Implements `pdist*`, `idist*`, and `ddist*` on notematrix-style timing:
     onsets and durations in beats.
+
+    Note
+    ----
+    `get_all_features` calls every `@must`/`complexity` feature function
+    independently for a given melody, and several of those functions need
+    the same underlying distribution (`idist1` and `i1_entropy` both need
+    `pdist2`; `pdist2` is also requested directly as its own feature; and
+    so on). Rather than re-tokenizing and re-counting the melody from
+    scratch on every one of those calls, the methods below delegate to
+    module-level `lru_cache`-backed functions keyed on the melody's
+    hashable pitch/duration tokens -- the same memoization pattern already
+    used for the jSymbolic beat-histogram features in
+    `feature_definitions/timing.py`. A given melody's `pdist2` is then
+    computed once and reused by every feature that needs it, regardless of
+    which `MustTokenizer` instance (or module) asks for it.
     """
 
     def pitch_tokens(self, melody: Melody) -> np.ndarray:
         """Raw MIDI pitch values (MUST notematrix column 4)."""
-        return np.asarray(melody.pitches, dtype=int)
+        return _pitch_tokens_from_tuple(self._pitch_key(melody))
 
     def duration_tokens(self, melody: Melody) -> np.ndarray:
         """Beat durations for all notes except the last, rounded to 2 dp."""
-        durations = np.asarray(
-            _get_durations(melody.starts, melody.ends, melody.tempo),
-            dtype=float,
+        return np.asarray(self._duration_key(melody), dtype=float)
+
+    @staticmethod
+    def _pitch_key(melody: Melody) -> tuple[int, ...]:
+        """Hashable pitch sequence used as the cache key for pitch distributions."""
+        return tuple(int(p) for p in melody.pitches)
+
+    @staticmethod
+    def _duration_key(melody: Melody) -> tuple[float, ...]:
+        """Hashable beat-duration sequence used as the cache key for duration distributions."""
+        return _duration_tokens_from_tuple(
+            tuple(float(s) for s in melody.starts),
+            tuple(float(e) for e in melody.ends),
+            float(melody.tempo),
         )
-        if durations.size == 0:
-            return durations
-        return np.round(durations[:-1], 2)
 
     @staticmethod
     def pitch_distribution(pitches: np.ndarray) -> MustDistribution:
@@ -338,67 +465,35 @@ class MustTokenizer(MelodyTokenizer):
 
     def pdist1(self, melody: Melody) -> MustDistribution:
         """Pitch distribution (MUST `pdist1.m`)."""
-        return self.pitch_distribution(self.pitch_tokens(melody))
+        return _pdist1_from_tuple(self._pitch_key(melody))
 
     def pdist2(self, melody: Melody) -> MustDistribution:
         """2-tuple pitch distribution (MUST `pdist2.m`)."""
-        pitches = self.pitch_tokens(melody)
-        if len(pitches) < 2:
-            return MustDistribution(values=np.array([]), weights=np.array([]))
-        pairs = np.column_stack([pitches[:-1], pitches[1:]])
-        return self._tuple_distribution(pairs)
+        return _pdist2_from_tuple(self._pitch_key(melody))
 
     def pdist3(self, melody: Melody) -> MustDistribution:
         """3-tuple pitch distribution (MUST `pdist3.m`)."""
-        pitches = self.pitch_tokens(melody)
-        if len(pitches) < 3:
-            return MustDistribution(values=np.array([]), weights=np.array([]))
-        triples = np.column_stack([pitches[:-2], pitches[1:-1], pitches[2:]])
-        return self._tuple_distribution(triples)
+        return _pdist3_from_tuple(self._pitch_key(melody))
 
     def idist1(self, melody: Melody) -> MustDistribution:
         """Interval distribution marginalized from `pdist2` (MUST `idist1.m`)."""
-        pitch_dist = self.pdist2(melody)
-        if pitch_dist.values.size == 0:
-            return MustDistribution(values=np.array([]), weights=np.array([]))
-        return self._marginalize_intervals(pitch_dist.values, pitch_dist.weights)
+        return _idist1_from_tuple(self._pitch_key(melody))
 
     def idist2(self, melody: Melody) -> MustDistribution:
         """2-interval distribution marginalized from `pdist3` (MUST `idist2.m`)."""
-        pitch_dist = self.pdist3(melody)
-        if pitch_dist.values.size == 0:
-            return MustDistribution(values=np.array([]), weights=np.array([]))
-        return self._marginalize_intervals(pitch_dist.values, pitch_dist.weights)
+        return _idist2_from_tuple(self._pitch_key(melody))
 
     def ddist1(self, melody: Melody) -> MustDistribution:
         """Duration distribution in beats (MUST `ddist1.m`)."""
-        durations = self.duration_tokens(melody)
-        if durations.size == 0:
-            return MustDistribution(values=np.array([]), weights=np.array([0.0]))
-        values, counts = np.unique(durations, return_counts=True)
-        weights = counts.astype(float) / counts.sum()
-        return MustDistribution(values=values, weights=weights)
+        return _ddist1_from_tuple(self._duration_key(melody))
 
     def ddist2(self, melody: Melody) -> MustDistribution:
         """2-tuple duration distribution (MUST `ddist2.m`)."""
-        durations = self.duration_tokens(melody)
-        if len(durations) < 2:
-            return MustDistribution(values=np.array([]), weights=np.array([]))
-        pairs = np.column_stack([durations[:-1], durations[1:]])
-        return self._tuple_distribution(pairs)
+        return _ddist2_from_tuple(self._duration_key(melody))
 
     def ddist3(self, melody: Melody) -> MustDistribution:
         """3-tuple duration distribution (MUST `ddist3.m`)."""
-        durations = self.duration_tokens(melody)
-        if len(durations) < 3:
-            return MustDistribution(values=np.array([]), weights=np.array([1.0]))
-        triples = np.column_stack([durations[:-2], durations[1:-1], durations[2:]])
-        unique_triples = np.unique(triples, axis=0)
-        weights = []
-        for triple in unique_triples:
-            weights.append(float(np.sum(triples == triple)))
-        weights_arr = np.asarray(weights, dtype=float)
-        return MustDistribution(values=unique_triples, weights=weights_arr / weights_arr.sum())
+        return _ddist3_from_tuple(self._duration_key(melody))
 
 
 __all__ = [
